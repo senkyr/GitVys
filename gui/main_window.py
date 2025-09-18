@@ -18,11 +18,75 @@ class MainWindow:
         else:
             self.root = tk.Tk()
         self.root.title("Git Visualizer")
-        self.root.geometry("1200x800")
-        self.root.minsize(800, 600)
+
+        initial_width = 600
+        initial_height = 400
+        self.root.geometry(f"{initial_width}x{initial_height}")
+        self.root.minsize(400, 300)
+
+        self._center_window(initial_width, initial_height)
 
         self.git_repo = None
         self.setup_ui()
+
+    def _center_window(self, width: int, height: int):
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+
+        if x + width > screen_width:
+            x = screen_width - width
+        if y + height > screen_height:
+            y = screen_height - height
+
+        x = max(0, x)
+        y = max(0, y)
+
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _resize_window_for_content(self, commits):
+        if not commits:
+            return
+
+        self.root.update_idletasks()
+
+        canvas = self.graph_canvas.canvas
+        table_width = self._calculate_table_width(canvas, commits)
+
+        commit_count = len(commits)
+        commit_height = 30
+        header_height = 80
+        status_height = 40
+        margins = 60
+
+        content_width = table_width + 200
+        content_height = (commit_count * commit_height) + header_height + status_height + margins
+
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        margin = 100
+
+        window_width = min(content_width, screen_width - margin)
+        window_height = min(content_height, screen_height - margin)
+
+        window_width = max(window_width, 800)
+        window_height = max(window_height, 600)
+
+        self._center_window(window_width, window_height)
+
+    def _calculate_table_width(self, canvas, commits):
+        if not hasattr(self.graph_canvas.graph_drawer, 'column_widths'):
+            return 1000
+
+        column_widths = self.graph_canvas.graph_drawer.column_widths
+        total_width = sum(column_widths.values()) if column_widths else 1000
+
+        max_branch_lanes = len(set(commit.branch for commit in commits))
+        branch_width = max_branch_lanes * 150
+
+        return total_width + branch_width
 
     def setup_ui(self):
         self.root.columnconfigure(0, weight=1)
@@ -116,6 +180,8 @@ class MainWindow:
 
         self.back_button.grid(row=0, column=0, sticky='w', padx=(0, 10))
         self.title_label.config(text=f"Git Visualizer - {len(commits)} commitů")
+
+        self.root.after(100, lambda: self._resize_window_for_content(commits))
 
         self.progress.stop()
         self.update_status(f"Načteno {len(commits)} commitů")
