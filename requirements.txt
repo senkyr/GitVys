@@ -1,0 +1,3 @@
+GitPython
+Pillow
+tkinterdnd2
