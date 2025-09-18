@@ -106,3 +106,27 @@ class GitRepository:
 
     def _get_full_date(self, date: datetime) -> str:
         return date.strftime("%d.%m.%Y %H:%M")
+
+    def get_repository_stats(self) -> Dict[str, int]:
+        if not self.repo or not self.commits:
+            return {"authors": 0, "branches": 0, "commits": 0, "tags": 0}
+
+        authors = set()
+        branches = set()
+
+        for commit in self.commits:
+            authors.add(commit.author)
+            branches.add(commit.branch)
+
+        try:
+            tags = list(self.repo.tags)
+            tag_count = len(tags)
+        except:
+            tag_count = 0
+
+        return {
+            "authors": len(authors),
+            "branches": len(branches),
+            "commits": len(self.commits),
+            "tags": tag_count
+        }

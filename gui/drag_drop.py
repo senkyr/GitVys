@@ -25,7 +25,7 @@ class DragDropFrame(ttk.Frame):
 
         self.drop_label = ttk.Label(
             self.drop_frame,
-            text="Přetáhni složku Git repozitáře sem\nnebo",
+            text="Přetáhni sem složku repozitáře nebo ji vyhledej tlačítkem...",
             font=('Arial', 12),
             anchor='center'
         )
@@ -33,7 +33,7 @@ class DragDropFrame(ttk.Frame):
 
         self.browse_button = ttk.Button(
             self.drop_frame,
-            text="Procházet...",
+            text="Najít na disku...",
             command=self.browse_folder
         )
         self.browse_button.grid(row=1, column=0, pady=(10, 20))

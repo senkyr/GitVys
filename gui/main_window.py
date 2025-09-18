@@ -109,8 +109,8 @@ class MainWindow:
 
         self.title_label = ttk.Label(
             self.header_frame,
-            text="Git Visualizer - Přetáhni složku repozitáře",
-            font=('Arial', 16, 'bold')
+            text="",
+            font=('Arial', 10)
         )
         self.title_label.grid(row=0, column=1, sticky='w')
 
@@ -136,12 +136,14 @@ class MainWindow:
 
         self.progress = ttk.Progressbar(
             self.status_frame,
-            mode='indeterminate'
+            mode='determinate',
+            value=0
         )
         self.progress.grid(row=0, column=1, sticky='ew', padx=(10, 0))
 
     def on_repository_selected(self, repo_path: str):
         self.update_status("Načítám repozitář...")
+        self.progress.config(value=50)
         self.progress.start()
 
         thread = threading.Thread(
@@ -179,11 +181,29 @@ class MainWindow:
         self.graph_canvas.update_graph(commits)
 
         self.back_button.grid(row=0, column=0, sticky='w', padx=(0, 10))
-        self.title_label.config(text=f"Git Visualizer - {len(commits)} commitů")
+        stats = self.git_repo.get_repository_stats()
+
+        # Czech pluralization
+        def get_czech_plural(count, singular, plural2_4, plural5):
+            if count == 1:
+                return singular
+            elif count in [2, 3, 4]:
+                return plural2_4
+            else:
+                return plural5
+
+        authors_text = f"{stats['authors']} {get_czech_plural(stats['authors'], 'autor', 'autoři', 'autorů')}"
+        branches_text = f"{stats['branches']} {get_czech_plural(stats['branches'], 'větev', 'větve', 'větví')}"
+        commits_text = f"{stats['commits']} {get_czech_plural(stats['commits'], 'commit', 'commity', 'commitů')}"
+        tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
+
+        stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+        self.title_label.config(text=stats_text)
 
         self.root.after(100, lambda: self._resize_window_for_content(commits))
 
         self.progress.stop()
+        self.progress.config(value=100)
         self.update_status(f"Načteno {len(commits)} commitů")
 
     def show_repository_selection(self):
@@ -191,12 +211,14 @@ class MainWindow:
         self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
 
         self.back_button.grid_remove()
-        self.title_label.config(text="Git Visualizer - Přetáhni složku repozitáře")
+        self.title_label.config(text="")
 
+        self.progress.config(value=0)
         self.update_status("Připraven")
 
     def show_error(self, message: str):
         self.progress.stop()
+        self.progress.config(value=0)
         self.update_status("Chyba")
         messagebox.showerror("Chyba", message)
 
