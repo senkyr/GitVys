@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from git.repository import GitRepository
+from repo.repository import GitRepository
 from visualization.layout import GraphLayout
 from gui.drag_drop import DragDropFrame
 from gui.graph_canvas import GraphCanvas
