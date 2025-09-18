@@ -1,6 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+except ImportError:
+    TkinterDnD = None
+    DND_FILES = None
 
 
 class DragDropFrame(ttk.Frame):
@@ -38,6 +43,18 @@ class DragDropFrame(ttk.Frame):
     def bind_drop_events(self):
         self.drop_frame.bind('<Button-1>', self.on_click)
         self.drop_label.bind('<Button-1>', self.on_click)
+
+        if TkinterDnD is not None:
+            self.drop_frame.drop_target_register(DND_FILES)
+            self.drop_frame.dnd_bind('<<Drop>>', self.on_drop)
+            self.drop_label.drop_target_register(DND_FILES)
+            self.drop_label.dnd_bind('<<Drop>>', self.on_drop)
+
+    def on_drop(self, event):
+        files = self.drop_frame.tk.splitlist(event.data)
+        if files:
+            folder_path = files[0]
+            self.process_folder(folder_path)
 
     def on_click(self, event):
         self.browse_folder()

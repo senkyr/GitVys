@@ -1,6 +1,10 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+try:
+    from tkinterdnd2 import TkinterDnD
+except ImportError:
+    TkinterDnD = None
 from repo.repository import GitRepository
 from visualization.layout import GraphLayout
 from gui.drag_drop import DragDropFrame
@@ -9,7 +13,10 @@ from gui.graph_canvas import GraphCanvas
 
 class MainWindow:
     def __init__(self):
-        self.root = tk.Tk()
+        if TkinterDnD is not None:
+            self.root = TkinterDnD.Tk()
+        else:
+            self.root = tk.Tk()
         self.root.title("Git Visualizer")
         self.root.geometry("1200x800")
         self.root.minsize(800, 600)

@@ -17,8 +17,8 @@ class GraphLayout:
         self._assign_lanes(sorted_commits)
 
         for i, commit in enumerate(sorted_commits):
-            commit.x = i * 60
-            commit.y = self.branch_lanes.get(commit.branch, 0) * 40
+            commit.x = self.branch_lanes.get(commit.branch, 0) * 150 + 50
+            commit.y = i * 80 + 50
             commit.table_row = i
 
         return sorted_commits

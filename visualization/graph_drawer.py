@@ -17,7 +17,7 @@ class GraphDrawer:
         self._draw_commits(canvas, commits)
 
     def _draw_connections(self, canvas: tk.Canvas, commits: List[Commit]):
-        commit_positions = {commit.hash: (commit.x + 50, commit.y + 50) for commit in commits}
+        commit_positions = {commit.hash: (commit.x, commit.y) for commit in commits}
 
         for commit in commits:
             if commit.parents:
@@ -38,7 +38,7 @@ class GraphDrawer:
 
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
         for commit in commits:
-            x, y = commit.x + 50, commit.y + 50
+            x, y = commit.x, commit.y
 
             canvas.create_oval(
                 x - self.node_radius, y - self.node_radius,
