@@ -33,12 +33,22 @@ class MainWindow:
         self.main_frame.columnconfigure(0, weight=1)
         self.main_frame.rowconfigure(1, weight=1)
 
+        self.header_frame = ttk.Frame(self.main_frame)
+        self.header_frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
+        self.header_frame.columnconfigure(1, weight=1)
+
+        self.back_button = ttk.Button(
+            self.header_frame,
+            text="← Zpět",
+            command=self.show_repository_selection
+        )
+
         self.title_label = ttk.Label(
-            self.main_frame,
+            self.header_frame,
             text="Git Visualizer - Přetáhni složku repozitáře",
             font=('Arial', 16, 'bold')
         )
-        self.title_label.grid(row=0, column=0, pady=(0, 10))
+        self.title_label.grid(row=0, column=1, sticky='w')
 
         self.content_frame = ttk.Frame(self.main_frame)
         self.content_frame.grid(row=1, column=0, sticky='nsew')
@@ -51,7 +61,7 @@ class MainWindow:
         )
         self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
 
-        self.graph_canvas = GraphCanvas(self.content_frame)
+        self.graph_canvas = GraphCanvas(self.content_frame, on_drop_callback=self.on_repository_selected)
 
         self.status_frame = ttk.Frame(self.main_frame)
         self.status_frame.grid(row=2, column=0, sticky='ew', pady=(10, 0))
@@ -104,8 +114,20 @@ class MainWindow:
         self.graph_canvas.grid(row=0, column=0, sticky='nsew')
         self.graph_canvas.update_graph(commits)
 
+        self.back_button.grid(row=0, column=0, sticky='w', padx=(0, 10))
+        self.title_label.config(text=f"Git Visualizer - {len(commits)} commitů")
+
         self.progress.stop()
         self.update_status(f"Načteno {len(commits)} commitů")
+
+    def show_repository_selection(self):
+        self.graph_canvas.grid_remove()
+        self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
+
+        self.back_button.grid_remove()
+        self.title_label.config(text="Git Visualizer - Přetáhni složku repozitáře")
+
+        self.update_status("Připraven")
 
     def show_error(self, message: str):
         self.progress.stop()

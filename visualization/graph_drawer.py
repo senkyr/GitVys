@@ -8,11 +8,13 @@ class GraphDrawer:
         self.node_radius = 8
         self.line_width = 2
         self.font_size = 10
+        self.column_widths = {}
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
         if not commits:
             return
 
+        self._calculate_column_widths(canvas, commits)
         self._draw_connections(canvas, commits)
         self._draw_commits(canvas, commits)
 
@@ -36,6 +38,35 @@ class GraphDrawer:
             smooth=True
         )
 
+    def _calculate_column_widths(self, canvas: tk.Canvas, commits: List[Commit]):
+        font = ('Arial', self.font_size)
+
+        max_message_width = 0
+        max_description_width = 0
+        max_author_width = 0
+        max_date_width = 0
+
+        for commit in commits:
+            message_width = canvas.tk.call("font", "measure", font, commit.message)
+            max_message_width = max(max_message_width, message_width)
+
+            if commit.description:
+                desc_width = canvas.tk.call("font", "measure", font, commit.description)
+                max_description_width = max(max_description_width, desc_width)
+
+            author_width = canvas.tk.call("font", "measure", font, commit.author)
+            max_author_width = max(max_author_width, author_width)
+
+            date_width = canvas.tk.call("font", "measure", font, commit.date_short)
+            max_date_width = max(max_date_width, date_width)
+
+        self.column_widths = {
+            'message': max_message_width + 20,
+            'description': max_description_width + 20,
+            'author': max_author_width + 20,
+            'date': max_date_width + 20
+        }
+
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
         for commit in commits:
             x, y = commit.x, commit.y
@@ -48,18 +79,40 @@ class GraphDrawer:
                 width=1
             )
 
+            text_x = x + 20
+
             canvas.create_text(
-                x + 20, y,
-                text=f"{commit.hash} {commit.short_message}",
+                text_x, y,
+                text=commit.message,
                 anchor='w',
                 font=('Arial', self.font_size),
                 fill='black'
             )
+            text_x += self.column_widths['message']
+
+            if commit.description:
+                canvas.create_text(
+                    text_x, y,
+                    text=commit.description,
+                    anchor='w',
+                    font=('Arial', self.font_size),
+                    fill='#666666'
+                )
+            text_x += self.column_widths['description']
 
             canvas.create_text(
-                x + 20, y + 15,
-                text=f"{commit.author_short} • {commit.date_short}",
+                text_x, y,
+                text=commit.author,
                 anchor='w',
-                font=('Arial', self.font_size - 1),
-                fill='gray'
+                font=('Arial', self.font_size),
+                fill='#333333'
+            )
+            text_x += self.column_widths['author']
+
+            canvas.create_text(
+                text_x, y,
+                text=commit.date_short,
+                anchor='w',
+                font=('Arial', self.font_size),
+                fill='#666666'
             )

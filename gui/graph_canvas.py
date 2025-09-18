@@ -1,15 +1,20 @@
 import tkinter as tk
 from tkinter import ttk
-from typing import List, Dict
+from typing import List, Dict, Callable
+try:
+    from tkinterdnd2 import DND_FILES
+except ImportError:
+    DND_FILES = None
 from utils.data_structures import Commit
 from visualization.graph_drawer import GraphDrawer
 
 
 class GraphCanvas(ttk.Frame):
-    def __init__(self, parent):
+    def __init__(self, parent, on_drop_callback: Callable[[str], None] = None):
         super().__init__(parent)
         self.commits: List[Commit] = []
         self.graph_drawer = GraphDrawer()
+        self.on_drop_callback = on_drop_callback
         self.setup_ui()
 
     def setup_ui(self):
@@ -48,6 +53,10 @@ class GraphCanvas(ttk.Frame):
         self.canvas.bind('<Button-4>', self.on_mousewheel)
         self.canvas.bind('<Button-5>', self.on_mousewheel)
 
+        if DND_FILES is not None and self.on_drop_callback:
+            self.canvas.drop_target_register(DND_FILES)
+            self.canvas.dnd_bind('<<Drop>>', self.on_drop)
+
     def update_graph(self, commits: List[Commit]):
         self.commits = commits
         self.canvas.delete('all')
@@ -60,6 +69,12 @@ class GraphCanvas(ttk.Frame):
         max_x = max(commit.x for commit in commits) + 100
         max_y = max(commit.y for commit in commits) + 100
         self.canvas.configure(scrollregion=(0, 0, max_x, max_y))
+
+    def on_drop(self, event):
+        files = self.canvas.tk.splitlist(event.data)
+        if files and self.on_drop_callback:
+            folder_path = files[0]
+            self.on_drop_callback(folder_path)
 
     def on_mousewheel(self, event):
         if event.delta:

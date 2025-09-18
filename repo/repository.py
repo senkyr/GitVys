@@ -35,19 +35,25 @@ class GitRepository:
             if branch_name not in branch_colors:
                 branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
 
+            full_message = commit.message.strip()
+            message_lines = full_message.split('\n', 1)
+            subject = message_lines[0]
+            description = message_lines[1].strip() if len(message_lines) > 1 else ""
+
             commit_obj = Commit(
                 hash=commit.hexsha[:8],
-                message=commit.message.strip(),
-                short_message=self._truncate_message(commit.message.strip(), 50),
+                message=subject,
+                short_message=self._truncate_message(subject, 50),
                 author=commit.author.name,
                 author_short=self._truncate_name(commit.author.name),
                 date=commit.committed_datetime,
                 date_relative=self._get_relative_date(commit.committed_datetime),
-                date_short=self._get_short_date(commit.committed_datetime),
+                date_short=self._get_full_date(commit.committed_datetime),
                 parents=[parent.hexsha[:8] for parent in commit.parents],
                 branch=branch_name,
                 branch_color=branch_colors[branch_name]
             )
+            commit_obj.description = description
             commits.append(commit_obj)
 
         commits.sort(key=lambda c: c.date, reverse=True)
@@ -97,3 +103,6 @@ class GitRepository:
 
     def _get_short_date(self, date: datetime) -> str:
         return date.strftime("%d.%m")
+
+    def _get_full_date(self, date: datetime) -> str:
+        return date.strftime("%d.%m.%Y %H:%M")

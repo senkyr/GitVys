@@ -19,6 +19,7 @@ class Commit:
     x: int = 0
     y: int = 0
     table_row: int = 0
+    description: str = ""
 
 
 @dataclass
