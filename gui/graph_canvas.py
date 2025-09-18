@@ -36,7 +36,7 @@ class GraphCanvas(ttk.Frame):
         self.v_scrollbar = ttk.Scrollbar(
             self.canvas_frame,
             orient='vertical',
-            command=self.canvas.yview
+            command=self._on_v_scroll
         )
         self.v_scrollbar.grid(row=0, column=1, sticky='ns')
         self.canvas.configure(yscrollcommand=self.v_scrollbar.set)
@@ -44,7 +44,7 @@ class GraphCanvas(ttk.Frame):
         self.h_scrollbar = ttk.Scrollbar(
             self.canvas_frame,
             orient='horizontal',
-            command=self.canvas.xview
+            command=self._on_h_scroll
         )
         self.h_scrollbar.grid(row=1, column=0, sticky='ew')
         self.canvas.configure(xscrollcommand=self.h_scrollbar.set)
@@ -57,11 +57,101 @@ class GraphCanvas(ttk.Frame):
             self.canvas.drop_target_register(DND_FILES)
             self.canvas.dnd_bind('<<Drop>>', self.on_drop)
 
+    def _can_scroll_vertically(self) -> bool:
+        """Check if vertical scrolling is needed"""
+        bbox = self.canvas.bbox('all')
+        if not bbox:
+            return False
+
+        content_height = bbox[3] - bbox[1]
+        canvas_height = self.canvas.winfo_height()
+        return content_height > canvas_height
+
+    def _can_scroll_horizontally(self) -> bool:
+        """Check if horizontal scrolling is needed"""
+        bbox = self.canvas.bbox('all')
+        if not bbox:
+            return False
+
+        content_width = bbox[2] - bbox[0]
+        canvas_width = self.canvas.winfo_width()
+        return content_width > canvas_width
+
+    def _update_scrollbars_visibility(self):
+        """Show/hide scrollbars based on content size"""
+        # Wait for the canvas to be properly sized
+        if self.canvas.winfo_width() <= 1 or self.canvas.winfo_height() <= 1:
+            self.canvas.after(10, self._update_scrollbars_visibility)
+            return
+
+        if self._can_scroll_vertically():
+            self.v_scrollbar.grid(row=0, column=1, sticky='ns')
+        else:
+            self.v_scrollbar.grid_remove()
+
+        if self._can_scroll_horizontally():
+            self.h_scrollbar.grid(row=1, column=0, sticky='ew')
+        else:
+            self.h_scrollbar.grid_remove()
+
+    def _on_v_scroll(self, *args):
+        """Handle vertical scrollbar with bounds checking"""
+        if not self._can_scroll_vertically():
+            return
+
+        if args[0] == 'moveto':
+            position = float(args[1])
+            # Ensure position is within bounds [0, 1]
+            position = max(0, min(1, position))
+            self.canvas.yview_moveto(position)
+        elif args[0] == 'scroll':
+            delta = int(args[1])
+            units = args[2]
+
+            current_top, current_bottom = self.canvas.yview()
+
+            if units == 'units':
+                scroll_amount = delta * 0.05  # 5% per unit
+            else:  # pages
+                scroll_amount = delta * (current_bottom - current_top)
+
+            new_top = current_top + scroll_amount
+            new_top = max(0, min(1 - (current_bottom - current_top), new_top))
+
+            self.canvas.yview_moveto(new_top)
+
+    def _on_h_scroll(self, *args):
+        """Handle horizontal scrollbar with bounds checking"""
+        if not self._can_scroll_horizontally():
+            return
+
+        if args[0] == 'moveto':
+            position = float(args[1])
+            # Ensure position is within bounds [0, 1]
+            position = max(0, min(1, position))
+            self.canvas.xview_moveto(position)
+        elif args[0] == 'scroll':
+            delta = int(args[1])
+            units = args[2]
+
+            current_left, current_right = self.canvas.xview()
+
+            if units == 'units':
+                scroll_amount = delta * 0.05  # 5% per unit
+            else:  # pages
+                scroll_amount = delta * (current_right - current_left)
+
+            new_left = current_left + scroll_amount
+            new_left = max(0, min(1 - (current_right - current_left), new_left))
+
+            self.canvas.xview_moveto(new_left)
+
     def update_graph(self, commits: List[Commit]):
         self.commits = commits
         self.canvas.delete('all')
 
         if not commits:
+            self._update_scrollbars_visibility()
             return
 
         self.graph_drawer.draw_graph(self.canvas, commits)
@@ -69,6 +159,10 @@ class GraphCanvas(ttk.Frame):
         max_x = max(commit.x for commit in commits) + 100
         max_y = max(commit.y for commit in commits) + 100
         self.canvas.configure(scrollregion=(0, 0, max_x, max_y))
+
+        # Update scrollbars visibility after setting content
+        self.canvas.update_idletasks()
+        self._update_scrollbars_visibility()
 
     def on_drop(self, event):
         files = self.canvas.tk.splitlist(event.data)
@@ -82,4 +176,18 @@ class GraphCanvas(ttk.Frame):
         else:
             delta = -1 if event.num == 4 else 1
 
-        self.canvas.yview_scroll(int(delta), "units")
+        # Only scroll if content is larger than visible area
+        if self._can_scroll_vertically():
+            current_top, current_bottom = self.canvas.yview()
+
+            # Calculate new position
+            scroll_amount = int(delta) * 0.1  # Scroll by 10% of visible area
+            new_top = current_top + scroll_amount
+
+            # Apply bounds checking
+            if new_top < 0:
+                new_top = 0
+            elif new_top > 1 - (current_bottom - current_top):
+                new_top = 1 - (current_bottom - current_top)
+
+            self.canvas.yview_moveto(new_top)
