@@ -9,6 +9,7 @@ class GraphDrawer:
         self.line_width = 2
         self.font_size = 10
         self.column_widths = {}
+        self.tooltip = None
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
         if not commits:
@@ -48,12 +49,14 @@ class GraphDrawer:
         max_date_width = 0
 
         for commit in commits:
+            # Kombinovaná šířka message + description s mezerou
             message_width = canvas.tk.call("font", "measure", font, commit.message)
-            max_message_width = max(max_message_width, message_width)
-
             if commit.description_short:
                 desc_width = canvas.tk.call("font", "measure", font, commit.description_short)
-                max_description_width = max(max_description_width, desc_width)
+                combined_width = message_width + 20 + desc_width  # 20px mezera
+            else:
+                combined_width = message_width
+            max_message_width = max(max_message_width, combined_width)
 
             author_width = canvas.tk.call("font", "measure", font, commit.author)
             max_author_width = max(max_author_width, author_width)
@@ -66,7 +69,6 @@ class GraphDrawer:
 
         self.column_widths = {
             'message': max_message_width + 20,
-            'description': max_description_width + 20,
             'author': max_author_width + 20,
             'email': max_email_width + 20,
             'date': max_date_width + 20
@@ -86,24 +88,49 @@ class GraphDrawer:
 
             text_x = x + 20
 
-            canvas.create_text(
-                text_x, y,
-                text=commit.message,
-                anchor='w',
-                font=('Arial', self.font_size),
-                fill='black'
-            )
-            text_x += self.column_widths['message']
-
+            # Vytvořit kombinovaný text message + description
             if commit.description_short:
+                # Message v černé + description v šedé
+                # Nejdříve vykreslit celý kombinovaný text v černé
                 canvas.create_text(
                     text_x, y,
+                    text=commit.message,
+                    anchor='w',
+                    font=('Arial', self.font_size),
+                    fill='black'
+                )
+
+                # Změřit šířku message pro pozici description
+                message_width = canvas.tk.call("font", "measure", ('Arial', self.font_size), commit.message)
+                desc_x = text_x + message_width + 20  # 20px mezera pro lepší rozlišení
+
+                # Vykreslit description v šedé s tooltip
+                desc_item = canvas.create_text(
+                    desc_x, y,
                     text=commit.description_short,
                     anchor='w',
                     font=('Arial', self.font_size),
-                    fill='#666666'
+                    fill='#666666',
+                    tags=f"desc_{commit.hash}"
                 )
-            text_x += self.column_widths['description']
+
+                # Přidat event handlers pro tooltip pouze pokud má původní description více obsahu
+                if commit.description and commit.description.strip() != commit.description_short:
+                    canvas.tag_bind(f"desc_{commit.hash}", "<Enter>",
+                        lambda e, desc=commit.description: self._show_tooltip(e, desc))
+                    canvas.tag_bind(f"desc_{commit.hash}", "<Leave>",
+                        lambda e: self._hide_tooltip())
+            else:
+                # Jen message bez description
+                canvas.create_text(
+                    text_x, y,
+                    text=commit.message,
+                    anchor='w',
+                    font=('Arial', self.font_size),
+                    fill='black'
+                )
+
+            text_x += self.column_widths['message']
 
             canvas.create_text(
                 text_x, y,
@@ -130,3 +157,42 @@ class GraphDrawer:
                 font=('Arial', self.font_size),
                 fill='#666666'
             )
+
+    def _show_tooltip(self, event, description_text: str):
+        """Zobrazí tooltip s kompletním description textem."""
+        if not description_text or not description_text.strip():
+            return
+
+        self._hide_tooltip()
+
+        # Vytvořit tooltip okno
+        self.tooltip = tk.Toplevel()
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_attributes("-topmost", True)
+
+        # Nastavit pozici tooltip okna
+        x = event.x_root + 10
+        y = event.y_root + 10
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+
+        # Vytvořit label s textem
+        label = tk.Label(
+            self.tooltip,
+            text=description_text,
+            background="#ffffe0",
+            foreground="black",
+            font=('Arial', 9),
+            wraplength=400,
+            justify="left",
+            relief="solid",
+            borderwidth=1,
+            padx=5,
+            pady=3
+        )
+        label.pack()
+
+    def _hide_tooltip(self):
+        """Skryje tooltip okno."""
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None

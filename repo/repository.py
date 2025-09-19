@@ -116,17 +116,37 @@ class GitRepository:
         return name[:12] + '...'
 
     def _truncate_description(self, description: str, max_length: int = 80) -> str:
-        """Zkrátí description na první řádek s maximální délkou."""
+        """Zkrátí description na první řádek s maximální délkou a přidá vynechávku."""
         if not description:
             return ""
 
         # Vzít jen první řádek
         first_line = description.split('\n')[0].strip()
+        has_more_lines = '\n' in description
 
-        # Zkrátit na max délku
-        if len(first_line) <= max_length:
-            return first_line
-        return first_line[:max_length-3] + '...'
+        # Určit, jestli potřebujeme vynechávku
+        needs_ellipsis = False
+
+        if has_more_lines:
+            # Pokud má více řádků, vždycky potřebujeme vynechávku
+            needs_ellipsis = True
+        elif len(first_line) > max_length:
+            # Pokud je první řádek moc dlouhý
+            needs_ellipsis = True
+
+        # Zkrátit text pokud je potřeba
+        if len(first_line) > max_length:
+            first_line = first_line[:max_length-3]
+
+        # Přidat vynechávku
+        if needs_ellipsis:
+            # Pokud končí dvojtečkou, nahradit ji vynechávkou
+            if first_line.endswith(':'):
+                first_line = first_line[:-1] + '...'
+            else:
+                first_line = first_line + '...'
+
+        return first_line
 
     def _get_relative_date(self, date: datetime) -> str:
         now = datetime.now(timezone.utc)
