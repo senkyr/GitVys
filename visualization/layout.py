@@ -35,13 +35,74 @@ class GraphLayout:
         return all_commits
 
     def _assign_lanes(self, commits: List[Commit]):
-        lane_counter = 0
+        # Analyzovat parent-child vztahy pro inteligentní umístění větví
+        branch_relationships = self._analyze_branch_relationships(commits)
+
+        # Přiřadit lanes tak, aby odbočky vedly vždy doprava
+        self._assign_lanes_intelligently(branch_relationships)
+
+    def _analyze_branch_relationships(self, commits: List[Commit]) -> Dict[str, Dict]:
+        """Analyzuje vztahy mezi větvemi pro optimální layout."""
+        branch_info = {}
+        commit_to_branch = {commit.hash: commit.branch for commit in commits}
 
         for commit in commits:
-            if commit.branch not in self.branch_lanes:
-                self.branch_lanes[commit.branch] = lane_counter
-                self.used_lanes.add(lane_counter)
-                lane_counter += 1
+            branch = commit.branch
+            if branch not in branch_info:
+                branch_info[branch] = {
+                    'first_commit': commit,
+                    'parent_branches': set(),
+                    'child_branches': set(),
+                    'creation_time': commit.date
+                }
+
+            # Najít parent větve (větve, odkud tato větev odbočuje)
+            for parent_hash in commit.parents:
+                parent_branch = commit_to_branch.get(parent_hash)
+                if parent_branch and parent_branch != branch:
+                    branch_info[branch]['parent_branches'].add(parent_branch)
+                    if parent_branch in branch_info:
+                        branch_info[parent_branch]['child_branches'].add(branch)
+
+        return branch_info
+
+    def _assign_lanes_intelligently(self, branch_info: Dict[str, Dict]):
+        """Přiřadí lanes tak, aby odbočky vedly vždy doprava."""
+        # Seřadit větve podle času vytvoření
+        branches_by_time = sorted(branch_info.items(),
+                                key=lambda x: x[1]['creation_time'], reverse=True)
+
+        # Začít s main/master větví na pozici 0
+        main_branches = ['main', 'master']
+        main_branch = None
+        for branch_name, _ in branches_by_time:
+            if branch_name.lower() in main_branches:
+                main_branch = branch_name
+                break
+
+        if main_branch:
+            self.branch_lanes[main_branch] = 0
+            self.used_lanes.add(0)
+
+        # Přiřadit lanes postupně, zajistit že child větve jsou vždy vpravo od parent větví
+        for branch_name, info in branches_by_time:
+            if branch_name in self.branch_lanes:
+                continue
+
+            # Najít nejvhodnější pozici pro tuto větev
+            min_lane = 0
+
+            # Pokud má parent větve, musí být vpravo od všech z nich
+            for parent_branch in info['parent_branches']:
+                if parent_branch in self.branch_lanes:
+                    min_lane = max(min_lane, self.branch_lanes[parent_branch] + 1)
+
+            # Najít první volnou pozici od min_lane
+            while min_lane in self.used_lanes:
+                min_lane += 1
+
+            self.branch_lanes[branch_name] = min_lane
+            self.used_lanes.add(min_lane)
 
     def get_branch_lane(self, branch_name: str) -> int:
         return self.branch_lanes.get(branch_name, 0)

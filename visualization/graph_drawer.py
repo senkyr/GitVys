@@ -46,40 +46,31 @@ class GraphDrawer:
 
         for commit in commits:
             if commit.parents:
-                start_pos = commit_positions.get(commit.hash)
-                if start_pos:
+                child_pos = commit_positions.get(commit.hash)
+                if child_pos:
                     for parent_hash in commit.parents:
-                        end_pos = commit_positions.get(parent_hash)
-                        if end_pos:
-                            self._draw_line(canvas, start_pos, end_pos, commit.branch_color)
+                        parent_pos = commit_positions.get(parent_hash)
+                        if parent_pos:
+                            # Start from parent, draw to child
+                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color)
 
     def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str):
         start_x, start_y = start
         end_x, end_y = end
 
-        # Pokud jsou commity v různých sloupcích (větvení), kreslíme L-tvar
+        # Pokud jsou commity v různých sloupcích (větvení), kreslíme pravotočivý L-tvar
         if start_x != end_x:
-            # L-tvarová linka: vodorovně pak svisle
-            # Nejdříve vodorovná část k středu mezi sloupci
-            mid_x = (start_x + end_x) // 2
-
-            # Vodorovná čára od start commitu k mid_x
+            # Jednoduchý L-tvar: vodorovně doprava → svisle nahoru
+            # Vodorovná čára doprava k X pozici cíle
             canvas.create_line(
-                start_x, start_y, mid_x, start_y,
+                start_x, start_y, end_x, start_y,
                 fill=color,
                 width=self.line_width
             )
 
-            # Svislá čára z mid_x dolů k end_y
+            # Svislá čára nahoru k cíli
             canvas.create_line(
-                mid_x, start_y, mid_x, end_y,
-                fill=color,
-                width=self.line_width
-            )
-
-            # Vodorovná čára z mid_x k end commitu
-            canvas.create_line(
-                mid_x, end_y, end_x, end_y,
+                end_x, start_y, end_x, end_y,
                 fill=color,
                 width=self.line_width
             )
