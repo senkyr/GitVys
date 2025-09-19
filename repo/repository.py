@@ -25,12 +25,15 @@ class GitRepository:
         if not self.repo:
             return []
 
+        # Předpočítání mapy commit -> větev pro optimalizaci
+        commit_to_branch = self._build_commit_branch_map()
+
         commits = []
         used_colors = set()
         branch_colors = {}
 
         for commit in self.repo.iter_commits(all=True):
-            branch_name = self._get_commit_branch(commit)
+            branch_name = commit_to_branch.get(commit.hexsha, 'unknown')
 
             if branch_name not in branch_colors:
                 branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
@@ -61,18 +64,42 @@ class GitRepository:
         self.commits = commits
         return commits
 
-    def _get_commit_branch(self, commit) -> str:
+    def _build_commit_branch_map(self) -> Dict[str, str]:
+        """Vytvořuje mapu commit_hash -> branch_name pro rychlé vyhledávání."""
+        commit_to_branch = {}
+
         try:
-            branches = [ref.name.split('/')[-1] for ref in self.repo.refs if commit in self.repo.iter_commits(ref)]
-            if 'main' in branches:
-                return 'main'
-            elif 'master' in branches:
-                return 'master'
-            elif branches:
-                return branches[0]
-        except:
+            # Nejdříve zpracujeme hlavní větve s prioritou
+            main_branches = ['main', 'master']
+            other_branches = []
+
+            for ref in self.repo.refs:
+                if ref.name.startswith('refs/heads/'):
+                    branch_name = ref.name.split('/')[-1]
+                    if branch_name in main_branches:
+                        # Okamžitě zpracujeme hlavní větve
+                        try:
+                            for commit in self.repo.iter_commits(ref):
+                                commit_to_branch[commit.hexsha] = branch_name
+                        except:
+                            continue
+                    else:
+                        other_branches.append((ref, branch_name))
+
+            # Poté zpracujeme ostatní větve, ale pouze commity co ještě nemají větev
+            for ref, branch_name in other_branches:
+                try:
+                    for commit in self.repo.iter_commits(ref):
+                        commit_hash = commit.hexsha
+                        if commit_hash not in commit_to_branch:
+                            commit_to_branch[commit_hash] = branch_name
+                except:
+                    continue
+
+        except Exception:
             pass
-        return 'unknown'
+
+        return commit_to_branch
 
     def _truncate_message(self, message: str, max_length: int) -> str:
         if len(message) <= max_length:
