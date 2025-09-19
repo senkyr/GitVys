@@ -109,20 +109,32 @@ class MainWindow:
 
         self.header_frame = ttk.Frame(self.main_frame)
         # Header frame se nezobrazuje v úvodním stavu
-        self.header_frame.columnconfigure(1, weight=1)
+        self.header_frame.columnconfigure(0, weight=1)
 
-        self.back_button = ttk.Button(
-            self.header_frame,
-            text="← Zpět",
-            command=self.show_repository_selection
+        # Frame pro název repozitáře a statistiky na stejném řádku
+        self.info_frame = ttk.Frame(self.header_frame)
+        self.info_frame.grid(row=0, column=0, sticky='w')
+
+        self.repo_name_label = ttk.Label(
+            self.info_frame,
+            text="",
+            font=('Arial', 12, 'bold')
         )
+        self.repo_name_label.grid(row=0, column=0, sticky='w')
 
-        self.title_label = ttk.Label(
-            self.header_frame,
+        self.stats_label = ttk.Label(
+            self.info_frame,
             text="",
             font=('Arial', 10)
         )
-        self.title_label.grid(row=0, column=1, sticky='w')
+        self.stats_label.grid(row=0, column=1, sticky='w', padx=(10, 0))
+
+        self.close_button = ttk.Button(
+            self.header_frame,
+            text="Zavřít repo",
+            command=self.show_repository_selection
+        )
+        self.close_button.grid(row=0, column=1, sticky='e', padx=(10, 0))
 
         self.content_frame = ttk.Frame(self.main_frame)
         self.content_frame.grid(row=1, column=0, sticky='nsew')
@@ -190,15 +202,15 @@ class MainWindow:
         self.graph_canvas.grid(row=0, column=0, sticky='nsew')
         self.graph_canvas.update_graph(commits)
 
-        # Nastavit název repozitáře do titulku okna
+        # Zobrazit název repozitáře s statistikami na jednom řádku a zachovat původní titul okna
         if self.git_repo and self.git_repo.repo_path:
             import os
             repo_name = os.path.basename(self.git_repo.repo_path)
-            self.root.title(f"{repo_name} repo")
+            # Titul okna zůstává jako název aplikace
+            self.root.title(self.default_title)
 
         # Zobrazit header frame a nastavit padding
         self.header_frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
-        self.back_button.grid(row=0, column=0, sticky='w', padx=(0, 10))
         stats = self.git_repo.get_repository_stats()
 
         # Czech pluralization
@@ -216,7 +228,16 @@ class MainWindow:
         tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
 
         stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
-        self.title_label.config(text=stats_text)
+
+        # Nastavit název repozitáře (tučně) a statistiky (normálně) vedle sebe
+        if self.git_repo and self.git_repo.repo_path:
+            import os
+            repo_name = os.path.basename(self.git_repo.repo_path)
+            self.repo_name_label.config(text=repo_name)
+            self.stats_label.config(text=stats_text)
+        else:
+            self.repo_name_label.config(text="")
+            self.stats_label.config(text=stats_text)
 
         self.root.after(100, lambda: self._resize_window_for_content(commits))
 
@@ -230,8 +251,8 @@ class MainWindow:
 
         # Skrýt celý header frame
         self.header_frame.grid_remove()
-        self.back_button.grid_remove()
-        self.title_label.config(text="")
+        self.repo_name_label.config(text="")
+        self.stats_label.config(text="")
 
         # Obnovit defaultní titul a velikost okna
         self.root.title(self.default_title)
