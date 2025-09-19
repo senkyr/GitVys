@@ -10,11 +10,14 @@ class GraphDrawer:
         self.font_size = 10
         self.column_widths = {}
         self.tooltip = None
+        self.branch_lanes = {}  # Uložit lanes pro výpočet pozice tabulky
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
         if not commits:
             return
 
+        # Uložit informace o lanes pro výpočet pozice tabulky
+        self._update_branch_lanes(commits)
         self._calculate_column_widths(canvas, commits)
         self._draw_connections(canvas, commits)
         self._draw_commits(canvas, commits)
@@ -32,12 +35,42 @@ class GraphDrawer:
                             self._draw_line(canvas, start_pos, end_pos, commit.branch_color)
 
     def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str):
-        canvas.create_line(
-            start[0], start[1], end[0], end[1],
-            fill=color,
-            width=self.line_width,
-            smooth=True
-        )
+        start_x, start_y = start
+        end_x, end_y = end
+
+        # Pokud jsou commity v různých sloupcích (větvení), kreslíme L-tvar
+        if start_x != end_x:
+            # L-tvarová linka: vodorovně pak svisle
+            # Nejdříve vodorovná část k středu mezi sloupci
+            mid_x = (start_x + end_x) // 2
+
+            # Vodorovná čára od start commitu k mid_x
+            canvas.create_line(
+                start_x, start_y, mid_x, start_y,
+                fill=color,
+                width=self.line_width
+            )
+
+            # Svislá čára z mid_x dolů k end_y
+            canvas.create_line(
+                mid_x, start_y, mid_x, end_y,
+                fill=color,
+                width=self.line_width
+            )
+
+            # Vodorovná čára z mid_x k end commitu
+            canvas.create_line(
+                mid_x, end_y, end_x, end_y,
+                fill=color,
+                width=self.line_width
+            )
+        else:
+            # Přímá svislá linka pro commity ve stejném sloupci
+            canvas.create_line(
+                start_x, start_y, end_x, end_y,
+                fill=color,
+                width=self.line_width
+            )
 
     def _calculate_column_widths(self, canvas: tk.Canvas, commits: List[Commit]):
         font = ('Arial', self.font_size)
@@ -75,6 +108,17 @@ class GraphDrawer:
         }
 
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
+        # Sledovat, které větve už mají vlaječku
+        drawn_branch_flags = set()
+
+        # Najít posledního commitu každé větve (podle času)
+        last_commits_by_branch = {}
+        for commit in commits:
+            if commit.branch not in last_commits_by_branch:
+                last_commits_by_branch[commit.branch] = commit
+            elif commit.date > last_commits_by_branch[commit.branch].date:
+                last_commits_by_branch[commit.branch] = commit
+
         for commit in commits:
             x, y = commit.x, commit.y
 
@@ -86,12 +130,24 @@ class GraphDrawer:
                 width=1
             )
 
-            text_x = x + 20
+            # Zobrazit vlaječku s názvem větve pro první commit každé větve
+            if commit.branch not in drawn_branch_flags:
+                self._draw_branch_flag(canvas, x, y, commit.branch, commit.branch_color)
+                drawn_branch_flags.add(commit.branch)
+
+            # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce
+            if last_commits_by_branch[commit.branch] == commit:
+                self._draw_flag_connection(canvas, x, y, commit.branch_color)
+
+            # Pevná pozice pro začátek "tabulky" - za všemi větvemi
+            table_start_x = self._get_table_start_position()
+
+            # Pevné pozice pro tabulkové sloupce
+            text_x = table_start_x
 
             # Vytvořit kombinovaný text message + description
             if commit.description_short:
                 # Message v černé + description v šedé
-                # Nejdříve vykreslit celý kombinovaný text v černé
                 canvas.create_text(
                     text_x, y,
                     text=commit.message,
@@ -196,3 +252,59 @@ class GraphDrawer:
         if self.tooltip:
             self.tooltip.destroy()
             self.tooltip = None
+
+    def _draw_branch_flag(self, canvas: tk.Canvas, x: int, y: int, branch_name: str, branch_color: str):
+        """Vykreslí vlaječku s názvem větve v pevném levém sloupci."""
+        # Velikost vlaječky
+        flag_width = 60
+        flag_height = 20
+
+        # Pozice vlaječky (pevný levý sloupec)
+        flag_x = 30  # Pevná pozice vlevo
+        flag_y = y
+
+        # Vytvořit obdélník vlaječky
+        canvas.create_rectangle(
+            flag_x - flag_width // 2, flag_y - flag_height // 2,
+            flag_x + flag_width // 2, flag_y + flag_height // 2,
+            fill=branch_color,
+            outline='black',
+            width=1
+        )
+
+        # Přidat text názvu větve
+        canvas.create_text(
+            flag_x, flag_y,
+            text=branch_name,
+            anchor='center',
+            font=('Arial', 8, 'bold'),
+            fill='white'
+        )
+
+    def _update_branch_lanes(self, commits: List[Commit]):
+        """Aktualizuje informace o lanes pro výpočet pozice tabulky."""
+        self.branch_lanes = {}
+        for commit in commits:
+            branch_lane = (commit.x - 100) // 20  # Zpětný výpočet lane z X pozice (20px mezery)
+            self.branch_lanes[commit.branch] = branch_lane
+
+    def _get_table_start_position(self) -> int:
+        """Vrátí X pozici kde začíná tabulka (za všemi větvemi)."""
+        if not self.branch_lanes:
+            return 200  # Fallback pozice
+
+        max_lane = max(self.branch_lanes.values())
+        return (max_lane + 1) * 20 + 120  # Za posledním sloupcem větví (20px mezery)
+
+    def _draw_flag_connection(self, canvas: tk.Canvas, commit_x: int, commit_y: int, branch_color: str):
+        """Vykreslí horizontální spojnici od commitu k vlaječce."""
+        # Pozice vlaječky
+        flag_x = 30
+
+        # Horizontální linka od commitu k vlaječce
+        canvas.create_line(
+            flag_x + 30, commit_y,  # Od pravého okraje vlaječky
+            commit_x - self.node_radius, commit_y,  # K levému okraji commitu
+            fill=branch_color,
+            width=self.line_width
+        )

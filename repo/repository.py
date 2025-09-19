@@ -74,23 +74,23 @@ class GitRepository:
             main_branches = ['main', 'master']
             other_branches = []
 
-            for ref in self.repo.refs:
-                if ref.name.startswith('refs/heads/'):
-                    branch_name = ref.name.split('/')[-1]
-                    if branch_name in main_branches:
-                        # Okamžitě zpracujeme hlavní větve
-                        try:
-                            for commit in self.repo.iter_commits(ref):
-                                commit_to_branch[commit.hexsha] = branch_name
-                        except:
-                            continue
-                    else:
-                        other_branches.append((ref, branch_name))
+            # Pracovat s lokálními heads (větve)
+            for head in self.repo.heads:
+                branch_name = head.name
+                if branch_name in main_branches:
+                    # Okamžitě zpracujeme hlavní větve
+                    try:
+                        for commit in self.repo.iter_commits(head):
+                            commit_to_branch[commit.hexsha] = branch_name
+                    except:
+                        continue
+                else:
+                    other_branches.append((head, branch_name))
 
             # Poté zpracujeme ostatní větve, ale pouze commity co ještě nemají větev
-            for ref, branch_name in other_branches:
+            for head, branch_name in other_branches:
                 try:
-                    for commit in self.repo.iter_commits(ref):
+                    for commit in self.repo.iter_commits(head):
                         commit_hash = commit.hexsha
                         if commit_hash not in commit_to_branch:
                             commit_to_branch[commit_hash] = branch_name

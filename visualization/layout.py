@@ -12,16 +12,27 @@ class GraphLayout:
         if not self.commits:
             return []
 
-        sorted_commits = sorted(self.commits, key=lambda c: c.date, reverse=True)
+        # Seřadit podle času globálně - toto určuje Y pozice
+        all_commits = sorted(self.commits, key=lambda c: c.date, reverse=True)
 
-        self._assign_lanes(sorted_commits)
+        # Přiřadit lanes větvím
+        self._assign_lanes(all_commits)
 
-        for i, commit in enumerate(sorted_commits):
-            commit.x = self.branch_lanes.get(commit.branch, 0) * 150 + 50
+        # Každý commit dostane Y pozici podle svého chronologického pořadí
+        # X pozici podle své větve
+        for i, commit in enumerate(all_commits):
+            branch_lane = self.branch_lanes[commit.branch]
+
+            # X pozice podle lane větve (sloupec) - začátek po vlaječkách, menší rozestupy
+            commit.x = branch_lane * 20 + 100  # 20px mezi větvemi, začátek na 100px
+
+            # Y pozice podle chronologického pořadí (řádek)
             commit.y = i * 30 + 50
+
+            # table_row pro tabulku
             commit.table_row = i
 
-        return sorted_commits
+        return all_commits
 
     def _assign_lanes(self, commits: List[Commit]):
         lane_counter = 0
