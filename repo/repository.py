@@ -31,7 +31,6 @@ class GitRepository:
         commits = []
         used_colors = set()
         branch_colors = {}
-
         for commit in self.repo.iter_commits(all=True):
             branch_name = commit_to_branch.get(commit.hexsha, 'unknown')
 
