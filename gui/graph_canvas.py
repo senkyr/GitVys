@@ -156,6 +156,9 @@ class GraphCanvas(ttk.Frame):
 
         self.graph_drawer.draw_graph(self.canvas, commits)
 
+        # Nastavit event handlery pro změnu velikosti sloupců
+        self.graph_drawer.setup_column_resize_events(self.canvas)
+
         max_x = max(commit.x for commit in commits) + 100
         max_y = max(commit.y for commit in commits) + 100
         self.canvas.configure(scrollregion=(0, 0, max_x, max_y))

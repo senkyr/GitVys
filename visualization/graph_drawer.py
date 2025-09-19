@@ -14,9 +14,19 @@ class GraphDrawer:
         self.scaling_factor = 1.0
         self.max_description_length = 50  # Základní délka
 
+        # Interaktivní změna šířky sloupců
+        self.column_separators = {}  # pozice separátorů {column_name: x_position}
+        self.dragging_separator = None  # název sloupce jehož separátor se táhne
+        self.drag_start_x = 0
+        self.separator_height = 20  # výška separátoru v pixelech
+        self.user_column_widths = {}  # uživatelem nastavené šířky
+
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
         if not commits:
             return
+
+        # Uložit commity pro případné překreslení
+        self._current_commits = commits
 
         # Detekovat DPI škálování
         self._detect_scaling_factor(canvas)
@@ -29,6 +39,7 @@ class GraphDrawer:
         self._calculate_column_widths(canvas, commits)
         self._draw_connections(canvas, commits)
         self._draw_commits(canvas, commits)
+        self._draw_column_separators(canvas)
 
     def _draw_connections(self, canvas: tk.Canvas, commits: List[Commit]):
         commit_positions = {commit.hash: (commit.x, commit.y) for commit in commits}
@@ -132,11 +143,12 @@ class GraphDrawer:
             date_width = canvas.tk.call("font", "measure", font, commit.date_short)
             max_date_width = max(max_date_width, date_width)
 
+        # Použít uživatelem nastavené šířky nebo vypočítané
         self.column_widths = {
-            'message': max_message_width + 20,
-            'author': max_author_width + 20,
-            'email': max_email_width + 20,
-            'date': max_date_width + 20
+            'message': self.user_column_widths.get('message', max_message_width + 20),
+            'author': self.user_column_widths.get('author', max_author_width + 20),
+            'email': self.user_column_widths.get('email', max_email_width + 20),
+            'date': self.user_column_widths.get('date', max_date_width + 20)
         }
 
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
@@ -188,7 +200,8 @@ class GraphDrawer:
                     text=commit.message,
                     anchor='w',
                     font=font,
-                    fill='black'
+                    fill='black',
+                    tags="commit_text"
                 )
 
                 # Změřit šířku message pro pozici description
@@ -210,7 +223,7 @@ class GraphDrawer:
                     anchor='w',
                     font=font,
                     fill='#666666',
-                    tags=f"desc_{commit.hash}"
+                    tags=("commit_text", f"desc_{commit.hash}")
                 )
 
                 # Přidat event handlers pro tooltip pouze pokud má původní description více obsahu
@@ -226,7 +239,8 @@ class GraphDrawer:
                     text=commit.message,
                     anchor='w',
                     font=font,
-                    fill='black'
+                    fill='black',
+                    tags="commit_text"
                 )
 
             text_x += self.column_widths['message']
@@ -236,7 +250,8 @@ class GraphDrawer:
                 text=commit.author,
                 anchor='w',
                 font=font,
-                fill='#333333'
+                fill='#333333',
+                tags="commit_text"
             )
             text_x += self.column_widths['author']
 
@@ -245,7 +260,8 @@ class GraphDrawer:
                 text=commit.author_email,
                 anchor='w',
                 font=font,
-                fill='#666666'
+                fill='#666666',
+                tags="commit_text"
             )
             text_x += self.column_widths['email']
 
@@ -254,7 +270,8 @@ class GraphDrawer:
                 text=commit.date_short,
                 anchor='w',
                 font=font,
-                fill='#666666'
+                fill='#666666',
+                tags="commit_text"
             )
 
     def _show_tooltip(self, event, description_text: str):
@@ -454,3 +471,140 @@ class GraphDrawer:
                 right = mid - 1
 
         return result + "..." if result else "..."
+
+    def _draw_column_separators(self, canvas: tk.Canvas):
+        """Vykreslí interaktivní separátory sloupců na horním okraji."""
+        table_start_x = self._get_table_start_position()
+
+        # Vymazat staré separátory a popisky
+        canvas.delete("column_separator")
+        canvas.delete("column_header")
+
+        # Vypočítat pozice separátorů
+        current_x = table_start_x
+        separator_y = 5  # blíž k hornímu okraji
+
+        # Názvy sloupců
+        column_names = {
+            'message': 'Commit Message',
+            'author': 'Author',
+            'email': 'Email',
+            'date': 'Date'
+        }
+
+        columns = ['message', 'author', 'email', 'date']
+
+        for i, column in enumerate(columns):
+            # Vykreslit popisek sloupce
+            header_x = current_x + self.column_widths[column] // 2
+            canvas.create_text(
+                header_x, separator_y + 5,
+                text=column_names[column],
+                anchor='center',
+                font=('Arial', 8, 'bold'),
+                fill='#666666',
+                tags="column_header"
+            )
+
+            current_x += self.column_widths[column]
+
+            # Vykreslit separátor (kromě posledního sloupce)
+            if i < len(columns) - 1:
+                separator_id = canvas.create_line(
+                    current_x, separator_y,
+                    current_x, separator_y + self.separator_height,
+                    width=3,
+                    fill='#cccccc',
+                    tags=("column_separator", f"sep_{column}"),
+                    activefill='#666666'
+                )
+
+                # Uložit pozici separátoru
+                self.column_separators[column] = current_x
+
+                # Přidar neviditelnou oblast pro lepší zachytávání myši
+                area_id = canvas.create_rectangle(
+                    current_x - 5, separator_y,
+                    current_x + 5, separator_y + self.separator_height,
+                    outline='',
+                    fill='',
+                    tags=("column_separator", f"sep_{column}_area")
+                )
+
+                # Zabindovat kliknutí přímo na separátor a oblast
+                canvas.tag_bind(f"sep_{column}", '<Button-1>',
+                               lambda e, col=column: self._start_drag(e, col))
+                canvas.tag_bind(f"sep_{column}_area", '<Button-1>',
+                               lambda e, col=column: self._start_drag(e, col))
+
+    def setup_column_resize_events(self, canvas: tk.Canvas):
+        """Nastaví event handlery pro změnu velikosti sloupců."""
+        # Místo bindování na celý canvas, zabindujeme přímo na separátory
+        # To se udělá v _draw_column_separators()
+        canvas.bind('<Motion>', self._on_mouse_motion)
+
+        # Pro drag operation potřebujeme globální handlery
+        canvas.bind('<B1-Motion>', self._on_separator_drag)
+        canvas.bind('<ButtonRelease-1>', self._on_separator_release)
+
+    def _start_drag(self, event, column):
+        """Zahájí tažení separátoru pro daný sloupec."""
+        self.dragging_separator = column
+        self.drag_start_x = event.x
+        event.widget.config(cursor='sb_h_double_arrow')
+
+    def _on_separator_drag(self, event):
+        """Táhne separátor a upravuje šířku sloupce."""
+        if not self.dragging_separator:
+            return
+
+        canvas = event.widget
+        delta_x = event.x - self.drag_start_x
+
+        # Aktualizovat šířku sloupce
+        current_width = self.column_widths[self.dragging_separator]
+        new_width = max(50, current_width + delta_x)  # minimální šířka 50px
+
+        self.user_column_widths[self.dragging_separator] = new_width
+        self.column_widths[self.dragging_separator] = new_width
+
+        self.drag_start_x = event.x
+
+        # Překreslit graf s novými šířkami
+        self._redraw_with_new_widths(canvas)
+
+    def _on_separator_release(self, event):
+        """Ukončí tažení separátoru."""
+        self.dragging_separator = None
+        event.widget.config(cursor='')
+
+    def _on_mouse_motion(self, event):
+        """Změní kurzor nad separátory."""
+        if self.dragging_separator:
+            return
+
+        canvas = event.widget
+        item = canvas.find_closest(event.x, event.y)[0]
+        tags = canvas.gettags(item)
+
+        is_over_separator = any(tag.startswith('sep_') for tag in tags)
+
+        if is_over_separator:
+            canvas.config(cursor='sb_h_double_arrow')
+        else:
+            canvas.config(cursor='')
+
+    def _redraw_with_new_widths(self, canvas: tk.Canvas):
+        """Překreslí graf s novými šířkami sloupců."""
+        # Smazat texty commitů, separátory a popisky
+        canvas.delete("commit_text")
+        canvas.delete("column_separator")
+        canvas.delete("column_header")
+
+        # Najít commity z canvasu (pokud jsou tam uložené jako data)
+        # Alternativně si je můžeme uložit jako atribut třídy
+        if hasattr(self, '_current_commits') and self._current_commits:
+            self._draw_commits(canvas, self._current_commits)
+
+        # Překreslit separátory
+        self._draw_column_separators(canvas)
