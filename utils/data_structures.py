@@ -10,6 +10,7 @@ class Commit:
     short_message: str
     author: str
     author_short: str
+    author_email: str
     date: datetime
     date_relative: str
     date_short: str

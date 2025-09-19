@@ -46,6 +46,7 @@ class GitRepository:
                 short_message=self._truncate_message(subject, 50),
                 author=commit.author.name,
                 author_short=self._truncate_name(commit.author.name),
+                author_email=commit.author.email,
                 date=commit.committed_datetime,
                 date_relative=self._get_relative_date(commit.committed_datetime),
                 date_short=self._get_full_date(commit.committed_datetime),
@@ -105,7 +106,7 @@ class GitRepository:
         return date.strftime("%d.%m")
 
     def _get_full_date(self, date: datetime) -> str:
-        return date.strftime("%d.%m.%Y %H:%M")
+        return date.strftime("%d.%m.%Y @ %H:%M")
 
     def get_repository_stats(self) -> Dict[str, int]:
         if not self.repo or not self.commits:

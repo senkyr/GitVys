@@ -44,6 +44,7 @@ class GraphDrawer:
         max_message_width = 0
         max_description_width = 0
         max_author_width = 0
+        max_email_width = 0
         max_date_width = 0
 
         for commit in commits:
@@ -57,6 +58,9 @@ class GraphDrawer:
             author_width = canvas.tk.call("font", "measure", font, commit.author)
             max_author_width = max(max_author_width, author_width)
 
+            email_width = canvas.tk.call("font", "measure", font, commit.author_email)
+            max_email_width = max(max_email_width, email_width)
+
             date_width = canvas.tk.call("font", "measure", font, commit.date_short)
             max_date_width = max(max_date_width, date_width)
 
@@ -64,6 +68,7 @@ class GraphDrawer:
             'message': max_message_width + 20,
             'description': max_description_width + 20,
             'author': max_author_width + 20,
+            'email': max_email_width + 20,
             'date': max_date_width + 20
         }
 
@@ -108,6 +113,15 @@ class GraphDrawer:
                 fill='#333333'
             )
             text_x += self.column_widths['author']
+
+            canvas.create_text(
+                text_x, y,
+                text=commit.author_email,
+                anchor='w',
+                font=('Arial', self.font_size),
+                fill='#666666'
+            )
+            text_x += self.column_widths['email']
 
             canvas.create_text(
                 text_x, y,
