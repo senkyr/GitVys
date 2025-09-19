@@ -29,7 +29,7 @@ git-visualizer/
 │   ├── main_window.py   # Hlavní okno
 │   ├── graph_canvas.py  # Graf komponenta
 │   └── drag_drop.py     # Drag & drop funkcionalita
-├── git/                 # Git operace
+├── repo/                # Git operace
 │   └── repository.py    # Práce s Git repozitářem
 ├── visualization/       # Vizualizace
 │   ├── graph_drawer.py  # Kreslení grafu

@@ -11,10 +11,18 @@ class GraphDrawer:
         self.column_widths = {}
         self.tooltip = None
         self.branch_lanes = {}  # Uložit lanes pro výpočet pozice tabulky
+        self.scaling_factor = 1.0
+        self.max_description_length = 50  # Základní délka
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
         if not commits:
             return
+
+        # Detekovat DPI škálování
+        self._detect_scaling_factor(canvas)
+
+        # Upravit description_short podle škálování
+        self._adjust_descriptions_for_scaling(commits)
 
         # Uložit informace o lanes pro výpočet pozice tabulky
         self._update_branch_lanes(commits)
@@ -73,6 +81,7 @@ class GraphDrawer:
             )
 
     def _calculate_column_widths(self, canvas: tk.Canvas, commits: List[Commit]):
+        # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
         font = ('Arial', self.font_size)
 
         max_message_width = 0
@@ -80,6 +89,24 @@ class GraphDrawer:
         max_author_width = 0
         max_email_width = 0
         max_date_width = 0
+
+        # Definovat maximální šířky podle DPI škálování
+        if self.scaling_factor <= 1.0:
+            max_allowed_message_width = 800  # Zvětšeno pro lepší využití prostoru
+            max_allowed_author_width = 250
+            max_allowed_email_width = 300
+        elif self.scaling_factor <= 1.25:
+            max_allowed_message_width = 700  # 125% škálování
+            max_allowed_author_width = 220
+            max_allowed_email_width = 280
+        elif self.scaling_factor <= 1.5:
+            max_allowed_message_width = 600  # 150% škálování
+            max_allowed_author_width = 200
+            max_allowed_email_width = 250
+        else:
+            max_allowed_message_width = 500  # 200%+ škálování
+            max_allowed_author_width = 180
+            max_allowed_email_width = 220
 
         for commit in commits:
             # Kombinovaná šířka message + description s mezerou
@@ -89,12 +116,17 @@ class GraphDrawer:
                 combined_width = message_width + 20 + desc_width  # 20px mezera
             else:
                 combined_width = message_width
+
+            # Omezit šířku podle škálovacího faktoru
+            combined_width = min(combined_width, max_allowed_message_width)
             max_message_width = max(max_message_width, combined_width)
 
             author_width = canvas.tk.call("font", "measure", font, commit.author)
+            author_width = min(author_width, max_allowed_author_width)
             max_author_width = max(max_author_width, author_width)
 
             email_width = canvas.tk.call("font", "measure", font, commit.author_email)
+            email_width = min(email_width, max_allowed_email_width)
             max_email_width = max(max_email_width, email_width)
 
             date_width = canvas.tk.call("font", "measure", font, commit.date_short)
@@ -108,6 +140,9 @@ class GraphDrawer:
         }
 
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
+        # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
+        font = ('Arial', self.font_size)
+
         # Sledovat, které větve už mají vlaječku
         drawn_branch_flags = set()
 
@@ -152,20 +187,28 @@ class GraphDrawer:
                     text_x, y,
                     text=commit.message,
                     anchor='w',
-                    font=('Arial', self.font_size),
+                    font=font,
                     fill='black'
                 )
 
                 # Změřit šířku message pro pozici description
-                message_width = canvas.tk.call("font", "measure", ('Arial', self.font_size), commit.message)
+                message_width = canvas.tk.call("font", "measure", font, commit.message)
                 desc_x = text_x + message_width + 20  # 20px mezera pro lepší rozlišení
+
+                # Vypočítat dostupný prostor pro description
+                available_space = self.column_widths['message'] - message_width - 40  # 40px mezery (20 + 20)
+
+                # Zkrátit description aby se vešel do dostupného prostoru
+                description_to_display = self._truncate_text_to_width(
+                    canvas, font, commit.description_short, available_space
+                )
 
                 # Vykreslit description v šedé s tooltip
                 desc_item = canvas.create_text(
                     desc_x, y,
-                    text=commit.description_short,
+                    text=description_to_display,
                     anchor='w',
-                    font=('Arial', self.font_size),
+                    font=font,
                     fill='#666666',
                     tags=f"desc_{commit.hash}"
                 )
@@ -182,7 +225,7 @@ class GraphDrawer:
                     text_x, y,
                     text=commit.message,
                     anchor='w',
-                    font=('Arial', self.font_size),
+                    font=font,
                     fill='black'
                 )
 
@@ -192,7 +235,7 @@ class GraphDrawer:
                 text_x, y,
                 text=commit.author,
                 anchor='w',
-                font=('Arial', self.font_size),
+                font=font,
                 fill='#333333'
             )
             text_x += self.column_widths['author']
@@ -201,7 +244,7 @@ class GraphDrawer:
                 text_x, y,
                 text=commit.author_email,
                 anchor='w',
-                font=('Arial', self.font_size),
+                font=font,
                 fill='#666666'
             )
             text_x += self.column_widths['email']
@@ -210,7 +253,7 @@ class GraphDrawer:
                 text_x, y,
                 text=commit.date_short,
                 anchor='w',
-                font=('Arial', self.font_size),
+                font=font,
                 fill='#666666'
             )
 
@@ -308,3 +351,106 @@ class GraphDrawer:
             fill=branch_color,
             width=self.line_width
         )
+
+    def _detect_scaling_factor(self, canvas: tk.Canvas):
+        """Detekuje DPI škálovací faktor Windows."""
+        try:
+            dpi = canvas.winfo_fpixels('1i')
+            self.scaling_factor = dpi / 96  # 96 je standardní DPI
+        except:
+            self.scaling_factor = 1.0  # Fallback
+
+    def _adjust_descriptions_for_scaling(self, commits: List[Commit]):
+        """Upraví délku description_short podle DPI škálování."""
+        # Vypočítat cílovou délku podle škálování
+        if self.scaling_factor <= 1.0:
+            target_length = 120  # Zvětšeno pro lepší využití prostoru
+        elif self.scaling_factor <= 1.25:
+            target_length = 100  # 125% škálování
+        elif self.scaling_factor <= 1.5:
+            target_length = 80  # 150% škálování
+        else:
+            target_length = 60  # 200%+ škálování
+
+        self.max_description_length = target_length
+
+        # Upravit description_short pro všechny commity podle správné logiky
+        for commit in commits:
+            commit.description_short = self._truncate_description_for_dpi(commit.description, target_length)
+
+    def _truncate_description_for_dpi(self, description: str, max_length: int) -> str:
+        """Zkrátí description podle specifikace s ohledem na DPI škálování."""
+        if not description:
+            return ""
+
+        # Vzít jen první řádek
+        first_line = description.split('\n')[0].strip()
+        has_more_lines = '\n' in description
+
+        # Určit, jestli potřebujeme vynechávku
+        needs_ellipsis = False
+
+        if has_more_lines:
+            # Pokud má více řádků, vždycky potřebujeme vynechávku
+            needs_ellipsis = True
+        elif len(first_line) > max_length:
+            # Pokud je první řádek moc dlouhý
+            needs_ellipsis = True
+        elif first_line.endswith(':'):
+            # Pokud řádek končí dvojtečkou, také potřebujeme vynechávku
+            needs_ellipsis = True
+
+        # Zkrátit text pokud je potřeba a přidat vynechávku
+        if needs_ellipsis:
+            if first_line.endswith(':'):
+                # Pokud končí dvojtečkou, nahradit ji třemi tečkami
+                # ale ověřit, že se vejde do limitu
+                potential_result = first_line[:-1] + '...'
+                if len(potential_result) > max_length:
+                    # Zkrátit ještě více, aby se vešla vynechávka
+                    first_line = first_line[:max_length-3] + '...'
+                else:
+                    first_line = potential_result
+            elif len(first_line) > max_length:
+                # Normální zkrácení
+                first_line = first_line[:max_length-3] + '...'
+            else:
+                # Text se vejde, ale má více řádků
+                first_line = first_line + '...'
+
+        return first_line
+
+    def _truncate_text_to_width(self, canvas: tk.Canvas, font, text: str, max_width: int) -> str:
+        """Zkrátí text tak, aby se vešel do zadané šířky v pixelech."""
+        if not text or max_width <= 0:
+            return ""
+
+        # Změřit šířku celého textu
+        text_width = canvas.tk.call("font", "measure", font, text)
+
+        if text_width <= max_width:
+            return text
+
+        # Text je moc široký, zkrátit ho
+        ellipsis_width = canvas.tk.call("font", "measure", font, "...")
+        available_width = max_width - ellipsis_width
+
+        if available_width <= 0:
+            return "..."
+
+        # Binární vyhledávání pro nalezení správné délky
+        left, right = 0, len(text)
+        result = ""
+
+        while left <= right:
+            mid = (left + right) // 2
+            test_text = text[:mid]
+            test_width = canvas.tk.call("font", "measure", font, test_text)
+
+            if test_width <= available_width:
+                result = test_text
+                left = mid + 1
+            else:
+                right = mid - 1
+
+        return result + "..." if result else "..."
