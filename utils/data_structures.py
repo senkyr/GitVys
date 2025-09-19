@@ -21,6 +21,7 @@ class Commit:
     y: int = 0
     table_row: int = 0
     description: str = ""
+    description_short: str = ""
 
 
 @dataclass

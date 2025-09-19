@@ -58,6 +58,7 @@ class GitRepository:
                 branch_color=branch_colors[branch_name]
             )
             commit_obj.description = description
+            commit_obj.description_short = self._truncate_description(description)
             commits.append(commit_obj)
 
         commits.sort(key=lambda c: c.date, reverse=True)
@@ -113,6 +114,19 @@ class GitRepository:
         if len(parts) > 1:
             return f"{parts[0][0]}. {parts[-1]}"
         return name[:12] + '...'
+
+    def _truncate_description(self, description: str, max_length: int = 80) -> str:
+        """Zkrátí description na první řádek s maximální délkou."""
+        if not description:
+            return ""
+
+        # Vzít jen první řádek
+        first_line = description.split('\n')[0].strip()
+
+        # Zkrátit na max délku
+        if len(first_line) <= max_length:
+            return first_line
+        return first_line[:max_length-3] + '...'
 
     def _get_relative_date(self, date: datetime) -> str:
         now = datetime.now(timezone.utc)

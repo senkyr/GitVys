@@ -51,8 +51,8 @@ class GraphDrawer:
             message_width = canvas.tk.call("font", "measure", font, commit.message)
             max_message_width = max(max_message_width, message_width)
 
-            if commit.description:
-                desc_width = canvas.tk.call("font", "measure", font, commit.description)
+            if commit.description_short:
+                desc_width = canvas.tk.call("font", "measure", font, commit.description_short)
                 max_description_width = max(max_description_width, desc_width)
 
             author_width = canvas.tk.call("font", "measure", font, commit.author)
@@ -95,10 +95,10 @@ class GraphDrawer:
             )
             text_x += self.column_widths['message']
 
-            if commit.description:
+            if commit.description_short:
                 canvas.create_text(
                     text_x, y,
-                    text=commit.description,
+                    text=commit.description_short,
                     anchor='w',
                     font=('Arial', self.font_size),
                     fill='#666666'
