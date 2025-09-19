@@ -17,14 +17,17 @@ class MainWindow:
             self.root = TkinterDnD.Tk()
         else:
             self.root = tk.Tk()
-        self.root.title("Git Visualizer")
 
-        initial_width = 600
-        initial_height = 400
-        self.root.geometry(f"{initial_width}x{initial_height}")
+        # Defaultní hodnoty pro obnovení
+        self.default_title = "Git Visualizer"
+        self.default_width = 600
+        self.default_height = 400
+
+        self.root.title(self.default_title)
+        self.root.geometry(f"{self.default_width}x{self.default_height}")
         self.root.minsize(400, 300)
 
-        self._center_window(initial_width, initial_height)
+        self._center_window(self.default_width, self.default_height)
 
         self.git_repo = None
         self.setup_ui()
@@ -33,13 +36,17 @@ class MainWindow:
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
 
+        # Na Windows je potřeba počítat s taskbarem (obvykle 40-50 pixelů)
+        taskbar_height = 50
+        usable_height = screen_height - taskbar_height
+
         x = max(0, (screen_width - width) // 2)
-        y = max(0, (screen_height - height) // 2)
+        y = max(0, (usable_height - height) // 2)
 
         if x + width > screen_width:
             x = screen_width - width
-        if y + height > screen_height:
-            y = screen_height - height
+        if y + height > usable_height:
+            y = usable_height - height
 
         x = max(0, x)
         y = max(0, y)
@@ -66,10 +73,13 @@ class MainWindow:
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
-        margin = 100
 
-        window_width = min(content_width, screen_width - margin)
-        window_height = min(content_height, screen_height - margin)
+        # Větší margin pro Windows (taskbar + bezpečnostní mezera)
+        margin_horizontal = 100
+        margin_vertical = 150  # 50 taskbar + 100 bezpečnostní mezera
+
+        window_width = min(content_width, screen_width - margin_horizontal)
+        window_height = min(content_height, screen_height - margin_vertical)
 
         window_width = max(window_width, 800)
         window_height = max(window_height, 600)
@@ -180,6 +190,12 @@ class MainWindow:
         self.graph_canvas.grid(row=0, column=0, sticky='nsew')
         self.graph_canvas.update_graph(commits)
 
+        # Nastavit název repozitáře do titulku okna
+        if self.git_repo and self.git_repo.repo_path:
+            import os
+            repo_name = os.path.basename(self.git_repo.repo_path)
+            self.root.title(f"{repo_name} repo")
+
         self.back_button.grid(row=0, column=0, sticky='w', padx=(0, 10))
         stats = self.git_repo.get_repository_stats()
 
@@ -212,6 +228,11 @@ class MainWindow:
 
         self.back_button.grid_remove()
         self.title_label.config(text="")
+
+        # Obnovit defaultní titul a velikost okna
+        self.root.title(self.default_title)
+        self.root.geometry(f"{self.default_width}x{self.default_height}")
+        self._center_window(self.default_width, self.default_height)
 
         self.progress.config(value=0)
         self.update_status("Připraven")
