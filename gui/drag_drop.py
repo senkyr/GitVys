@@ -19,7 +19,7 @@ class DragDropFrame(ttk.Frame):
         self.rowconfigure(0, weight=1)
 
         self.drop_frame = ttk.Frame(self, relief='ridge', borderwidth=2)
-        self.drop_frame.grid(row=0, column=0, padx=20, pady=20, sticky='nsew')
+        self.drop_frame.grid(row=0, column=0, padx=40, pady=40, sticky='nsew')
         self.drop_frame.columnconfigure(0, weight=1)
         self.drop_frame.rowconfigure(0, weight=1)
 

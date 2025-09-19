@@ -108,7 +108,7 @@ class MainWindow:
         self.main_frame.rowconfigure(1, weight=1)
 
         self.header_frame = ttk.Frame(self.main_frame)
-        self.header_frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
+        # Header frame se nezobrazuje v úvodním stavu
         self.header_frame.columnconfigure(1, weight=1)
 
         self.back_button = ttk.Button(
@@ -196,6 +196,8 @@ class MainWindow:
             repo_name = os.path.basename(self.git_repo.repo_path)
             self.root.title(f"{repo_name} repo")
 
+        # Zobrazit header frame a nastavit padding
+        self.header_frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
         self.back_button.grid(row=0, column=0, sticky='w', padx=(0, 10))
         stats = self.git_repo.get_repository_stats()
 
@@ -226,6 +228,8 @@ class MainWindow:
         self.graph_canvas.grid_remove()
         self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
 
+        # Skrýt celý header frame
+        self.header_frame.grid_remove()
         self.back_button.grid_remove()
         self.title_label.config(text="")
 

@@ -104,6 +104,7 @@ class GraphCanvas(ttk.Frame):
             # Ensure position is within bounds [0, 1]
             position = max(0, min(1, position))
             self.canvas.yview_moveto(position)
+            self._update_column_separators()
         elif args[0] == 'scroll':
             delta = int(args[1])
             units = args[2]
@@ -119,6 +120,7 @@ class GraphCanvas(ttk.Frame):
             new_top = max(0, min(1 - (current_bottom - current_top), new_top))
 
             self.canvas.yview_moveto(new_top)
+            self._update_column_separators()
 
     def _on_h_scroll(self, *args):
         """Handle horizontal scrollbar with bounds checking"""
@@ -194,3 +196,9 @@ class GraphCanvas(ttk.Frame):
                 new_top = 1 - (current_bottom - current_top)
 
             self.canvas.yview_moveto(new_top)
+            self._update_column_separators()
+
+    def _update_column_separators(self):
+        """Aktualizuje pozici separátorů sloupců po scrollování."""
+        if hasattr(self.graph_drawer, '_current_commits') and self.graph_drawer._current_commits:
+            self.graph_drawer._draw_column_separators(self.canvas)
