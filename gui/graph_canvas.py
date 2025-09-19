@@ -112,7 +112,7 @@ class GraphCanvas(ttk.Frame):
             current_top, current_bottom = self.canvas.yview()
 
             if units == 'units':
-                scroll_amount = delta * 0.05  # 5% per unit
+                scroll_amount = delta * 0.005  # 0.5% per unit for very smooth scrolling
             else:  # pages
                 scroll_amount = delta * (current_bottom - current_top)
 
@@ -139,7 +139,7 @@ class GraphCanvas(ttk.Frame):
             current_left, current_right = self.canvas.xview()
 
             if units == 'units':
-                scroll_amount = delta * 0.05  # 5% per unit
+                scroll_amount = delta * 0.005  # 0.5% per unit for very smooth scrolling
             else:  # pages
                 scroll_amount = delta * (current_right - current_left)
 
@@ -186,7 +186,7 @@ class GraphCanvas(ttk.Frame):
             current_top, current_bottom = self.canvas.yview()
 
             # Calculate new position
-            scroll_amount = int(delta) * 0.1  # Scroll by 10% of visible area
+            scroll_amount = int(delta) * 0.01  # Scroll by 1% of visible area for very smooth movement
             new_top = current_top + scroll_amount
 
             # Apply bounds checking

@@ -523,15 +523,10 @@ class GraphDrawer:
         """Vykreslí interaktivní separátory sloupců na horním okraji."""
         table_start_x = self._get_table_start_position()
 
-        # Při prvním vykreslení použít fixní pozici, při scrollování použít scroll pozici
+        # Záhlaví musí být vždy na vrchu viditelné oblasti (bez mezery)
         # canvasy(0) převede window souřadnici 0 na canvas souřadnici
         scroll_top = canvas.canvasy(0)
-
-        # Pokud je scroll_top téměř nula, použijeme standardní header pozici
-        if abs(scroll_top) < 5:  # tolerance 5px
-            separator_y = 5  # standardní pozice záhlaví
-        else:
-            separator_y = scroll_top  # použij scroll pozici
+        separator_y = scroll_top  # záhlaví vždy na vrchu viditelné oblasti
 
         # Vždy vymazat staré separátory a popisky a vykreslit znovu
         canvas.delete("column_separator")
