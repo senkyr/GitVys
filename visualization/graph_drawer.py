@@ -18,6 +18,8 @@ class GraphDrawer:
         self.column_separators = {}  # pozice separátorů {column_name: x_position}
         self.dragging_separator = None  # název sloupce jehož separátor se táhne
         self.drag_start_x = 0
+
+        self.curve_intensity = 0.8  # Intenzita zakřivení pro rounded corners (0-1)
         self.separator_height = 25  # výška separátoru v pixelech (odpovídá výšce záhlaví)
         self.user_column_widths = {}  # uživatelem nastavené šířky
 
@@ -58,22 +60,9 @@ class GraphDrawer:
         start_x, start_y = start
         end_x, end_y = end
 
-        # Pokud jsou commity v různých sloupcích (větvení), kreslíme pravotočivý L-tvar
+        # Pokud jsou commity v různých sloupcích (větvení), kreslíme hladkou křivku
         if start_x != end_x:
-            # Jednoduchý L-tvar: vodorovně doprava → svisle nahoru
-            # Vodorovná čára doprava k X pozici cíle
-            canvas.create_line(
-                start_x, start_y, end_x, start_y,
-                fill=color,
-                width=self.line_width
-            )
-
-            # Svislá čára nahoru k cíli
-            canvas.create_line(
-                end_x, start_y, end_x, end_y,
-                fill=color,
-                width=self.line_width
-            )
+            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, color)
         else:
             # Přímá svislá linka pro commity ve stejném sloupci
             canvas.create_line(
@@ -81,6 +70,90 @@ class GraphDrawer:
                 fill=color,
                 width=self.line_width
             )
+
+    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str):
+        """Vykreslí hladké L-shaped spojení se zaoblenými rohy"""
+
+        # Vzdálenosti
+        dx = abs(end_x - start_x)
+        dy = abs(end_y - start_y)
+
+        # Rádius zaoblení - malý, aby křivka zůstala v bounds
+        radius = min(dx, dy, 20) * self.curve_intensity  # Max 20px radius
+        radius = max(3, min(radius, 15))  # Limit mezi 3-15px
+
+        # Corner point (kde se původně lámala čára)
+        corner_x = end_x
+        corner_y = start_y
+
+        # Rozdělíme na 3 části: straight horizontal + rounded corner + straight vertical
+
+        # 1) Horizontal line až k corner-radius
+        if dx > radius:
+            canvas.create_line(
+                start_x, start_y,
+                corner_x - radius, corner_y,
+                fill=color,
+                width=self.line_width
+            )
+
+        # 2) Rounded corner (malá kvadratická Bezier křivka)
+        if dx > radius and dy > radius:
+            # Rounded corner pomocí arc místo Bezier (správný tvar)
+            corner_points = self._calculate_rounded_corner_arc(
+                corner_x - radius, corner_y,    # start point
+                corner_x, corner_y - radius,    # end point (NAHORU = minus radius)
+                corner_x, corner_y,             # corner point
+                radius
+            )
+
+            if len(corner_points) > 2:
+                canvas.create_line(
+                    corner_points,
+                    fill=color,
+                    width=self.line_width,
+                    smooth=True
+                )
+
+        # 3) Vertical line od corner-radius až k cíli (NAHORU = minus radius)
+        if dy > radius:
+            canvas.create_line(
+                corner_x, corner_y - radius,
+                end_x, end_y,
+                fill=color,
+                width=self.line_width
+            )
+
+        # Pro velmi krátké vzdálenosti - fallback na simple line
+        if dx <= radius or dy <= radius:
+            canvas.create_line(
+                start_x, start_y, end_x, end_y,
+                fill=color, width=self.line_width
+            )
+
+    def _calculate_rounded_corner_arc(self, start_x: int, start_y: int, end_x: int, end_y: int, corner_x: int, corner_y: int, radius: int):
+        """Vypočítá body pro zaoblený roh pomocí circular arc - správný tvar pro L-shape"""
+        import math
+        points = []
+        steps = 8
+
+        # Pro L-shaped corner: arc v pravém HORNÍM kvadrantu (jde NAHORU!)
+        # Center arc je POSUNUTÝ od corner: (corner_x - radius, corner_y - radius)
+        arc_center_x = corner_x - radius
+        arc_center_y = corner_y - radius
+
+        for i in range(steps + 1):
+            # Arc od 0° do 90° (od horizontal doprava k vertical NAHORU)
+            angle = (i / steps) * (math.pi / 2)
+
+            # Vypočítat bod na kružnici relative k arc centru
+            x = arc_center_x + radius * math.cos(angle)
+            y = arc_center_y + radius * math.sin(angle)
+
+            points.extend([int(x), int(y)])
+
+        return points
+
 
     def _calculate_column_widths(self, canvas: tk.Canvas, commits: List[Commit]):
         # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
