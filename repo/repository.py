@@ -31,34 +31,45 @@ class GitRepository:
         commits = []
         used_colors = set()
         branch_colors = {}
-        for commit in self.repo.iter_commits(all=True):
-            branch_name = commit_to_branch.get(commit.hexsha, 'unknown')
+        seen_commits = set()
 
-            if branch_name not in branch_colors:
-                branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
+        # Iterovat pouze přes lokální větve, ne přes all=True
+        for head in self.repo.heads:
+            try:
+                for commit in self.repo.iter_commits(head):
+                    if commit.hexsha in seen_commits:
+                        continue
+                    seen_commits.add(commit.hexsha)
 
-            full_message = commit.message.strip()
-            message_lines = full_message.split('\n', 1)
-            subject = message_lines[0]
-            description = message_lines[1].strip() if len(message_lines) > 1 else ""
+                    branch_name = commit_to_branch.get(commit.hexsha, 'unknown')
 
-            commit_obj = Commit(
-                hash=commit.hexsha[:8],
-                message=subject,
-                short_message=self._truncate_message(subject, 50),
-                author=commit.author.name,
-                author_short=self._truncate_name(commit.author.name),
-                author_email=commit.author.email,
-                date=commit.committed_datetime,
-                date_relative=self._get_relative_date(commit.committed_datetime),
-                date_short=self._get_full_date(commit.committed_datetime),
-                parents=[parent.hexsha[:8] for parent in commit.parents],
-                branch=branch_name,
-                branch_color=branch_colors[branch_name]
-            )
-            commit_obj.description = description
-            commit_obj.description_short = self._truncate_description(description)
-            commits.append(commit_obj)
+                    if branch_name not in branch_colors:
+                        branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
+
+                    full_message = commit.message.strip()
+                    message_lines = full_message.split('\n', 1)
+                    subject = message_lines[0]
+                    description = message_lines[1].strip() if len(message_lines) > 1 else ""
+
+                    commit_obj = Commit(
+                        hash=commit.hexsha[:8],
+                        message=subject,
+                        short_message=self._truncate_message(subject, 50),
+                        author=commit.author.name,
+                        author_short=self._truncate_name(commit.author.name),
+                        author_email=commit.author.email,
+                        date=commit.committed_datetime,
+                        date_relative=self._get_relative_date(commit.committed_datetime),
+                        date_short=self._get_full_date(commit.committed_datetime),
+                        parents=[parent.hexsha[:8] for parent in commit.parents],
+                        branch=branch_name,
+                        branch_color=branch_colors[branch_name]
+                    )
+                    commit_obj.description = description
+                    commit_obj.description_short = self._truncate_description(description)
+                    commits.append(commit_obj)
+            except:
+                continue
 
         commits.sort(key=lambda c: c.date, reverse=True)
         self.commits = commits
