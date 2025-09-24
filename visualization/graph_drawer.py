@@ -256,14 +256,14 @@ class GraphDrawer:
                 width=1
             )
 
-            # Zobrazit vlaječku s názvem větve pro první commit každé větve
-            if commit.branch not in drawn_branch_flags:
+            # Zobrazit vlaječku s názvem větve pro první commit každé větve (kromě 'unknown')
+            if commit.branch != 'unknown' and commit.branch not in drawn_branch_flags:
                 flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                 self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote)
                 drawn_branch_flags.add(commit.branch)
 
-            # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce
-            if last_commits_by_branch[commit.branch] == commit:
+            # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown')
+            if commit.branch != 'unknown' and last_commits_by_branch[commit.branch] == commit:
                 connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                 self._draw_flag_connection(canvas, x, y, connection_color)
 
