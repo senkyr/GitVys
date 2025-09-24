@@ -4,6 +4,13 @@ from typing import List
 
 
 @dataclass
+class Tag:
+    name: str
+    is_remote: bool = False
+    message: str = ""  # Pro anotované tagy
+
+
+@dataclass
 class Commit:
     hash: str
     message: str
@@ -23,6 +30,11 @@ class Commit:
     description: str = ""
     description_short: str = ""
     is_remote: bool = False
+    tags: List[Tag] = None
+
+    def __post_init__(self):
+        if self.tags is None:
+            self.tags = []
 
 
 @dataclass

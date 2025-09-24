@@ -41,6 +41,7 @@ class GraphDrawer:
         self._calculate_column_widths(canvas, commits)
         self._draw_connections(canvas, commits)
         self._draw_commits(canvas, commits)
+        self._draw_tags(canvas, commits)
         self._draw_column_separators(canvas)
 
     def _draw_connections(self, canvas: tk.Canvas, commits: List[Commit]):
@@ -435,6 +436,95 @@ class GraphDrawer:
             font=('Arial', 8, 'bold'),
             fill=text_color
         )
+
+    def _draw_tags(self, canvas: tk.Canvas, commits: List[Commit]):
+        """Vykreslí tag emoji a názvy pro commity s tagy."""
+        emoji_font = ('Segoe UI Emoji', 10)  # Font pro emoji
+        text_font = ('Arial', 8, 'bold')     # Font pro názvy tagů
+
+        for commit in commits:
+            if not commit.tags:
+                continue
+
+            x, y = commit.x, commit.y
+
+            # Pozice pro tagy - napravo od commit kolečka na stejné výšce
+            tag_x_start = x + self.node_radius + 15  # 15px mezera od kolečka
+
+            current_x = tag_x_start
+            for tag in commit.tags:
+                # Vykreslit tag emoji
+                emoji_x = current_x
+                self._draw_tag_emoji(canvas, emoji_x, y, tag.is_remote, emoji_font)
+
+                # Vykreslit název tagu vedle emoji
+                text_x = emoji_x + 15  # 15px mezera za emoji
+                label_width = self._draw_tag_label(canvas, text_x, y, tag.name, tag.is_remote, text_font)
+
+                # Přidat tooltip pro anotované tagy
+                if tag.message:
+                    self._add_tag_tooltip(canvas, emoji_x, y, tag.message)
+
+                # Přesunout pozici pro další tag
+                current_x = text_x + label_width + 20  # 20px mezera mezi tagy
+
+    def _draw_tag_emoji(self, canvas: tk.Canvas, x: int, y: int, is_remote: bool, font):
+        """Vykreslí tag emoji 🏷️."""
+        # Tag emoji
+        tag_emoji = "🏷️"
+
+        # Barevné rozlišení - pro remote tagy použít šedší barvu
+        if is_remote:
+            # Pro remote použít světlejší/menší emoji nebo jiný approach
+            text_color = '#888888'  # Šedší barva
+        else:
+            text_color = 'black'    # Normální barva
+
+        canvas.create_text(
+            x, y,
+            text=tag_emoji,
+            anchor='center',
+            font=font,
+            fill=text_color,
+            tags="tag_emoji"
+        )
+
+    def _draw_tag_label(self, canvas: tk.Canvas, x: int, y: int, tag_name: str, is_remote: bool, font):
+        """Vykreslí label s názvem tagu a vrátí šířku textu."""
+        # Zkrátit dlouhé názvy tagů
+        display_name = tag_name if len(tag_name) <= 12 else tag_name[:10] + ".."
+
+        # Barvy textu - konzistentnější s emoji
+        text_color = '#666666' if is_remote else '#333333'  # Šedší pro remote, tmavší pro lokální
+
+        canvas.create_text(
+            x, y,
+            text=display_name,
+            anchor='w',  # Zarovnat vlevo místo na střed
+            font=font,
+            fill=text_color,
+            tags="tag_label"
+        )
+
+        # Vrátit šířku textu pro kalkulaci pozice dalšího tagu
+        text_width = canvas.tk.call("font", "measure", font, display_name)
+        return text_width
+
+    def _add_tag_tooltip(self, canvas: tk.Canvas, x: int, y: int, message: str):
+        """Přidá tooltip pro anotované tagy."""
+        # Vytvořit neviditelnou oblast pro tooltip
+        tooltip_area = canvas.create_oval(
+            x - 12, y - 12, x + 12, y + 12,
+            fill='',
+            outline='',
+            tags="tag_tooltip_area"
+        )
+
+        # Bindovat tooltip events
+        canvas.tag_bind(tooltip_area, "<Enter>",
+            lambda e, msg=message: self._show_tooltip(e, msg))
+        canvas.tag_bind(tooltip_area, "<Leave>",
+            lambda e: self._hide_tooltip())
 
     def _update_branch_lanes(self, commits: List[Commit]):
         """Aktualizuje informace o lanes pro výpočet pozice tabulky."""
@@ -843,8 +933,11 @@ class GraphDrawer:
 
     def _redraw_with_new_widths(self, canvas: tk.Canvas):
         """Překreslí graf s novými šířkami sloupců."""
-        # Smazat texty commitů, separátory a popisky
+        # Smazat texty commitů, tagy, separátory a popisky
         canvas.delete("commit_text")
+        canvas.delete("tag_emoji")
+        canvas.delete("tag_label")
+        canvas.delete("tag_tooltip_area")
         canvas.delete("column_separator")
         canvas.delete("column_header")
 
@@ -853,6 +946,7 @@ class GraphDrawer:
             # Přepočítat description texty podle nové šířky message sloupce
             self._recalculate_descriptions_for_width(canvas, self._current_commits)
             self._draw_commits(canvas, self._current_commits)
+            self._draw_tags(canvas, self._current_commits)
 
         # Překreslit separátory
         self._draw_column_separators(canvas)

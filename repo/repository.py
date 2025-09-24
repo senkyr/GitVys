@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import git
 from git import Repo, InvalidGitRepositoryError
-from utils.data_structures import Commit, Branch
+from utils.data_structures import Commit, Branch, Tag
 from visualization.colors import get_branch_color
 
 
@@ -25,8 +25,9 @@ class GitRepository:
         if not self.repo:
             return []
 
-        # Předpočítání mapy commit -> větev pro optimalizaci
+        # Předpočítání map commit -> větev a commit -> tagy pro optimalizaci
         commit_to_branch = self._build_commit_branch_map()
+        commit_to_tags = self._build_commit_tag_map()
 
         commits = []
         used_colors = set()
@@ -51,6 +52,9 @@ class GitRepository:
                     subject = message_lines[0]
                     description = message_lines[1].strip() if len(message_lines) > 1 else ""
 
+                    # Získat tagy pro tento commit
+                    commit_tags = commit_to_tags.get(commit.hexsha, [])
+
                     commit_obj = Commit(
                         hash=commit.hexsha[:8],
                         message=subject,
@@ -63,7 +67,8 @@ class GitRepository:
                         date_short=self._get_full_date(commit.committed_datetime),
                         parents=[parent.hexsha[:8] for parent in commit.parents],
                         branch=branch_name,
-                        branch_color=branch_colors[branch_name]
+                        branch_color=branch_colors[branch_name],
+                        tags=commit_tags
                     )
                     commit_obj.description = description
                     commit_obj.description_short = self._truncate_description(description)
@@ -117,8 +122,9 @@ class GitRepository:
         if not self.repo:
             return []
 
-        # Předpočítání map pro lokální i remote větve
+        # Předpočítání map pro lokální i remote větve a tagy
         local_commit_map, remote_commit_map = self._build_commit_branch_map_with_remote()
+        commit_to_tags = self._build_commit_tag_map_with_remote()
 
         commits = []
         used_colors = set()
@@ -144,6 +150,9 @@ class GitRepository:
             subject = message_lines[0]
             description = message_lines[1].strip() if len(message_lines) > 1 else ""
 
+            # Získat tagy pro tento commit
+            commit_tags = commit_to_tags.get(commit.hexsha, [])
+
             commit_obj = Commit(
                 hash=commit.hexsha[:8],
                 message=subject,
@@ -157,7 +166,8 @@ class GitRepository:
                 parents=[parent.hexsha[:8] for parent in commit.parents],
                 branch=branch_name,
                 branch_color=branch_colors[branch_name],
-                is_remote=is_remote
+                is_remote=is_remote,
+                tags=commit_tags
             )
             commit_obj.description = description
             commit_obj.description_short = self._truncate_description(description)
@@ -218,6 +228,81 @@ class GitRepository:
             pass
 
         return local_commit_map, remote_commit_map
+
+    def _build_commit_tag_map(self) -> Dict[str, List[Tag]]:
+        """Vytvořuje mapu commit_hash -> List[Tag] pro lokální tagy."""
+        commit_to_tags = {}
+
+        try:
+            for tag in self.repo.tags:
+                try:
+                    # Získat commit na který tag ukazuje
+                    tag_commit = tag.commit
+                    tag_obj = Tag(
+                        name=tag.name,
+                        is_remote=False,
+                        message=tag.tag.message if hasattr(tag, 'tag') and tag.tag else ""
+                    )
+
+                    if tag_commit.hexsha not in commit_to_tags:
+                        commit_to_tags[tag_commit.hexsha] = []
+                    commit_to_tags[tag_commit.hexsha].append(tag_obj)
+                except:
+                    continue
+        except:
+            pass
+
+        return commit_to_tags
+
+    def _build_commit_tag_map_with_remote(self) -> Dict[str, List[Tag]]:
+        """Vytvořuje mapu commit_hash -> List[Tag] pro lokální i remote tagy."""
+        commit_to_tags = {}
+
+        # Nejprve lokální tagy (mají prioritu)
+        local_tags = self._build_commit_tag_map()
+        commit_to_tags.update(local_tags)
+
+        # Poté remote tagy (jen pokud commit ještě nemá lokální tag)
+        try:
+            # Remote tagy jsou v refs/remotes/origin/tags/* nebo se načítají přes remote
+            # Pro zjednodušení použijeme GitPython API, který umí rozlišit remote tagy
+            remote_refs = []
+            try:
+                remote_refs = list(self.repo.remote().refs)
+            except:
+                pass
+
+            for remote_ref in remote_refs:
+                # Přeskočit branch refs, hledáme jen tagy
+                if not remote_ref.name.endswith('/tags/') and '/tags/' not in remote_ref.name:
+                    continue
+
+                try:
+                    # Extrahovat název tagu z remote ref
+                    tag_name = remote_ref.name.split('/')[-1]
+                    if '/tags/' in remote_ref.name:
+                        tag_name = remote_ref.name.split('/tags/')[-1]
+
+                    tag_commit = remote_ref.commit
+                    tag_obj = Tag(
+                        name=f"origin/{tag_name}",
+                        is_remote=True,
+                        message=""
+                    )
+
+                    if tag_commit.hexsha not in commit_to_tags:
+                        commit_to_tags[tag_commit.hexsha] = []
+
+                    # Přidat jen pokud už není lokální tag se stejným názvem
+                    existing_names = [t.name for t in commit_to_tags[tag_commit.hexsha]]
+                    if tag_name not in existing_names:
+                        commit_to_tags[tag_commit.hexsha].append(tag_obj)
+                except:
+                    continue
+        except:
+            pass
+
+        return commit_to_tags
 
     def _truncate_message(self, message: str, max_length: int) -> str:
         if len(message) <= max_length:
@@ -288,24 +373,31 @@ class GitRepository:
 
     def get_repository_stats(self) -> Dict[str, int]:
         if not self.repo or not self.commits:
-            return {"authors": 0, "branches": 0, "commits": 0, "tags": 0}
+            return {"authors": 0, "branches": 0, "commits": 0, "tags": 0, "local_tags": 0, "remote_tags": 0}
 
         authors = set()
         branches = set()
+        all_tags = set()
+        local_tags = set()
+        remote_tags = set()
 
         for commit in self.commits:
             authors.add(commit.author)
             branches.add(commit.branch)
 
-        try:
-            tags = list(self.repo.tags)
-            tag_count = len(tags)
-        except:
-            tag_count = 0
+            # Spočítat tagy z commitů
+            for tag in commit.tags:
+                all_tags.add(tag.name)
+                if tag.is_remote:
+                    remote_tags.add(tag.name)
+                else:
+                    local_tags.add(tag.name)
 
         return {
             "authors": len(authors),
             "branches": len(branches),
             "commits": len(self.commits),
-            "tags": tag_count
+            "tags": len(all_tags),
+            "local_tags": len(local_tags),
+            "remote_tags": len(remote_tags)
         }

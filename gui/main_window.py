@@ -254,9 +254,18 @@ class MainWindow:
         authors_text = f"{stats['authors']} {get_czech_plural(stats['authors'], 'autor', 'autoři', 'autorů')}"
         branches_text = f"{stats['branches']} {get_czech_plural(stats['branches'], 'větev', 'větve', 'větví')}"
         commits_text = f"{stats['commits']} {get_czech_plural(stats['commits'], 'commit', 'commity', 'commitů')}"
-        tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
 
-        stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+        # Zobrazit tagy jen pokud nějaké existují (včetně remote)
+        if stats['tags'] > 0:
+            if stats['remote_tags'] > 0:
+                # Rozlišit lokální a remote tagy
+                tags_text = f"{stats['local_tags']}+{stats['remote_tags']} tagů"
+            else:
+                # Jen lokální tagy
+                tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
+            stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+        else:
+            stats_text = f"{authors_text}, {branches_text}, {commits_text}"
         self.stats_label.config(text=stats_text)
 
         self.fetch_button.config(text="Načíst remote", state="normal")
@@ -294,9 +303,18 @@ class MainWindow:
         authors_text = f"{stats['authors']} {get_czech_plural(stats['authors'], 'autor', 'autoři', 'autorů')}"
         branches_text = f"{stats['branches']} {get_czech_plural(stats['branches'], 'větev', 'větve', 'větví')}"
         commits_text = f"{stats['commits']} {get_czech_plural(stats['commits'], 'commit', 'commity', 'commitů')}"
-        tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
 
-        stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+        # Zobrazit tagy jen pokud nějaké existují
+        if stats['tags'] > 0:
+            if stats['remote_tags'] > 0:
+                # Rozlišit lokální a remote tagy
+                tags_text = f"{stats['local_tags']}+{stats['remote_tags']} tagů"
+            else:
+                # Jen lokální tagy
+                tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
+            stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+        else:
+            stats_text = f"{authors_text}, {branches_text}, {commits_text}"
 
         # Nastavit název repozitáře (tučně) a statistiky (normálně) vedle sebe
         if self.git_repo and self.git_repo.repo_path:
