@@ -31,6 +31,7 @@ class Commit:
     description_short: str = ""
     is_remote: bool = False
     tags: List[Tag] = None
+    branch_availability: str = "local_only"  # local_only/remote_only/both
 
     def __post_init__(self):
         if self.tags is None:

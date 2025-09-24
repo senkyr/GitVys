@@ -39,6 +39,8 @@ class GraphDrawer:
         # Uložit informace o lanes pro výpočet pozice tabulky
         self._update_branch_lanes(commits)
         self._calculate_column_widths(canvas, commits)
+        self._calculate_flag_width(canvas, commits)
+        self._calculate_required_tag_space(canvas, commits)
         self._draw_connections(canvas, commits)
         self._draw_commits(canvas, commits)
         self._draw_tags(canvas, commits)
@@ -221,6 +223,89 @@ class GraphDrawer:
             'date': self.user_column_widths.get('date', max_date_width + 20)
         }
 
+    def _calculate_flag_width(self, canvas: tk.Canvas, commits: List[Commit]):
+        """Vypočítá jednotnou šířku vlaječek podle nejdelšího názvu větve s místem pro symboly."""
+        font = ('Arial', 8, 'bold')  # Font používaný pro vlaječky (aktualizován na správnou velikost)
+        max_text_width = 0
+
+        # Najít všechny unikátní názvy větví pro výpočet šířky
+        unique_branches = set()
+        for commit in commits:
+            if commit.branch == 'unknown':
+                continue  # Přeskočit unknown větve
+
+            branch_name = commit.branch
+            is_remote = commit.is_remote
+
+            # Upravit název větve pro remote větve
+            display_name = branch_name
+            if is_remote and branch_name.startswith('origin/'):
+                display_name = branch_name[7:]  # Odstranit "origin/"
+
+            unique_branches.add(display_name)
+
+        # Najít nejdelší název větve
+        for display_name in unique_branches:
+            # Změřit šířku čistého textu názvu větve
+            try:
+                text_width = canvas.tk.call("font", "measure", font, display_name)
+                max_text_width = max(max_text_width, text_width)
+            except:
+                # Fallback pro případ chyby
+                max_text_width = max(max_text_width, len(display_name) * 6)
+
+        # Výpočet celkové šířky vlaječky:
+        # - Symboly na krajích: 12px (vlevo) + 12px (vpravo) = 24px
+        # - Padding mezi symboly a textem: 12px (vlevo) + 12px (vpravo) = 24px (zvětšeno pro lepší rozestupy)
+        # - Šířka textu: max_text_width
+        symbol_space = 24  # Místo pro symboly na krajích
+        padding = 24       # Padding mezi symboly a textem (zvětšeno z 16 na 24)
+
+        self.flag_width = symbol_space + padding + max_text_width
+
+        # Minimální šířka 90px (aby se vešly symboly s větším paddingem), maximální rozumná šířka 160px
+        self.flag_width = max(90, min(self.flag_width, 160))
+
+    def _calculate_required_tag_space(self, canvas: tk.Canvas, commits: List[Commit]):
+        """Spočítá kolik dodatečného prostoru potřebují tagy za základní pozicí tabulky."""
+        emoji_font = ('Segoe UI Emoji', 10)  # Font pro emoji
+        text_font = ('Arial', 8, 'bold')     # Font pro názvy tagů
+
+        # Spočítat základní pozici tabulky bez tagů
+        if not self.branch_lanes:
+            base_table_position = 220
+        else:
+            max_lane = max(self.branch_lanes.values())
+            base_table_position = (max_lane + 1) * 20 + 200
+
+        max_tag_overflow = 0
+
+        for commit in commits:
+            if not commit.tags:
+                continue
+
+            # Spočítat pozici konce tagů pro tento commit
+            tag_start_x = commit.x + self.node_radius + 15  # Pozice kde začíná první tag
+            current_x = tag_start_x
+
+            for tag in commit.tags:
+                # Šířka emoji (přibližně 15px)
+                emoji_width = 15
+                current_x += emoji_width
+
+                # Šířka textu + mezera
+                text_x = current_x + 15  # 15px mezera za emoji
+                tag_name_width = canvas.tk.call("font", "measure", text_font, tag.name)
+                current_x = text_x + tag_name_width + 20  # 20px mezera mezi tagy
+
+            # Spočítat o kolik tagy přesahují základní pozici tabulky
+            tag_end_x = current_x
+            overflow = tag_end_x - base_table_position + 20  # +20px bezpečná mezera
+            max_tag_overflow = max(max_tag_overflow, overflow)
+
+        # Uložit jen dodatečný prostor který tagy potřebují
+        self.required_tag_space = max(0, max_tag_overflow)
+
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
         # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
         font = ('Arial', self.font_size)
@@ -259,7 +344,7 @@ class GraphDrawer:
             # Zobrazit vlaječku s názvem větve pro první commit každé větve (kromě 'unknown')
             if commit.branch != 'unknown' and commit.branch not in drawn_branch_flags:
                 flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
-                self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote)
+                self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
                 drawn_branch_flags.add(commit.branch)
 
             # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown')
@@ -400,14 +485,14 @@ class GraphDrawer:
             self.tooltip.destroy()
             self.tooltip = None
 
-    def _draw_branch_flag(self, canvas: tk.Canvas, x: int, y: int, branch_name: str, branch_color: str, is_remote: bool = False):
-        """Vykreslí vlaječku s názvem větve v pevném levém sloupci."""
-        # Velikost vlaječky
-        flag_width = 60
+    def _draw_branch_flag(self, canvas: tk.Canvas, x: int, y: int, branch_name: str, branch_color: str, is_remote: bool = False, branch_availability: str = "local_only"):
+        """Vykreslí vlaječku s názvem větve a symboly dostupnosti v pevném levém sloupci."""
+        # Použít vypočítanou šířku vlaječky
+        flag_width = getattr(self, 'flag_width', 80)  # Fallback na 80 pokud nebyla vypočítána
         flag_height = 20
 
-        # Pozice vlaječky (pevný levý sloupec)
-        flag_x = 30  # Pevná pozice vlevo
+        # Pozice vlaječky (posunuto více doprava pro lepší rozestupy)
+        flag_x = 70  # Posunuté doprava z 50 na 70 pro vzdušnější layout
         flag_y = y
 
         # Bledší obrys pro remote větve
@@ -428,14 +513,116 @@ class GraphDrawer:
             # Zobrazit jen část po origin/ ale v jiné barvě
             display_name = branch_name[7:]  # Odstranit "origin/"
 
+        # Určit, které symboly zobrazit podle dostupnosti větve
+        has_local = branch_availability in ["local_only", "both"]
+        has_remote = branch_availability in ["remote_only", "both"]
+
+        local_symbol = "💻"  # Laptop pro lokální
+        remote_symbol = "☁"  # Obrysový oblačk pro remote
+        local_fallback = "PC"
+        remote_fallback = "☁"
+
+        emoji_font = ('Segoe UI Emoji', 10)  # Správný font pro emoji
+        text_font = ('Arial', 8, 'bold')     # Font pro text
         text_color = '#E0E0E0' if is_remote else 'white'
+
+        # Vždy vykreslit název větve na středu s černým obrysem
+        # Nejdříve černý obrys - vykreslí text posunutý o 1px ve všech směrech
+        for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
+            canvas.create_text(
+                flag_x + dx, flag_y + dy,
+                text=display_name,
+                anchor='center',
+                font=text_font,
+                fill='black'
+            )
+
+        # Pak bílý text na vrch
         canvas.create_text(
             flag_x, flag_y,
             text=display_name,
             anchor='center',
-            font=('Arial', 8, 'bold'),
-            fill=text_color
+            font=text_font,
+            fill='white'
         )
+
+        # Vykreslit remote symbol vlevo, pokud větev existuje remotely
+        if has_remote:
+            remote_x = flag_x - flag_width // 2 + 12  # 12px od levého okraje vlaječky (zvětšený padding)
+            try:
+                # Nejdříve černý obrys pro cloud symbol
+                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
+                    canvas.create_text(
+                        remote_x + dx, flag_y + dy,
+                        text=remote_symbol,
+                        anchor='center',
+                        font=emoji_font,
+                        fill='black'
+                    )
+                # Pak bílý symbol na vrch
+                canvas.create_text(
+                    remote_x, flag_y,
+                    text=remote_symbol,
+                    anchor='center',
+                    font=emoji_font,
+                    fill='white'
+                )
+            except:
+                # Fallback - také s obrysem
+                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
+                    canvas.create_text(
+                        remote_x + dx, flag_y + dy,
+                        text=remote_fallback,
+                        anchor='center',
+                        font=text_font,
+                        fill='black'
+                    )
+                canvas.create_text(
+                    remote_x, flag_y,
+                    text=remote_fallback,
+                    anchor='center',
+                    font=text_font,
+                    fill='white'
+                )
+
+        # Vykreslit local symbol vpravo, pokud větev existuje lokálně
+        if has_local:
+            local_x = flag_x + flag_width // 2 - 12  # 12px od pravého okraje vlaječky (zvětšený padding)
+            try:
+                # Nejdříve černý obrys pro laptop symbol
+                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
+                    canvas.create_text(
+                        local_x + dx, flag_y + dy,
+                        text=local_symbol,
+                        anchor='center',
+                        font=emoji_font,
+                        fill='black'
+                    )
+                # Pak bílý symbol na vrch
+                canvas.create_text(
+                    local_x, flag_y,
+                    text=local_symbol,
+                    anchor='center',
+                    font=emoji_font,
+                    fill='white'
+                )
+            except:
+                # Fallback - také s obrysem
+                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
+                    canvas.create_text(
+                        local_x + dx, flag_y + dy,
+                        text=local_fallback,
+                        anchor='center',
+                        font=text_font,
+                        fill='black'
+                    )
+                canvas.create_text(
+                    local_x, flag_y,
+                    text=local_fallback,
+                    anchor='center',
+                    font=text_font,
+                    fill='white'
+                )
 
     def _draw_tags(self, canvas: tk.Canvas, commits: List[Commit]):
         """Vykreslí tag emoji a názvy pro commity s tagy."""
@@ -491,8 +678,9 @@ class GraphDrawer:
 
     def _draw_tag_label(self, canvas: tk.Canvas, x: int, y: int, tag_name: str, is_remote: bool, font):
         """Vykreslí label s názvem tagu a vrátí šířku textu."""
-        # Zkrátit dlouhé názvy tagů
-        display_name = tag_name if len(tag_name) <= 12 else tag_name[:10] + ".."
+        # Prostor je už předpočítaný dynamicky, takže zobrazit plný název
+        # (případ kdy by byl prostor nedostatečný by už byl vyřešen při výpočtu required_tag_space)
+        display_name = tag_name
 
         # Barvy textu - konzistentnější s emoji
         text_color = '#666666' if is_remote else '#333333'  # Šedší pro remote, tmavší pro lokální
@@ -530,25 +718,31 @@ class GraphDrawer:
         """Aktualizuje informace o lanes pro výpočet pozice tabulky."""
         self.branch_lanes = {}
         for commit in commits:
-            branch_lane = (commit.x - 100) // 20  # Zpětný výpočet lane z X pozice (20px mezery)
+            branch_lane = (commit.x - 150) // 20  # Zpětný výpočet lane z X pozice (20px mezery, aktualizováno z 100 na 150)
             self.branch_lanes[commit.branch] = branch_lane
 
     def _get_table_start_position(self) -> int:
         """Vrátí X pozici kde začíná tabulka (za všemi větvemi)."""
         if not self.branch_lanes:
-            return 200  # Fallback pozice
+            base_position = 220  # Základní pozice za vlaječkami
+        else:
+            max_lane = max(self.branch_lanes.values())
+            base_position = (max_lane + 1) * 20 + 200  # Za posledním sloupcem větví
 
-        max_lane = max(self.branch_lanes.values())
-        return (max_lane + 1) * 20 + 120  # Za posledním sloupcem větví (20px mezery)
+        # Přidat dynamicky vypočítaný prostor pro tagy
+        tag_space = getattr(self, 'required_tag_space', 0)
+        return base_position + tag_space
 
     def _draw_flag_connection(self, canvas: tk.Canvas, commit_x: int, commit_y: int, branch_color: str):
         """Vykreslí horizontální spojnici od commitu k vlaječce."""
-        # Pozice vlaječky
-        flag_x = 30
+        # Pozice vlaječky (konzistentní s _draw_branch_flag)
+        flag_x = 70
 
         # Horizontální linka od commitu k vlaječce
+        # Použít vypočítanou šířku vlaječky
+        flag_width = getattr(self, 'flag_width', 80)
         canvas.create_line(
-            flag_x + 30, commit_y,  # Od pravého okraje vlaječky
+            flag_x + flag_width // 2 + 1, commit_y,  # Od pravého okraje vlaječky + 1px mimo orámování
             commit_x - self.node_radius, commit_y,  # K levému okraji commitu
             fill=branch_color,
             width=self.line_width

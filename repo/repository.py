@@ -28,6 +28,7 @@ class GitRepository:
         # Předpočítání map commit -> větev a commit -> tagy pro optimalizaci
         commit_to_branch = self._build_commit_branch_map()
         commit_to_tags = self._build_commit_tag_map()
+        branch_availability = self._build_branch_availability_map()
 
         commits = []
         used_colors = set()
@@ -55,6 +56,9 @@ class GitRepository:
                     # Získat tagy pro tento commit
                     commit_tags = commit_to_tags.get(commit.hexsha, [])
 
+                    # Určit dostupnost větve
+                    branch_avail = branch_availability.get(branch_name, 'local_only')
+
                     commit_obj = Commit(
                         hash=commit.hexsha[:8],
                         message=subject,
@@ -68,7 +72,8 @@ class GitRepository:
                         parents=[parent.hexsha[:8] for parent in commit.parents],
                         branch=branch_name,
                         branch_color=branch_colors[branch_name],
-                        tags=commit_tags
+                        tags=commit_tags,
+                        branch_availability=branch_avail
                     )
                     commit_obj.description = description
                     commit_obj.description_short = self._truncate_description(description)
@@ -125,6 +130,7 @@ class GitRepository:
         # Předpočítání map pro lokální i remote větve a tagy
         local_commit_map, remote_commit_map = self._build_commit_branch_map_with_remote()
         commit_to_tags = self._build_commit_tag_map_with_remote()
+        branch_availability = self._build_branch_availability_map()
 
         commits = []
         used_colors = set()
@@ -153,6 +159,13 @@ class GitRepository:
             # Získat tagy pro tento commit
             commit_tags = commit_to_tags.get(commit.hexsha, [])
 
+            # Určit dostupnost větve (pro remote větve může být branch_name s origin/ prefixem)
+            clean_branch_name = branch_name
+            if branch_name.startswith('origin/'):
+                clean_branch_name = branch_name[7:]  # Odstranit "origin/"
+
+            branch_avail = branch_availability.get(clean_branch_name, 'local_only')
+
             commit_obj = Commit(
                 hash=commit.hexsha[:8],
                 message=subject,
@@ -167,7 +180,8 @@ class GitRepository:
                 branch=branch_name,
                 branch_color=branch_colors[branch_name],
                 is_remote=is_remote,
-                tags=commit_tags
+                tags=commit_tags,
+                branch_availability=branch_avail
             )
             commit_obj.description = description
             commit_obj.description_short = self._truncate_description(description)
@@ -228,6 +242,45 @@ class GitRepository:
             pass
 
         return local_commit_map, remote_commit_map
+
+    def _build_branch_availability_map(self) -> Dict[str, str]:
+        """Vytvoří mapu branch_name -> availability (local_only/remote_only/both)."""
+        local_branches = set()
+        remote_branches = set()
+
+        # Získat lokální větve
+        try:
+            for head in self.repo.heads:
+                local_branches.add(head.name)
+        except:
+            pass
+
+        # Získat remote větve
+        try:
+            remote_refs = list(self.repo.remote().refs)
+            for remote_ref in remote_refs:
+                if remote_ref.name.endswith('/HEAD'):
+                    continue
+                # Extrahovat název větve z origin/branch_name
+                if remote_ref.name.startswith('origin/'):
+                    branch_name = remote_ref.name[7:]  # Odstranit "origin/"
+                    remote_branches.add(branch_name)
+        except:
+            pass
+
+        # Vytvořit mapu dostupnosti
+        availability_map = {}
+        all_branches = local_branches | remote_branches
+
+        for branch in all_branches:
+            if branch in local_branches and branch in remote_branches:
+                availability_map[branch] = 'both'
+            elif branch in local_branches:
+                availability_map[branch] = 'local_only'
+            elif branch in remote_branches:
+                availability_map[branch] = 'remote_only'
+
+        return availability_map
 
     def _build_commit_tag_map(self) -> Dict[str, List[Tag]]:
         """Vytvořuje mapu commit_hash -> List[Tag] pro lokální tagy."""

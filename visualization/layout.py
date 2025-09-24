@@ -24,7 +24,7 @@ class GraphLayout:
             branch_lane = self.branch_lanes[commit.branch]
 
             # X pozice podle lane větve (sloupec) - začátek po vlaječkách, menší rozestupy
-            commit.x = branch_lane * 20 + 100  # 20px mezi větvemi, začátek na 100px
+            commit.x = branch_lane * 20 + 170  # 20px mezi větvemi, začátek na 170px (posunuto kvůli širším vlaječkám s větším paddingem)
 
             # Y pozice podle chronologického pořadí (řádek)
             commit.y = i * 30 + 50
