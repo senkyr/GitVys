@@ -101,6 +101,113 @@ class GitRepository:
 
         return commit_to_branch
 
+    def parse_commits_with_remote(self) -> List[Commit]:
+        """Načte commity včetně remote větví z origin."""
+        if not self.repo:
+            return []
+
+        # Předpočítání map pro lokální i remote větve
+        local_commit_map, remote_commit_map = self._build_commit_branch_map_with_remote()
+
+        commits = []
+        used_colors = set()
+        branch_colors = {}
+
+        for commit in self.repo.iter_commits(all=True):
+            # Prioritně lokální větev
+            if commit.hexsha in local_commit_map:
+                branch_name = local_commit_map[commit.hexsha]
+                is_remote = False
+            elif commit.hexsha in remote_commit_map:
+                branch_name = remote_commit_map[commit.hexsha]
+                is_remote = True
+            else:
+                branch_name = 'unknown'
+                is_remote = False
+
+            if branch_name not in branch_colors:
+                branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
+
+            full_message = commit.message.strip()
+            message_lines = full_message.split('\n', 1)
+            subject = message_lines[0]
+            description = message_lines[1].strip() if len(message_lines) > 1 else ""
+
+            commit_obj = Commit(
+                hash=commit.hexsha[:8],
+                message=subject,
+                short_message=self._truncate_message(subject, 50),
+                author=commit.author.name,
+                author_short=self._truncate_name(commit.author.name),
+                author_email=commit.author.email,
+                date=commit.committed_datetime,
+                date_relative=self._get_relative_date(commit.committed_datetime),
+                date_short=self._get_full_date(commit.committed_datetime),
+                parents=[parent.hexsha[:8] for parent in commit.parents],
+                branch=branch_name,
+                branch_color=branch_colors[branch_name],
+                is_remote=is_remote
+            )
+            commit_obj.description = description
+            commit_obj.description_short = self._truncate_description(description)
+            commits.append(commit_obj)
+
+        commits.sort(key=lambda c: c.date, reverse=True)
+        self.commits = commits
+        return commits
+
+    def _build_commit_branch_map_with_remote(self) -> tuple[Dict[str, str], Dict[str, str]]:
+        """Vytvořuje mapy commit_hash -> branch_name pro lokální a remote větve."""
+        local_commit_map = {}
+        remote_commit_map = {}
+
+        try:
+            # 1. Prioritně lokální větve
+            main_branches = ['main', 'master']
+            other_local_branches = []
+
+            for head in self.repo.heads:
+                branch_name = head.name
+                if branch_name in main_branches:
+                    try:
+                        for commit in self.repo.iter_commits(head):
+                            local_commit_map[commit.hexsha] = branch_name
+                    except:
+                        continue
+                else:
+                    other_local_branches.append((head, branch_name))
+
+            for head, branch_name in other_local_branches:
+                try:
+                    for commit in self.repo.iter_commits(head):
+                        if commit.hexsha not in local_commit_map:
+                            local_commit_map[commit.hexsha] = branch_name
+                except:
+                    continue
+
+            # 2. Remote větve - jen pro commity bez lokální větve
+            try:
+                remote_refs = list(self.repo.remote().refs)
+                for remote_ref in remote_refs:
+                    # Přeskočit HEAD ref
+                    if remote_ref.name.endswith('/HEAD'):
+                        continue
+
+                    try:
+                        for commit in self.repo.iter_commits(remote_ref):
+                            if commit.hexsha not in local_commit_map:
+                                remote_commit_map[commit.hexsha] = remote_ref.name
+                    except:
+                        continue
+            except:
+                # Pokud remote neexistuje, pokračovat jen s lokálními větvemi
+                pass
+
+        except Exception:
+            pass
+
+        return local_commit_map, remote_commit_map
+
     def _truncate_message(self, message: str, max_length: int) -> str:
         if len(message) <= max_length:
             return message

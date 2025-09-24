@@ -45,6 +45,7 @@ class GraphDrawer:
 
     def _draw_connections(self, canvas: tk.Canvas, commits: List[Commit]):
         commit_positions = {commit.hash: (commit.x, commit.y) for commit in commits}
+        commit_info = {commit.hash: commit for commit in commits}
 
         for commit in commits:
             if commit.parents:
@@ -53,21 +54,25 @@ class GraphDrawer:
                     for parent_hash in commit.parents:
                         parent_pos = commit_positions.get(parent_hash)
                         if parent_pos:
+                            # Použít remote status dítěte pro kreslení spojnice
                             # Start from parent, draw to child
-                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color)
+                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color, commit.is_remote)
 
-    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str):
+    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False):
         start_x, start_y = start
         end_x, end_y = end
 
+        # Bledší barva pro remote spojnice
+        line_color = self._make_color_pale(color) if is_remote else color
+
         # Pokud jsou commity v různých sloupcích (větvení), kreslíme hladkou křivku
         if start_x != end_x:
-            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, color)
+            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color)
         else:
             # Přímá svislá linka pro commity ve stejném sloupci
             canvas.create_line(
                 start_x, start_y, end_x, end_y,
-                fill=color,
+                fill=line_color,
                 width=self.line_width
             )
 
@@ -233,22 +238,33 @@ class GraphDrawer:
         for commit in commits:
             x, y = commit.x, commit.y
 
+            # Vizuální rozlišení pro remote commity - bledší barva
+            if commit.is_remote:
+                # Bledší verze branch_color (50% transparence simulace)
+                fill_color = self._make_color_pale(commit.branch_color)
+                outline_color = '#CCCCCC'  # Světlejší obrys
+            else:
+                fill_color = commit.branch_color
+                outline_color = 'black'
+
             canvas.create_oval(
                 x - self.node_radius, y - self.node_radius,
                 x + self.node_radius, y + self.node_radius,
-                fill=commit.branch_color,
-                outline='black',
+                fill=fill_color,
+                outline=outline_color,
                 width=1
             )
 
             # Zobrazit vlaječku s názvem větve pro první commit každé větve
             if commit.branch not in drawn_branch_flags:
-                self._draw_branch_flag(canvas, x, y, commit.branch, commit.branch_color)
+                flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
+                self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote)
                 drawn_branch_flags.add(commit.branch)
 
             # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce
             if last_commits_by_branch[commit.branch] == commit:
-                self._draw_flag_connection(canvas, x, y, commit.branch_color)
+                connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
+                self._draw_flag_connection(canvas, x, y, connection_color)
 
             # Pevná pozice pro začátek "tabulky" - za všemi větvemi
             table_start_x = self._get_table_start_position()
@@ -383,7 +399,7 @@ class GraphDrawer:
             self.tooltip.destroy()
             self.tooltip = None
 
-    def _draw_branch_flag(self, canvas: tk.Canvas, x: int, y: int, branch_name: str, branch_color: str):
+    def _draw_branch_flag(self, canvas: tk.Canvas, x: int, y: int, branch_name: str, branch_color: str, is_remote: bool = False):
         """Vykreslí vlaječku s názvem větve v pevném levém sloupci."""
         # Velikost vlaječky
         flag_width = 60
@@ -393,22 +409,31 @@ class GraphDrawer:
         flag_x = 30  # Pevná pozice vlevo
         flag_y = y
 
+        # Bledší obrys pro remote větve
+        outline_color = '#CCCCCC' if is_remote else 'black'
+
         # Vytvořit obdélník vlaječky
         canvas.create_rectangle(
             flag_x - flag_width // 2, flag_y - flag_height // 2,
             flag_x + flag_width // 2, flag_y + flag_height // 2,
             fill=branch_color,
-            outline='black',
+            outline=outline_color,
             width=1
         )
 
-        # Přidat text názvu větve
+        # Přidat text názvu větve - upravit pro remote větve
+        display_name = branch_name
+        if is_remote and branch_name.startswith('origin/'):
+            # Zobrazit jen část po origin/ ale v jiné barvě
+            display_name = branch_name[7:]  # Odstranit "origin/"
+
+        text_color = '#E0E0E0' if is_remote else 'white'
         canvas.create_text(
             flag_x, flag_y,
-            text=branch_name,
+            text=display_name,
             anchor='center',
             font=('Arial', 8, 'bold'),
-            fill='white'
+            fill=text_color
         )
 
     def _update_branch_lanes(self, commits: List[Commit]):
@@ -541,6 +566,46 @@ class GraphDrawer:
                 right = mid - 1
 
         return result + "..." if result else "..."
+
+    def _make_color_pale(self, color: str) -> str:
+        """Vytvoří bledší verzi barvy pro remote větve."""
+        if not color or color == 'unknown':
+            return '#E0E0E0'
+
+        # Pokud je barva hexadecimální
+        if color.startswith('#'):
+            try:
+                # Převést hex na RGB
+                hex_color = color.lstrip('#')
+                if len(hex_color) == 6:
+                    r = int(hex_color[0:2], 16)
+                    g = int(hex_color[2:4], 16)
+                    b = int(hex_color[4:6], 16)
+
+                    # Směsovat s bílou (50% transparence simulace)
+                    r = int(r * 0.5 + 255 * 0.5)
+                    g = int(g * 0.5 + 255 * 0.5)
+                    b = int(b * 0.5 + 255 * 0.5)
+
+                    return f'#{r:02x}{g:02x}{b:02x}'
+            except:
+                pass
+
+        # Pro pojmenované barvy - jednoduchá mapování
+        color_map = {
+            'red': '#FFB3B3',
+            'blue': '#B3B3FF',
+            'green': '#B3FFB3',
+            'orange': '#FFE0B3',
+            'purple': '#E0B3FF',
+            'brown': '#D9C6B3',
+            'pink': '#FFB3E0',
+            'gray': '#D9D9D9',
+            'cyan': '#B3FFFF',
+            'yellow': '#FFFFE0'
+        }
+
+        return color_map.get(color.lower(), '#E0E0E0')
 
     def _move_separators_to_scroll_position(self, canvas: tk.Canvas, new_y: float):
         """Přesune existující separátory na novou Y pozici při scrollování."""

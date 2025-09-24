@@ -22,6 +22,7 @@ class Commit:
     table_row: int = 0
     description: str = ""
     description_short: str = ""
+    is_remote: bool = False
 
 
 @dataclass

@@ -109,11 +109,20 @@ class MainWindow:
 
         self.header_frame = ttk.Frame(self.main_frame)
         # Header frame se nezobrazuje v úvodním stavu
-        self.header_frame.columnconfigure(0, weight=1)
 
-        # Frame pro název repozitáře a statistiky na stejném řádku
+        # Fetch remote tlačítko (vlevo)
+        self.fetch_button = ttk.Button(
+            self.header_frame,
+            text="Načíst remote",
+            command=self.fetch_remote_data,
+            width=15
+        )
+        self.fetch_button.grid(row=0, column=0, sticky='w')
+
+        # Frame pro název repozitáře a statistiky na středu
         self.info_frame = ttk.Frame(self.header_frame)
-        self.info_frame.grid(row=0, column=0, sticky='w')
+        self.info_frame.grid(row=0, column=1, sticky='')
+        self.header_frame.columnconfigure(1, weight=1)  # Střední sloupec se rozšiřuje
 
         self.repo_name_label = ttk.Label(
             self.info_frame,
@@ -132,9 +141,10 @@ class MainWindow:
         self.close_button = ttk.Button(
             self.header_frame,
             text="Zavřít repo",
-            command=self.show_repository_selection
+            command=self.show_repository_selection,
+            width=15
         )
-        self.close_button.grid(row=0, column=1, sticky='e', padx=(10, 0))
+        self.close_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
 
         self.content_frame = ttk.Frame(self.main_frame)
         self.content_frame.grid(row=1, column=0, sticky='nsew')
@@ -196,6 +206,65 @@ class MainWindow:
 
         except Exception as e:
             self.root.after(0, self.show_error, f"Chyba při načítání repozitáře: {str(e)}")
+
+    def fetch_remote_data(self):
+        if not self.git_repo:
+            return
+
+        self.fetch_button.config(text="Načítám...", state="disabled")
+        self.update_status("Načítám remote větve...")
+        self.progress.start()
+
+        thread = threading.Thread(
+            target=self.load_remote_repository,
+            daemon=True
+        )
+        thread.start()
+
+    def load_remote_repository(self):
+        try:
+            commits = self.git_repo.parse_commits_with_remote()
+
+            if not commits:
+                self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
+                return
+
+            layout = GraphLayout(commits)
+            positioned_commits = layout.calculate_positions()
+
+            self.root.after(0, self.update_graph_with_remote, positioned_commits)
+
+        except Exception as e:
+            self.root.after(0, self.show_error, f"Chyba při načítání remote větví: {str(e)}")
+
+    def update_graph_with_remote(self, commits):
+        self.graph_canvas.update_graph(commits)
+
+        # Aktualizovat statistiky
+        stats = self.git_repo.get_repository_stats()
+
+        def get_czech_plural(count, singular, plural2_4, plural5):
+            if count == 1:
+                return singular
+            elif count in [2, 3, 4]:
+                return plural2_4
+            else:
+                return plural5
+
+        authors_text = f"{stats['authors']} {get_czech_plural(stats['authors'], 'autor', 'autoři', 'autorů')}"
+        branches_text = f"{stats['branches']} {get_czech_plural(stats['branches'], 'větev', 'větve', 'větví')}"
+        commits_text = f"{stats['commits']} {get_czech_plural(stats['commits'], 'commit', 'commity', 'commitů')}"
+        tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
+
+        stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+        self.stats_label.config(text=stats_text)
+
+        self.fetch_button.config(text="Načíst remote", state="normal")
+        self.progress.stop()
+        self.progress.config(value=100)
+        self.update_status(f"Načteno {len(commits)} commitů (včetně remote)")
+
+        self.root.after(100, lambda: self._resize_window_for_content(commits))
 
     def show_graph(self, commits):
         self.drag_drop_frame.grid_remove()
