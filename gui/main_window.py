@@ -68,35 +68,57 @@ class MainWindow:
         status_height = 40
         margins = 60
 
-        content_width = table_width + 200
+        # Redukovaný padding - pouze 50px místo 200px
+        content_width = table_width + 50
         content_height = (commit_count * commit_height) + header_height + status_height + margins
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
 
-        # Větší margin pro Windows (taskbar + bezpečnostní mezera)
-        margin_horizontal = 100
-        margin_vertical = 150  # 50 taskbar + 100 bezpečnostní mezera
+        # Menší margin pro Windows
+        margin_horizontal = 80  # Sníženo ze 100
+        margin_vertical = 120   # Sníženo ze 150
 
         window_width = min(content_width, screen_width - margin_horizontal)
         window_height = min(content_height, screen_height - margin_vertical)
 
-        window_width = max(window_width, 800)
-        window_height = max(window_height, 600)
+        # Dynamické minimum podle obsahu místo pevných hodnot
+        min_reasonable_width = min(600, table_width + 50)  # Alespoň obsah + malý buffer
+        min_reasonable_height = min(400, max(300, commit_count * 25 + 200))  # Přizpůsobit počtu commitů
+
+        window_width = max(window_width, min_reasonable_width)
+        window_height = max(window_height, min_reasonable_height)
 
         self._center_window(window_width, window_height)
 
+    def _get_accurate_content_width(self, canvas, commits):
+        """Získá přesnou šířku obsahu canvas s fallback logikou."""
+        # Nejprve zkusit získat skutečné rozměry z canvas
+        try:
+            canvas.update_idletasks()  # Zajistit že je vše vykresleno
+            bbox = canvas.bbox('all')
+            if bbox and bbox[2] > bbox[0]:
+                actual_width = bbox[2] - bbox[0]
+                # Přidat rozumný buffer pro UI elementy
+                return actual_width + 40
+        except:
+            pass
+
+        # Fallback: použít column_widths pokud jsou dostupné
+        if hasattr(self.graph_canvas.graph_drawer, 'column_widths'):
+            column_widths = self.graph_canvas.graph_drawer.column_widths
+            if column_widths:
+                table_width = sum(column_widths.values())
+                # Přidat prostor pro graf větví
+                max_branch_lanes = len(set(commit.branch for commit in commits)) if commits else 1
+                branch_width = max_branch_lanes * 25 + 120  # Konzervativnější odhad
+                return table_width + branch_width
+
+        # Poslední fallback pro velmi malé repozitáře
+        return 500
+
     def _calculate_table_width(self, canvas, commits):
-        if not hasattr(self.graph_canvas.graph_drawer, 'column_widths'):
-            return 1000
-
-        column_widths = self.graph_canvas.graph_drawer.column_widths
-        total_width = sum(column_widths.values()) if column_widths else 1000
-
-        max_branch_lanes = len(set(commit.branch for commit in commits))
-        branch_width = max_branch_lanes * 150
-
-        return total_width + branch_width
+        return self._get_accurate_content_width(canvas, commits)
 
     def setup_ui(self):
         self.root.columnconfigure(0, weight=1)
@@ -273,7 +295,8 @@ class MainWindow:
         self.progress.config(value=100)
         self.update_status(f"Načteno {len(commits)} commitů (včetně remote)")
 
-        self.root.after(100, lambda: self._resize_window_for_content(commits))
+        # Kratší delay pro rychlejší response, ale stále zajistit že je obsah vykreslen
+        self.root.after(50, lambda: self._resize_window_for_content(commits))
 
     def show_graph(self, commits):
         self.drag_drop_frame.grid_remove()
@@ -326,7 +349,8 @@ class MainWindow:
             self.repo_name_label.config(text="")
             self.stats_label.config(text=stats_text)
 
-        self.root.after(100, lambda: self._resize_window_for_content(commits))
+        # Kratší delay pro rychlejší response, ale stále zajistit že je obsah vykreslen
+        self.root.after(50, lambda: self._resize_window_for_content(commits))
 
         self.progress.stop()
         self.progress.config(value=100)
