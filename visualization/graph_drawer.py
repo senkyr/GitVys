@@ -19,8 +19,18 @@ class GraphDrawer:
         self.dragging_separator = None  # název sloupce jehož separátor se táhne
         self.drag_start_x = 0
 
+        # Šířka grafického sloupce (Branch/Commit)
+        self.graph_column_width = None  # Bude vypočítána dynamicky
+
         self.curve_intensity = 0.8  # Intenzita zakřivení pro rounded corners (0-1)
-        self.separator_height = 25  # výška separátoru v pixelech (odpovídá výšce záhlaví)
+
+        # Layout konstanty - jednotný systém marginů
+        self.HEADER_HEIGHT = 25  # Výška záhlaví/separátoru
+        self.BASE_MARGIN = 25    # Základní margin (stejný jako výška záhlaví)
+        self.BRANCH_SPACING = 20 # Vzdálenost mezi větvemi (lanes)
+
+        # Starý název pro zpětnou kompatibilitu
+        self.separator_height = self.HEADER_HEIGHT
         self.user_column_widths = {}  # uživatelem nastavené šířky
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
@@ -268,43 +278,29 @@ class GraphDrawer:
 
     def _calculate_required_tag_space(self, canvas: tk.Canvas, commits: List[Commit]):
         """Spočítá kolik dodatečného prostoru potřebují tagy za základní pozicí tabulky."""
-        emoji_font = ('Segoe UI Emoji', 10)  # Font pro emoji
-        text_font = ('Arial', 8, 'bold')     # Font pro názvy tagů
+        # Tagy by měly mít stejný prostor jako vlaječky podle požadavků
+        flag_width = getattr(self, 'flag_width', 80)
 
-        # Spočítat základní pozici tabulky bez tagů
-        if not self.branch_lanes:
-            base_table_position = 220
-        else:
-            max_lane = max(self.branch_lanes.values())
-            base_table_position = (max_lane + 1) * 20 + 200
+        # Prostor vyhrazený pro tagy: šířka vlaječek + margin napravo (BASE_MARGIN)
+        reserved_tag_space = flag_width + self.BASE_MARGIN
 
-        max_tag_overflow = 0
+        # Uložit vyhrazený prostor - tagy se už budou automaticky vejít díky
+        # omezeným šířkám v _draw_tags
+        self.required_tag_space = reserved_tag_space
 
-        for commit in commits:
-            if not commit.tags:
-                continue
+    def _calculate_graph_column_width(self) -> int:
+        """Vypočítá šířku grafického sloupce (Branch/Commit)."""
+        if self.graph_column_width is not None:
+            # Použít uživatelem nastavenou šířku
+            return self.graph_column_width
 
-            # Spočítat pozici konce tagů pro tento commit
-            tag_start_x = commit.x + self.node_radius + 15  # Pozice kde začíná první tag
-            current_x = tag_start_x
+        # Vypočítat automatickou šířku na základě obsahu
+        flag_width = getattr(self, 'flag_width', 80)
+        required_tag_space = getattr(self, 'required_tag_space', flag_width + self.BASE_MARGIN)
 
-            for tag in commit.tags:
-                # Šířka emoji (přibližně 15px)
-                emoji_width = 15
-                current_x += emoji_width
-
-                # Šířka textu + mezera
-                text_x = current_x + 15  # 15px mezera za emoji
-                tag_name_width = canvas.tk.call("font", "measure", text_font, tag.name)
-                current_x = text_x + tag_name_width + 20  # 20px mezera mezi tagy
-
-            # Spočítat o kolik tagy přesahují základní pozici tabulky
-            tag_end_x = current_x
-            overflow = tag_end_x - base_table_position + 20  # +20px bezpečná mezera
-            max_tag_overflow = max(max_tag_overflow, overflow)
-
-        # Uložit jen dodatečný prostor který tagy potřebují
-        self.required_tag_space = max(0, max_tag_overflow)
+        # Šířka: margin + vlaječky + margin + tagy
+        auto_width = self.BASE_MARGIN + flag_width + self.BASE_MARGIN + required_tag_space
+        return auto_width
 
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
         # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
@@ -491,8 +487,8 @@ class GraphDrawer:
         flag_width = getattr(self, 'flag_width', 80)  # Fallback na 80 pokud nebyla vypočítána
         flag_height = 20
 
-        # Pozice vlaječky (posunuto více doprava pro lepší rozestupy)
-        flag_x = 70  # Posunuté doprava z 50 na 70 pro vzdušnější layout
+        # Pozice vlaječky - margin zleva stejný jako margin shora (BASE_MARGIN + polovina šířky vlaječky)
+        flag_x = self.BASE_MARGIN + flag_width // 2
         flag_y = y
 
         # Bledší obrys pro remote větve
@@ -629,6 +625,10 @@ class GraphDrawer:
         emoji_font = ('Segoe UI Emoji', 10)  # Font pro emoji
         text_font = ('Arial', 8, 'bold')     # Font pro názvy tagů
 
+        # Spočítat dostupný prostor pro tagy (stejný jako šířka vlaječek podle požadavků)
+        flag_width = getattr(self, 'flag_width', 80)
+        available_tag_space = flag_width
+
         for commit in commits:
             if not commit.tags:
                 continue
@@ -638,15 +638,25 @@ class GraphDrawer:
             # Pozice pro tagy - napravo od commit kolečka na stejné výšce
             tag_x_start = x + self.node_radius + 15  # 15px mezera od kolečka
 
+            # Spočítat dostupný prostor pro jednotlivé tagy tohoto commitu
+            tags_total_space = available_tag_space
+            tags_count = len(commit.tags)
+
+            if tags_count > 0:
+                # Rezervovat prostor pro emoji a mezery
+                emoji_and_spacing_width = tags_count * 15 + (tags_count - 1) * 20  # emoji + mezery mezi tagy
+                available_text_space = max(0, tags_total_space - emoji_and_spacing_width)
+                max_text_width_per_tag = available_text_space // tags_count if tags_count > 0 else 0
+
             current_x = tag_x_start
             for tag in commit.tags:
                 # Vykreslit tag emoji
                 emoji_x = current_x
                 self._draw_tag_emoji(canvas, emoji_x, y, tag.is_remote, emoji_font)
 
-                # Vykreslit název tagu vedle emoji
+                # Vykreslit název tagu vedle emoji s omezenou šířkou
                 text_x = emoji_x + 15  # 15px mezera za emoji
-                label_width = self._draw_tag_label(canvas, text_x, y, tag.name, tag.is_remote, text_font)
+                label_width = self._draw_tag_label(canvas, text_x, y, tag.name, tag.is_remote, text_font, max_text_width_per_tag)
 
                 # Přidat tooltip pro anotované tagy
                 if tag.message:
@@ -676,16 +686,23 @@ class GraphDrawer:
             tags="tag_emoji"
         )
 
-    def _draw_tag_label(self, canvas: tk.Canvas, x: int, y: int, tag_name: str, is_remote: bool, font):
+    def _draw_tag_label(self, canvas: tk.Canvas, x: int, y: int, tag_name: str, is_remote: bool, font, available_width: int = None):
         """Vykreslí label s názvem tagu a vrátí šířku textu."""
-        # Prostor je už předpočítaný dynamicky, takže zobrazit plný název
-        # (případ kdy by byl prostor nedostatečný by už byl vyřešen při výpočtu required_tag_space)
         display_name = tag_name
+        needs_tooltip = False
+
+        # Zkrátit název pokud je příliš dlouhý
+        if available_width and available_width > 0:
+            full_width = canvas.tk.call("font", "measure", font, tag_name)
+            if full_width > available_width:
+                # Název je příliš dlouhý, zkrátit ho
+                display_name = self._truncate_text_to_width(canvas, font, tag_name, available_width)
+                needs_tooltip = True
 
         # Barvy textu - konzistentnější s emoji
         text_color = '#666666' if is_remote else '#333333'  # Šedší pro remote, tmavší pro lokální
 
-        canvas.create_text(
+        text_item = canvas.create_text(
             x, y,
             text=display_name,
             anchor='w',  # Zarovnat vlevo místo na střed
@@ -694,7 +711,14 @@ class GraphDrawer:
             tags="tag_label"
         )
 
-        # Vrátit šířku textu pro kalkulaci pozice dalšího tagu
+        # Přidat tooltip pokud byl text zkrácen
+        if needs_tooltip:
+            canvas.tag_bind(text_item, "<Enter>",
+                lambda e, full_name=tag_name: self._show_tooltip(e, full_name))
+            canvas.tag_bind(text_item, "<Leave>",
+                lambda e: self._hide_tooltip())
+
+        # Vrátit šířku zobrazovaného textu pro kalkulaci pozice dalšího tagu
         text_width = canvas.tk.call("font", "measure", font, display_name)
         return text_width
 
@@ -717,30 +741,29 @@ class GraphDrawer:
     def _update_branch_lanes(self, commits: List[Commit]):
         """Aktualizuje informace o lanes pro výpočet pozice tabulky."""
         self.branch_lanes = {}
+        flag_width = getattr(self, 'flag_width', 80)
+        # Spočítat pozici prvního commitu (lane 0)
+        first_commit_x = self.BASE_MARGIN + flag_width + self.BASE_MARGIN  # vlaječka + rozestup
+
         for commit in commits:
-            branch_lane = (commit.x - 150) // 20  # Zpětný výpočet lane z X pozice (20px mezery, aktualizováno z 100 na 150)
+            branch_lane = (commit.x - first_commit_x) // self.BRANCH_SPACING
             self.branch_lanes[commit.branch] = branch_lane
 
     def _get_table_start_position(self) -> int:
         """Vrátí X pozici kde začíná tabulka (za všemi větvemi)."""
-        if not self.branch_lanes:
-            base_position = 220  # Základní pozice za vlaječkami
-        else:
-            max_lane = max(self.branch_lanes.values())
-            base_position = (max_lane + 1) * 20 + 200  # Za posledním sloupcem větví
-
-        # Přidat dynamicky vypočítaný prostor pro tagy
-        tag_space = getattr(self, 'required_tag_space', 0)
-        return base_position + tag_space
+        # Použít celkovou šířku grafického sloupce
+        graph_column_width = self._calculate_graph_column_width()
+        return graph_column_width
 
     def _draw_flag_connection(self, canvas: tk.Canvas, commit_x: int, commit_y: int, branch_color: str):
         """Vykreslí horizontální spojnici od commitu k vlaječce."""
-        # Pozice vlaječky (konzistentní s _draw_branch_flag)
-        flag_x = 70
-
-        # Horizontální linka od commitu k vlaječce
         # Použít vypočítanou šířku vlaječky
         flag_width = getattr(self, 'flag_width', 80)
+
+        # Pozice vlaječky (konzistentní s _draw_branch_flag)
+        flag_x = self.BASE_MARGIN + flag_width // 2
+
+        # Horizontální linka od commitu k vlaječce
         canvas.create_line(
             flag_x + flag_width // 2 + 1, commit_y,  # Od pravého okraje vlaječky + 1px mimo orámování
             commit_x - self.node_radius, commit_y,  # K levému okraji commitu
@@ -957,7 +980,50 @@ class GraphDrawer:
 
         columns = ['message', 'author', 'email', 'date']
 
-        # NEJPRVE vykreslit separátory (aby byly pod pozadím)
+        # NEJPRVE vykreslit separátor před prvním textovým sloupcem (Branch/Commit | Message)
+        graph_separator_x = table_start_x
+
+        # Pozadí separátoru pro grafický sloupec
+        canvas.create_rectangle(
+            graph_separator_x - 5, separator_y,
+            graph_separator_x + 5, separator_y + self.HEADER_HEIGHT,
+            outline='',
+            fill='#888888',
+            tags=("column_separator", "sep_graph_bg")
+        )
+
+        # Samotný separátor pro grafický sloupec
+        canvas.create_line(
+            graph_separator_x, separator_y,
+            graph_separator_x, separator_y + self.HEADER_HEIGHT,
+            width=3,
+            fill='#333333',
+            tags=("column_separator", "sep_graph"),
+            activefill='#000000'
+        )
+
+        # Uložit pozici separátoru pro grafický sloupec
+        self.column_separators['graph'] = graph_separator_x
+
+        # Přidat interaktivitu pro grafický separátor
+        area_id = canvas.create_rectangle(
+            graph_separator_x - 5, separator_y,
+            graph_separator_x + 5, separator_y + self.HEADER_HEIGHT,
+            outline='',
+            fill='',
+            tags=("column_separator", "sep_graph_area")
+        )
+
+        # Event handlers pro grafický separátor
+        canvas.tag_bind("sep_graph", '<Button-1>', lambda e: self._start_drag(e, 'graph'))
+        canvas.tag_bind("sep_graph_area", '<Button-1>', lambda e: self._start_drag(e, 'graph'))
+        canvas.tag_bind("sep_graph_bg", '<Button-1>', lambda e: self._start_drag(e, 'graph'))
+
+        for tag in ["sep_graph", "sep_graph_area", "sep_graph_bg"]:
+            canvas.tag_bind(tag, '<Enter>', lambda e: canvas.config(cursor='sb_h_double_arrow'))
+            canvas.tag_bind(tag, '<Leave>', lambda e: canvas.config(cursor='') if not self.dragging_separator else None)
+
+        # POTOM vykreslit separátory mezi textovými sloupci (aby byly pod pozadím)
         temp_current_x = table_start_x
         for i, column in enumerate(columns):
             temp_current_x += self.column_widths[column]
@@ -1018,10 +1084,10 @@ class GraphDrawer:
                 canvas.tag_bind(f"sep_{column}_bg", '<Leave>', set_cursor_leave)
 
         # POTOM vykreslit pozadí (s výřezy pro separátory)
-        # Pozadí pro grafický sloupec
+        # Pozadí pro grafický sloupec - s výřezem pro separátor
         graph_column_bg = canvas.create_rectangle(
             0, separator_y,
-            table_start_x, separator_y + 25,
+            table_start_x - 5, separator_y + 25,  # -5 pro výřez separátoru
             outline='',
             fill='#f0f0f0',
             tags=("column_header", "graph_header_bg")
@@ -1107,12 +1173,20 @@ class GraphDrawer:
         canvas = event.widget
         delta_x = event.x - self.drag_start_x
 
-        # Aktualizovat šířku sloupce
-        current_width = self.column_widths[self.dragging_separator]
-        new_width = max(50, current_width + delta_x)  # minimální šířka 50px
+        if self.dragging_separator == 'graph':
+            # Speciální zpracování pro grafický sloupec
+            current_width = self._calculate_graph_column_width()
+            new_width = max(100, current_width + delta_x)  # minimální šířka 100px pro grafický sloupec
 
-        self.user_column_widths[self.dragging_separator] = new_width
-        self.column_widths[self.dragging_separator] = new_width
+            # Uložit novou šířku grafického sloupce
+            self.graph_column_width = new_width
+        else:
+            # Standardní zpracování pro textové sloupce
+            current_width = self.column_widths[self.dragging_separator]
+            new_width = max(50, current_width + delta_x)  # minimální šířka 50px
+
+            self.user_column_widths[self.dragging_separator] = new_width
+            self.column_widths[self.dragging_separator] = new_width
 
         self.drag_start_x = event.x
 

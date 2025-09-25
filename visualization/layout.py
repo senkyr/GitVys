@@ -3,10 +3,14 @@ from utils.data_structures import Commit
 
 
 class GraphLayout:
-    def __init__(self, commits: List[Commit]):
+    def __init__(self, commits: List[Commit], branch_spacing: int = 20, commit_start_x: int = 160):
         self.commits = commits
         self.branch_lanes: Dict[str, int] = {}
         self.used_lanes: Set[int] = set()
+
+        # Layout parametry
+        self.branch_spacing = branch_spacing  # Vzdálenost mezi větvemi
+        self.commit_start_x = commit_start_x  # X pozice pro první větev (lane 0)
 
     def calculate_positions(self) -> List[Commit]:
         if not self.commits:
@@ -24,7 +28,7 @@ class GraphLayout:
             branch_lane = self.branch_lanes[commit.branch]
 
             # X pozice podle lane větve (sloupec) - začátek po vlaječkách, menší rozestupy
-            commit.x = branch_lane * 20 + 170  # 20px mezi větvemi, začátek na 170px (posunuto kvůli širším vlaječkám s větším paddingem)
+            commit.x = branch_lane * self.branch_spacing + self.commit_start_x
 
             # Y pozice podle chronologického pořadí (řádek)
             commit.y = i * 30 + 50

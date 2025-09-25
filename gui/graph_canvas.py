@@ -59,23 +59,53 @@ class GraphCanvas(ttk.Frame):
 
     def _can_scroll_vertically(self) -> bool:
         """Check if vertical scrolling is needed"""
-        bbox = self.canvas.bbox('all')
-        if not bbox:
+        # Použít scrollregion místo bbox pro konzistenci s bounds checking
+        scrollregion = self.canvas.cget('scrollregion')
+        if not scrollregion:
             return False
 
-        content_height = bbox[3] - bbox[1]
-        canvas_height = self.canvas.winfo_height()
-        return content_height > canvas_height
+        try:
+            # Parse scrollregion string "x1 y1 x2 y2"
+            coords = [float(x) for x in scrollregion.split()]
+            if len(coords) != 4:
+                return False
+
+            content_height = coords[3] - coords[1]
+            canvas_height = self.canvas.winfo_height()
+            return content_height > canvas_height
+        except (ValueError, IndexError):
+            # Fallback na bbox pokud parsing selže
+            bbox = self.canvas.bbox('all')
+            if not bbox:
+                return False
+            content_height = bbox[3] - bbox[1]
+            canvas_height = self.canvas.winfo_height()
+            return content_height > canvas_height
 
     def _can_scroll_horizontally(self) -> bool:
         """Check if horizontal scrolling is needed"""
-        bbox = self.canvas.bbox('all')
-        if not bbox:
+        # Použít scrollregion místo bbox pro konzistenci s bounds checking
+        scrollregion = self.canvas.cget('scrollregion')
+        if not scrollregion:
             return False
 
-        content_width = bbox[2] - bbox[0]
-        canvas_width = self.canvas.winfo_width()
-        return content_width > canvas_width
+        try:
+            # Parse scrollregion string "x1 y1 x2 y2"
+            coords = [float(x) for x in scrollregion.split()]
+            if len(coords) != 4:
+                return False
+
+            content_width = coords[2] - coords[0]
+            canvas_width = self.canvas.winfo_width()
+            return content_width > canvas_width
+        except (ValueError, IndexError):
+            # Fallback na bbox pokud parsing selže
+            bbox = self.canvas.bbox('all')
+            if not bbox:
+                return False
+            content_width = bbox[2] - bbox[0]
+            canvas_width = self.canvas.winfo_width()
+            return content_width > canvas_width
 
     def _update_scrollbars_visibility(self):
         """Show/hide scrollbars based on content size"""
@@ -161,13 +191,29 @@ class GraphCanvas(ttk.Frame):
         # Nastavit event handlery pro změnu velikosti sloupců
         self.graph_drawer.setup_column_resize_events(self.canvas)
 
-        max_x = max(commit.x for commit in commits) + 100
-        max_y = max(commit.y for commit in commits) + 100
-        self.canvas.configure(scrollregion=(0, 0, max_x, max_y))
+        # Počkat až se vše vykreslí, pak spočítat skutečné rozměry
+        self.canvas.update_idletasks()
+
+        # Použít bbox('all') pro skutečné rozměry obsahu
+        bbox = self.canvas.bbox('all')
+        if bbox:
+            # Přidat malý buffer okolo obsahu
+            buffer = 50
+            scroll_x1 = max(0, bbox[0] - buffer)
+            scroll_y1 = max(0, bbox[1] - buffer)
+            scroll_x2 = bbox[2] + buffer
+            scroll_y2 = bbox[3] + buffer
+            self.canvas.configure(scrollregion=(scroll_x1, scroll_y1, scroll_x2, scroll_y2))
+        else:
+            # Fallback pro případ prázdného obsahu
+            max_x = max(commit.x for commit in commits) + 100
+            max_y = max(commit.y for commit in commits) + 100
+            self.canvas.configure(scrollregion=(0, 0, max_x, max_y))
 
         # Update scrollbars visibility after setting content
         self.canvas.update_idletasks()
         self._update_scrollbars_visibility()
+
 
         # Auto-scroll to top when loading new repository content
         self.canvas.yview_moveto(0)  # Scroll to top
