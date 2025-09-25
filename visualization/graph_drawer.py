@@ -277,16 +277,11 @@ class GraphDrawer:
         self.flag_width = max(90, min(self.flag_width, 160))
 
     def _calculate_required_tag_space(self, canvas: tk.Canvas, commits: List[Commit]):
-        """Spočítá kolik dodatečného prostoru potřebují tagy za základní pozicí tabulky."""
-        # Tagy by měly mít stejný prostor jako vlaječky podle požadavků
+        """Odhadne prostor potřebný pro tagy (zjednodušená verze - nyní počítáme dynamicky)."""
+        # Fixní odhad prostoru pro tagy - skutečný prostor se počítá dynamicky v _draw_tags
+        # Tento odhad slouží pouze pro výpočet celkové šířky grafického sloupce
         flag_width = getattr(self, 'flag_width', 80)
-
-        # Prostor vyhrazený pro tagy: šířka vlaječek + margin napravo (BASE_MARGIN)
-        reserved_tag_space = flag_width + self.BASE_MARGIN
-
-        # Uložit vyhrazený prostor - tagy se už budou automaticky vejít díky
-        # omezeným šířkám v _draw_tags
-        self.required_tag_space = reserved_tag_space
+        self.required_tag_space = flag_width + self.BASE_MARGIN
 
     def _calculate_graph_column_width(self) -> int:
         """Vypočítá šířku grafického sloupce (Branch/Commit)."""
@@ -625,9 +620,8 @@ class GraphDrawer:
         emoji_font = ('Segoe UI Emoji', 10)  # Font pro emoji
         text_font = ('Arial', 8, 'bold')     # Font pro názvy tagů
 
-        # Spočítat dostupný prostor pro tagy (stejný jako šířka vlaječek podle požadavků)
-        flag_width = getattr(self, 'flag_width', 80)
-        available_tag_space = flag_width
+        # Získat pozici začátku tabulky
+        table_start_x = self._get_table_start_position()
 
         for commit in commits:
             if not commit.tags:
@@ -638,15 +632,26 @@ class GraphDrawer:
             # Pozice pro tagy - napravo od commit kolečka na stejné výšce
             tag_x_start = x + self.node_radius + 15  # 15px mezera od kolečka
 
+            # Spočítat skutečný dostupný prostor pro tagy až do začátku tabulky
+            available_tag_space = table_start_x - tag_x_start - self.BASE_MARGIN
+
             # Spočítat dostupný prostor pro jednotlivé tagy tohoto commitu
-            tags_total_space = available_tag_space
+            tags_total_space = max(0, available_tag_space)  # Zajistit že není negativní
             tags_count = len(commit.tags)
 
             if tags_count > 0:
                 # Rezervovat prostor pro emoji a mezery
                 emoji_and_spacing_width = tags_count * 15 + (tags_count - 1) * 20  # emoji + mezery mezi tagy
                 available_text_space = max(0, tags_total_space - emoji_and_spacing_width)
-                max_text_width_per_tag = available_text_space // tags_count if tags_count > 0 else 0
+
+                # Minimální šířka pro text jednoho tagu (aby se vešly alespoň 3 znaky + ellipsis)
+                min_text_width_per_tag = 30
+
+                # Vypočítat maximální šířku textu na tag
+                if available_text_space > 0 and tags_count > 0:
+                    max_text_width_per_tag = max(min_text_width_per_tag, available_text_space // tags_count)
+                else:
+                    max_text_width_per_tag = min_text_width_per_tag
 
             current_x = tag_x_start
             for tag in commit.tags:
@@ -972,7 +977,7 @@ class GraphDrawer:
 
         # Názvy sloupců
         column_names = {
-            'message': 'Commit Message / Description',
+            'message': 'Message / Description',
             'author': 'Author',
             'email': 'Email',
             'date': 'Date'
@@ -1097,7 +1102,7 @@ class GraphDrawer:
         graph_header_x = table_start_x // 2
         graph_header_text = canvas.create_text(
             graph_header_x, separator_y + 12,
-            text="Branch / Commit",
+            text="Branch / Commit / Tag",
             anchor='center',
             font=('Arial', 8, 'bold'),
             fill='#333333',
