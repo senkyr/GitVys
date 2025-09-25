@@ -30,6 +30,7 @@ class MainWindow:
         self._center_window(self.default_width, self.default_height)
 
         self.git_repo = None
+        self.is_remote_loaded = False  # Sledování stavu remote načtení
         self.setup_ui()
 
     def _center_window(self, width: int, height: int):
@@ -195,6 +196,19 @@ class MainWindow:
         )
         self.progress.grid(row=0, column=1, sticky='ew', padx=(10, 0))
 
+        # Refresh tlačítko (vpravo dolů)
+        self.refresh_button = ttk.Button(
+            self.status_frame,
+            text="Refresh",
+            command=self.refresh_repository,
+            width=15
+        )
+        # Tlačítko se zobrazí až po načtení repozitáře
+
+        # Přidat F5 key binding
+        self.root.bind('<F5>', lambda event: self.refresh_repository())
+        self.root.focus_set()  # Zajistit focus pro key bindings
+
     def on_repository_selected(self, repo_path: str):
         self.update_status("Načítám repozitář...")
         self.progress.config(value=50)
@@ -229,6 +243,42 @@ class MainWindow:
         except Exception as e:
             self.root.after(0, self.show_error, f"Chyba při načítání repozitáře: {str(e)}")
 
+    def refresh_repository(self):
+        """Obnoví repozitář podle aktuálního stavu (lokální vs remote)."""
+        if not self.git_repo:
+            return
+
+        if self.is_remote_loaded:
+            # Obnovit s remote daty
+            self.fetch_remote_data()
+        else:
+            # Obnovit jen lokálně
+            self.update_status("Obnovujem repozitář...")
+            self.progress.start()
+
+            thread = threading.Thread(
+                target=self.refresh_local_repository,
+                daemon=True
+            )
+            thread.start()
+
+    def refresh_local_repository(self):
+        """Obnoví lokální repozitář data."""
+        try:
+            commits = self.git_repo.parse_commits()
+
+            if not commits:
+                self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
+                return
+
+            layout = GraphLayout(commits)
+            positioned_commits = layout.calculate_positions()
+
+            self.root.after(0, self.show_graph, positioned_commits)
+
+        except Exception as e:
+            self.root.after(0, self.show_error, f"Chyba při obnovování: {str(e)}")
+
     def fetch_remote_data(self):
         if not self.git_repo:
             return
@@ -260,6 +310,7 @@ class MainWindow:
             self.root.after(0, self.show_error, f"Chyba při načítání remote větví: {str(e)}")
 
     def update_graph_with_remote(self, commits):
+        self.is_remote_loaded = True  # Označit že jsou načtená remote data
         self.graph_canvas.update_graph(commits)
 
         # Aktualizovat statistiky
@@ -294,6 +345,9 @@ class MainWindow:
         self.progress.stop()
         self.progress.config(value=100)
         self.update_status(f"Načteno {len(commits)} commitů (včetně remote)")
+
+        # Zobrazit Refresh tlačítko (pokud už není zobrazené)
+        self.refresh_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
 
         # Kratší delay pro rychlejší response, ale stále zajistit že je obsah vykreslen
         self.root.after(50, lambda: self._resize_window_for_content(commits))
@@ -356,6 +410,9 @@ class MainWindow:
         self.progress.config(value=100)
         self.update_status(f"Načteno {len(commits)} commitů")
 
+        # Zobrazit Refresh tlačítko
+        self.refresh_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
+
     def show_repository_selection(self):
         self.graph_canvas.grid_remove()
         self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
@@ -364,6 +421,12 @@ class MainWindow:
         self.header_frame.grid_remove()
         self.repo_name_label.config(text="")
         self.stats_label.config(text="")
+
+        # Skrýt Refresh tlačítko
+        self.refresh_button.grid_remove()
+
+        # Reset remote stavu
+        self.is_remote_loaded = False
 
         # Obnovit defaultní titul a velikost okna
         self.root.title(self.default_title)
