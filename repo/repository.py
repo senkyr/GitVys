@@ -28,7 +28,7 @@ class GitRepository:
         # Předpočítání map commit -> větev a commit -> tagy pro optimalizaci
         commit_to_branch = self._build_commit_branch_map()
         commit_to_tags = self._build_commit_tag_map()
-        branch_availability = self._build_branch_availability_map()
+        branch_availability = self._build_branch_availability_map(include_remote=False)
 
         commits = []
         used_colors = set()
@@ -243,7 +243,7 @@ class GitRepository:
 
         return local_commit_map, remote_commit_map
 
-    def _build_branch_availability_map(self) -> Dict[str, str]:
+    def _build_branch_availability_map(self, include_remote: bool = True) -> Dict[str, str]:
         """Vytvoří mapu branch_name -> availability (local_only/remote_only/both)."""
         local_branches = set()
         remote_branches = set()
@@ -255,18 +255,19 @@ class GitRepository:
         except:
             pass
 
-        # Získat remote větve
-        try:
-            remote_refs = list(self.repo.remote().refs)
-            for remote_ref in remote_refs:
-                if remote_ref.name.endswith('/HEAD'):
-                    continue
-                # Extrahovat název větve z origin/branch_name
-                if remote_ref.name.startswith('origin/'):
-                    branch_name = remote_ref.name[7:]  # Odstranit "origin/"
-                    remote_branches.add(branch_name)
-        except:
-            pass
+        # Získat remote větve pouze pokud je to požadováno
+        if include_remote:
+            try:
+                remote_refs = list(self.repo.remote().refs)
+                for remote_ref in remote_refs:
+                    if remote_ref.name.endswith('/HEAD'):
+                        continue
+                    # Extrahovat název větve z origin/branch_name
+                    if remote_ref.name.startswith('origin/'):
+                        branch_name = remote_ref.name[7:]  # Odstranit "origin/"
+                        remote_branches.add(branch_name)
+            except:
+                pass
 
         # Vytvořit mapu dostupnosti
         availability_map = {}

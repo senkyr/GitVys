@@ -169,6 +169,13 @@ class GraphCanvas(ttk.Frame):
         self.canvas.update_idletasks()
         self._update_scrollbars_visibility()
 
+        # Auto-scroll to top when loading new repository content
+        self.canvas.yview_moveto(0)  # Scroll to top
+        self.canvas.xview_moveto(0)  # Reset horizontal scroll as well
+
+        # Update column headers to reflect new scroll position
+        self._update_column_separators()
+
     def on_drop(self, event):
         files = self.canvas.tk.splitlist(event.data)
         if files and self.on_drop_callback:
