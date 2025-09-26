@@ -743,40 +743,59 @@ class GitRepository:
 
                 # Aplikovat světlejší barvu (podobně jako _make_color_pale v graph_drawer)
                 old_color = commit.branch_color
-                commit.branch_color = self._make_color_pale(merge_branch.original_color)
+                commit.branch_color = self._make_color_pale(merge_branch.original_color, blend_type="merge")
 
                 # Označit jako merge branch commit (pro případné budoucí funkce)
                 commit.is_merge_branch = True
                 styled_count += 1
 
 
-    def _make_color_pale(self, color: str) -> str:
-        """Vytvoří světlejší variantu barvy pro merge větve."""
-        # Odstranit # pokud existuje
+    def _make_color_pale(self, color: str, blend_type: str = "merge") -> str:
+        """Vytvoří světlejší variantu barvy pro merge větve pomocí HSL manipulace."""
+        if not color or color == 'unknown':
+            return '#CCCCCC'
+
         if color.startswith('#'):
-            color = color[1:]
+            try:
+                # Převést hex na RGB
+                hex_color = color.lstrip('#')
+                if len(hex_color) == 6:
+                    r = int(hex_color[0:2], 16) / 255.0
+                    g = int(hex_color[2:4], 16) / 255.0
+                    b = int(hex_color[4:6], 16) / 255.0
 
-        # Konverze hex na RGB
-        try:
-            r = int(color[0:2], 16)
-            g = int(color[2:4], 16)
-            b = int(color[4:6], 16)
+                    # Převést RGB na HSL
+                    import colorsys
+                    h, l, s = colorsys.rgb_to_hls(r, g, b)
 
-            # Zvýšit světlost (blend s bílou)
-            factor = 0.6  # Světlejší než remote (které má 0.7)
-            r = int(r + (255 - r) * factor)
-            g = int(g + (255 - g) * factor)
-            b = int(b + (255 - b) * factor)
+                    # Aplikovat vyblednutí podle typu
+                    if blend_type == "remote":
+                        # Remote: mírnější vyblednutí pro zachování rozlišitelnosti
+                        s = s * 0.8  # Snížit sytost na 80% originální
+                        l = min(0.9, l + 0.15)  # Zvýšit lightness o 15%
+                    elif blend_type == "merge":
+                        # Merge: výrazné vyblednutí - nejméně saturované ze všech
+                        s = s * 0.6  # Snížit sytost na 60% originální (méně než remote)
+                        l = min(0.85, l + 0.20)  # Výrazně zvýšit lightness o 20%
+                    else:
+                        # Fallback na merge chování
+                        s = s * 0.6
+                        l = min(0.85, l + 0.20)
 
-            # Zajistit že jsou hodnoty v rozsahu 0-255
-            r = min(255, max(0, r))
-            g = min(255, max(0, g))
-            b = min(255, max(0, b))
+                    # Převést zpět na RGB
+                    r, g, b = colorsys.hls_to_rgb(h, l, s)
 
-            return f"#{r:02x}{g:02x}{b:02x}"
-        except:
-            # Fallback na světle šedou
-            return "#CCCCCC"
+                    # Převést na hex
+                    r = int(r * 255)
+                    g = int(g * 255)
+                    b = int(b * 255)
+
+                    return f'#{r:02x}{g:02x}{b:02x}'
+            except:
+                pass
+
+        # Fallback na světle šedou
+        return "#CCCCCC"
 
     def _create_uncommitted_commits(self, uncommitted_info: Dict[str, any], existing_commits: List[Commit] = None) -> List[Commit]:
         """Vytvoří pseudo-commity pro uncommitted změny pro každou větev."""

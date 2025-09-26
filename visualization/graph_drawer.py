@@ -115,7 +115,7 @@ class GraphDrawer:
             line_color = color  # Plná barva větve pro WIP commity
             stipple_pattern = 'gray50'  # Stejné šrafování jako WIP kroužek
         elif is_merge_connection:
-            line_color = self._make_color_pale(color)  # Světlá barva pro merge connections
+            line_color = self._make_color_pale(color, blend_type="merge")  # Světlá barva pro merge connections
             stipple_pattern = None
         elif is_remote:
             line_color = self._make_color_pale(color)  # Bledší barva pro remote
@@ -379,7 +379,9 @@ class GraphDrawer:
             if is_remote and branch_name.startswith('origin/'):
                 display_name = branch_name[7:]  # Odstranit "origin/"
 
-            unique_branches.add(display_name)
+            # Zkrátit název pro výpočet šířky
+            truncated_name = self._truncate_branch_name(display_name)
+            unique_branches.add(truncated_name)
 
         # Najít nejdelší název větve
         for display_name in unique_branches:
@@ -400,8 +402,8 @@ class GraphDrawer:
 
         self.flag_width = symbol_space + padding + max_text_width
 
-        # Minimální šířka 90px (aby se vešly symboly s větším paddingem), maximální rozumná šířka 160px
-        self.flag_width = max(90, min(self.flag_width, 160))
+        # Minimální šířka 90px (aby se vešly symboly s větším paddingem), maximální rozumná šířka 120px (sníženo)
+        self.flag_width = max(90, min(self.flag_width, 120))
 
     def _calculate_required_tag_space(self, canvas: tk.Canvas, commits: List[Commit]):
         """Odhadne prostor potřebný pro tagy (zjednodušená verze - nyní počítáme dynamicky)."""
@@ -726,6 +728,10 @@ class GraphDrawer:
             # Zobrazit jen část po origin/ ale v jiné barvě
             display_name = branch_name[7:]  # Odstranit "origin/"
 
+        # Zkrátit název pro zobrazení
+        full_name = display_name  # Uchovat pro tooltip
+        display_name = self._truncate_branch_name(display_name)
+
         # Určit, které symboly zobrazit podle dostupnosti větve
         has_local = branch_availability in ["local_only", "both"]
         has_remote = branch_availability in ["remote_only", "both"]
@@ -751,13 +757,17 @@ class GraphDrawer:
             )
 
         # Pak bílý text na vrch
-        canvas.create_text(
+        text_item = canvas.create_text(
             flag_x, flag_y,
             text=display_name,
             anchor='center',
             font=text_font,
             fill='white'
         )
+
+        # Přidat tooltip pokud byl text zkrácen
+        if full_name != display_name:
+            self._add_tooltip_to_flag(canvas, text_item, flag_x, flag_y, flag_width, flag_height, full_name)
 
         # Vykreslit remote symbol vlevo, pokud větev existuje remotely
         if has_remote:
@@ -1141,25 +1151,45 @@ class GraphDrawer:
 
         return result + "..." if result else "..."
 
-    def _make_color_pale(self, color: str) -> str:
-        """Vytvoří bledší verzi barvy pro remote větve."""
+    def _make_color_pale(self, color: str, blend_type: str = "remote") -> str:
+        """Vytvoří bledší verzi barvy pomocí HSL manipulace."""
         if not color or color == 'unknown':
             return '#E0E0E0'
 
-        # Pokud je barva hexadecimální
         if color.startswith('#'):
             try:
                 # Převést hex na RGB
                 hex_color = color.lstrip('#')
                 if len(hex_color) == 6:
-                    r = int(hex_color[0:2], 16)
-                    g = int(hex_color[2:4], 16)
-                    b = int(hex_color[4:6], 16)
+                    r = int(hex_color[0:2], 16) / 255.0
+                    g = int(hex_color[2:4], 16) / 255.0
+                    b = int(hex_color[4:6], 16) / 255.0
 
-                    # Směsovat s bílou (50% transparence simulace)
-                    r = int(r * 0.5 + 255 * 0.5)
-                    g = int(g * 0.5 + 255 * 0.5)
-                    b = int(b * 0.5 + 255 * 0.5)
+                    # Převést RGB na HSL
+                    import colorsys
+                    h, l, s = colorsys.rgb_to_hls(r, g, b)
+
+                    # Aplikovat vyblednutí podle typu
+                    if blend_type == "remote":
+                        # Remote: mírnější vyblednutí pro zachování rozlišitelnosti
+                        s = s * 0.8  # Snížit sytost na 80% originální (65% z 80%)
+                        l = min(0.9, l + 0.15)  # Zvýšit lightness o 15% (cca 65%)
+                    elif blend_type == "merge":
+                        # Merge: výrazné vyblednutí - nejméně saturované ze všech
+                        s = s * 0.6  # Snížit sytost na 60% originální (méně než remote)
+                        l = min(0.85, l + 0.20)  # Výrazně zvýšit lightness o 20%
+                    else:
+                        # Fallback na remote chování
+                        s = s * 0.8
+                        l = min(0.9, l + 0.15)
+
+                    # Převést zpět na RGB
+                    r, g, b = colorsys.hls_to_rgb(h, l, s)
+
+                    # Převést na hex
+                    r = int(r * 255)
+                    g = int(g * 255)
+                    b = int(b * 255)
 
                     return f'#{r:02x}{g:02x}{b:02x}'
             except:
@@ -1180,6 +1210,46 @@ class GraphDrawer:
         }
 
         return color_map.get(color.lower(), '#E0E0E0')
+
+    def _truncate_branch_name(self, branch_name: str, max_length: int = 12) -> str:
+        """Zkrátí název větve pokud je příliš dlouhý."""
+        if len(branch_name) <= max_length:
+            return branch_name
+        return branch_name[:max_length-3] + "..."
+
+    def _add_tooltip_to_flag(self, canvas, flag_item, flag_x, flag_y, flag_width, flag_height, full_name):
+        """Přidá tooltip funkcionalitu k vlaječce."""
+        tooltip = None
+
+        def show_tooltip(event):
+            nonlocal tooltip
+            if tooltip:
+                return
+
+            # Vytvořit tooltip okno
+            tooltip = canvas.create_rectangle(
+                flag_x - flag_width // 2, flag_y + flag_height // 2 + 5,
+                flag_x + flag_width // 2, flag_y + flag_height // 2 + 25,
+                fill='#FFFFCC', outline='black', width=1
+            )
+
+            canvas.create_text(
+                flag_x, flag_y + flag_height // 2 + 15,
+                text=full_name,
+                anchor='center',
+                font=('Arial', 8),
+                fill='black'
+            )
+
+        def hide_tooltip(event):
+            nonlocal tooltip
+            if tooltip:
+                canvas.delete(tooltip)
+                tooltip = None
+
+        # Bind eventi k celé oblasti vlaječky
+        canvas.tag_bind(flag_item, '<Enter>', show_tooltip)
+        canvas.tag_bind(flag_item, '<Leave>', hide_tooltip)
 
     def _move_separators_to_scroll_position(self, canvas: tk.Canvas, new_y: float):
         """Přesune existující separátory na novou Y pozici při scrollování."""
