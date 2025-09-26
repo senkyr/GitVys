@@ -414,6 +414,10 @@ class MainWindow:
         self.refresh_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
 
     def show_repository_selection(self):
+        # Reset GraphDrawer state to clear column widths and cached data
+        if hasattr(self, 'graph_canvas') and hasattr(self.graph_canvas, 'graph_drawer'):
+            self.graph_canvas.graph_drawer.reset()
+
         self.graph_canvas.grid_remove()
         self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
 

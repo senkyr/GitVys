@@ -44,6 +44,22 @@ class GraphDrawer:
             points.extend([px, py])
         return points
 
+    def reset(self):
+        """Resetuje stav GraphDrawer pro nový repozitář."""
+        # Reset šířek sloupců - uživatelem nastavené i vypočítané
+        self.graph_column_width = None
+        self.user_column_widths = {}
+        self.column_widths = {}
+
+        # Reset cached hodnot pro výpočet šířek
+        self.flag_width = None
+        self.required_tag_space = None
+
+        # Reset interaktivních funkcí
+        self.dragging_separator = None
+        self.drag_start_x = 0
+        self.column_separators = {}
+
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
         if not commits:
             return
