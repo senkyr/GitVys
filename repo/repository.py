@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import git
 from git import Repo, InvalidGitRepositoryError
-from utils.data_structures import Commit, Branch, Tag
+from utils.data_structures import Commit, Branch, Tag, MergeBranch
 from visualization.colors import get_branch_color
 
 
@@ -13,6 +13,7 @@ class GitRepository:
         self.repo: Optional[Repo] = None
         self.commits: List[Commit] = []
         self.branches: Dict[str, Branch] = {}
+        self.merge_branches: List[MergeBranch] = []  # Posledně detekované merge větve
 
     def load_repository(self) -> bool:
         try:
@@ -87,6 +88,12 @@ class GitRepository:
 
         # Kombinovat commity s uncommitted změnami
         all_commits = uncommitted_commits + commits
+
+        # Detekovat merge větve a aplikovat jejich styling
+        merge_branches = self._detect_merge_branches(commits)
+        self.merge_branches = merge_branches  # Uložit pro GraphLayout
+        self._apply_merge_branch_styling(all_commits, merge_branches)
+
         all_commits.sort(key=lambda c: c.date, reverse=True)
 
         self.commits = all_commits
@@ -251,6 +258,12 @@ class GitRepository:
 
         # Kombinovat commity s uncommitted změnami
         all_commits = uncommitted_commits + commits
+
+        # Detekovat merge větve a aplikovat jejich styling
+        merge_branches = self._detect_merge_branches(commits)
+        self.merge_branches = merge_branches  # Uložit pro GraphLayout
+        self._apply_merge_branch_styling(all_commits, merge_branches)
+
         all_commits.sort(key=lambda c: c.date, reverse=True)
 
         self.commits = all_commits
@@ -617,6 +630,154 @@ class GitRepository:
         except Exception as e:
             return {"has_changes": False, "error": str(e)}
 
+    def _detect_merge_branches(self, commits: List[Commit]) -> List[MergeBranch]:
+        """Detekuje merge patterns a vytvoří virtuální merge větve."""
+        if not commits:
+            return []
+
+        merge_branches = []
+        commit_map = {commit.hash: commit for commit in commits}
+
+        # Rozšířený commit map pro plné hashe (může být nutné pro GitPython)
+        full_hash_map = {}
+        if self.repo:
+            try:
+                for commit in self.repo.iter_commits(all=True):
+                    short_hash = commit.hexsha[:8]
+                    full_hash_map[short_hash] = commit.hexsha
+            except:
+                pass
+
+        # Najít merge commity (více než 1 parent)
+        merge_commits = [commit for commit in commits if len(commit.parents) >= 2]
+
+        for merge_commit in merge_commits:
+            try:
+                if len(merge_commit.parents) < 2:
+                    continue
+
+                # První parent = hlavní větev, druhý parent = mergovaná větev
+                main_parent_hash = merge_commit.parents[0]
+                merge_parent_hash = merge_commit.parents[1]
+
+                # Najít branch point (společný ancestor) pomocí GitPython
+                if self.repo and merge_parent_hash in full_hash_map and main_parent_hash in full_hash_map:
+                    try:
+                        full_merge_parent = full_hash_map[merge_parent_hash]
+                        full_main_parent = full_hash_map[main_parent_hash]
+
+                        # Najít merge base (společný ancestor)
+                        merge_base = self.repo.merge_base(full_merge_parent, full_main_parent)
+                        if merge_base:
+                            branch_point_hash = merge_base[0].hexsha[:8]
+
+                            # Získat všechny commity v merge branch (od branch point k merge parent)
+                            merge_branch_commits = []
+
+                            # Trasovat zpětně od merge parent k branch point
+                            current = merge_parent_hash
+                            visited = set()
+
+                            while current and current != branch_point_hash and current not in visited:
+                                visited.add(current)
+                                if current in commit_map:
+                                    commit = commit_map[current]
+                                    merge_branch_commits.append(current)
+
+                                    # Pokračovat k prvnímu parentu (lineární path)
+                                    if commit.parents:
+                                        current = commit.parents[0]
+                                    else:
+                                        break
+                                else:
+                                    break
+
+                            # Pokud jsme našli nějaké commity v merge branch
+                            if merge_branch_commits:
+                                # Vytvořit virtuální název větve
+                                virtual_name = f"merge-{merge_commit.hash}"
+
+                                # Určit původní barvu (z hlavní větve)
+                                main_parent = commit_map.get(main_parent_hash)
+                                original_color = main_parent.branch_color if main_parent else '#666666'
+
+                                merge_branch = MergeBranch(
+                                    branch_point_hash=branch_point_hash,
+                                    merge_point_hash=merge_commit.hash,
+                                    commits_in_branch=merge_branch_commits,
+                                    virtual_branch_name=virtual_name,
+                                    original_color=original_color
+                                )
+
+                                merge_branches.append(merge_branch)
+                    except Exception as e:
+                        # Pokud selže GitPython approach, přeskočit tento merge
+                        continue
+
+            except Exception as e:
+                # Pokud selže zpracování tohoto merge commitu, pokračovat
+                continue
+
+        return merge_branches
+
+    def _apply_merge_branch_styling(self, commits: List[Commit], merge_branches: List[MergeBranch]):
+        """Aplikuje styling na commity v merge větvích - světlejší barvy, virtuální branch names."""
+        if not merge_branches:
+            return
+
+        # Vytvořit mapu commit hash -> merge branch pro rychlé vyhledávání
+        commit_to_merge_branch = {}
+        for merge_branch in merge_branches:
+            for commit_hash in merge_branch.commits_in_branch:
+                commit_to_merge_branch[commit_hash] = merge_branch
+
+        # Aplikovat styling na commity v merge větvích
+        styled_count = 0
+        for commit in commits:
+            if commit.hash in commit_to_merge_branch:
+                merge_branch = commit_to_merge_branch[commit.hash]
+
+                # Změnit branch na virtuální název
+                old_branch = commit.branch
+                commit.branch = merge_branch.virtual_branch_name
+
+                # Aplikovat světlejší barvu (podobně jako _make_color_pale v graph_drawer)
+                old_color = commit.branch_color
+                commit.branch_color = self._make_color_pale(merge_branch.original_color)
+
+                # Označit jako merge branch commit (pro případné budoucí funkce)
+                commit.is_merge_branch = True
+                styled_count += 1
+
+
+    def _make_color_pale(self, color: str) -> str:
+        """Vytvoří světlejší variantu barvy pro merge větve."""
+        # Odstranit # pokud existuje
+        if color.startswith('#'):
+            color = color[1:]
+
+        # Konverze hex na RGB
+        try:
+            r = int(color[0:2], 16)
+            g = int(color[2:4], 16)
+            b = int(color[4:6], 16)
+
+            # Zvýšit světlost (blend s bílou)
+            factor = 0.6  # Světlejší než remote (které má 0.7)
+            r = int(r + (255 - r) * factor)
+            g = int(g + (255 - g) * factor)
+            b = int(b + (255 - b) * factor)
+
+            # Zajistit že jsou hodnoty v rozsahu 0-255
+            r = min(255, max(0, r))
+            g = min(255, max(0, g))
+            b = min(255, max(0, b))
+
+            return f"#{r:02x}{g:02x}{b:02x}"
+        except:
+            # Fallback na světle šedou
+            return "#CCCCCC"
+
     def _create_uncommitted_commits(self, uncommitted_info: Dict[str, any], existing_commits: List[Commit] = None) -> List[Commit]:
         """Vytvoří pseudo-commity pro uncommitted změny pro každou větev."""
         if not uncommitted_info.get("has_changes", False):
@@ -689,6 +850,10 @@ class GitRepository:
             pass
 
         return uncommitted_commits
+
+    def get_merge_branches(self) -> List[MergeBranch]:
+        """Vrátí posledně detekované merge větve."""
+        return self.merge_branches
 
     def get_repository_stats(self) -> Dict[str, int]:
         if not self.repo or not self.commits:

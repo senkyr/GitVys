@@ -235,7 +235,8 @@ class MainWindow:
                 self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
                 return
 
-            layout = GraphLayout(commits)
+            merge_branches = self.git_repo.get_merge_branches()
+            layout = GraphLayout(commits, merge_branches=merge_branches)
             positioned_commits = layout.calculate_positions()
 
             self.root.after(0, self.show_graph, positioned_commits)
@@ -271,7 +272,8 @@ class MainWindow:
                 self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
                 return
 
-            layout = GraphLayout(commits)
+            merge_branches = self.git_repo.get_merge_branches()
+            layout = GraphLayout(commits, merge_branches=merge_branches)
             positioned_commits = layout.calculate_positions()
 
             self.root.after(0, self.show_graph, positioned_commits)
@@ -301,7 +303,8 @@ class MainWindow:
                 self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
                 return
 
-            layout = GraphLayout(commits)
+            merge_branches = self.git_repo.get_merge_branches()
+            layout = GraphLayout(commits, merge_branches=merge_branches)
             positioned_commits = layout.calculate_positions()
 
             self.root.after(0, self.update_graph_with_remote, positioned_commits)

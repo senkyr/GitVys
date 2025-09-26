@@ -91,15 +91,22 @@ class GraphDrawer:
             if commit.parents:
                 child_pos = commit_positions.get(commit.hash)
                 if child_pos:
-                    for parent_hash in commit.parents:
+                    # Detekovat merge commit (více parentů)
+                    is_merge_commit = len(commit.parents) >= 2
+
+                    for parent_index, parent_hash in enumerate(commit.parents):
                         parent_pos = commit_positions.get(parent_hash)
                         if parent_pos:
                             # Použít remote status a uncommitted status dítěte pro kreslení spojnice
                             # Start from parent, draw to child
                             is_uncommitted = getattr(commit, 'is_uncommitted', False)
-                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color, commit.is_remote, is_uncommitted)
 
-    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False, is_uncommitted: bool = False):
+                            # Pro merge commit: první parent = normální, ostatní = merge connections
+                            is_merge_connection = is_merge_commit and parent_index > 0
+
+                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color, commit.is_remote, is_uncommitted, is_merge_connection)
+
+    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False, is_uncommitted: bool = False, is_merge_connection: bool = False):
         start_x, start_y = start
         end_x, end_y = end
 
@@ -107,6 +114,9 @@ class GraphDrawer:
         if is_uncommitted:
             line_color = color  # Plná barva větve pro WIP commity
             stipple_pattern = 'gray50'  # Stejné šrafování jako WIP kroužek
+        elif is_merge_connection:
+            line_color = self._make_color_pale(color)  # Světlá barva pro merge connections
+            stipple_pattern = None
         elif is_remote:
             line_color = self._make_color_pale(color)  # Bledší barva pro remote
             stipple_pattern = None
@@ -116,7 +126,7 @@ class GraphDrawer:
 
         # Pokud jsou commity v různých sloupcích (větvení), kreslíme hladkou křivku
         if start_x != end_x:
-            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color, stipple_pattern)
+            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color, stipple_pattern, is_merge_connection)
         else:
             # Přímá svislá linka pro commity ve stejném sloupci
             line_kwargs = {
@@ -128,7 +138,7 @@ class GraphDrawer:
 
             canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
 
-    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str, stipple_pattern=None):
+    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str, stipple_pattern=None, is_merge_connection: bool = False):
         """Vykreslí hladké L-shaped spojení se zaoblenými rohy"""
 
         # Vzdálenosti
@@ -140,34 +150,65 @@ class GraphDrawer:
         radius = max(3, min(radius, 15))  # Limit mezi 3-15px
 
         # Corner point (kde se původně lámala čára)
-        corner_x = end_x
-        corner_y = start_y
+        if is_merge_connection:
+            corner_x = start_x  # Na úrovni mergované větve (horizontálně)
+            corner_y = end_y    # Na úrovni merge commitu (výškově)
+        else:
+            corner_x = end_x
+            corner_y = start_y  # Na úrovni parent commitu
 
-        # Rozdělíme na 3 části: straight horizontal + rounded corner + straight vertical
-
-        # 1) Horizontal line až k corner-radius
-        if dx > radius:
-            line_kwargs = {
-                'fill': color,
-                'width': self.line_width
-            }
-            if stipple_pattern:
-                line_kwargs['stipple'] = stipple_pattern
-            canvas.create_line(
-                start_x, start_y,
-                corner_x - radius, corner_y,
-                **line_kwargs
-            )
+        if is_merge_connection:
+            # MERGE CONNECTION: vertical→horizontal pattern
+            # 1) Vertical line dolů až k corner-radius
+            if dy > radius:
+                line_kwargs = {
+                    'fill': color,
+                    'width': self.line_width
+                }
+                if stipple_pattern:
+                    line_kwargs['stipple'] = stipple_pattern
+                canvas.create_line(
+                    start_x, start_y,
+                    corner_x, corner_y + radius,  # dolů k end pointu oblouku
+                    **line_kwargs
+                )
+        else:
+            # NORMÁLNÍ CONNECTION: horizontal→vertical pattern
+            # 1) Horizontal line až k corner-radius
+            if dx > radius:
+                line_kwargs = {
+                    'fill': color,
+                    'width': self.line_width
+                }
+                if stipple_pattern:
+                    line_kwargs['stipple'] = stipple_pattern
+                canvas.create_line(
+                    start_x, start_y,
+                    corner_x - radius, corner_y,
+                    **line_kwargs
+                )
 
         # 2) Rounded corner (malá kvadratická Bezier křivka)
         if dx > radius and dy > radius:
             # Rounded corner pomocí arc místo Bezier (správný tvar)
-            corner_points = self._calculate_rounded_corner_arc(
-                corner_x - radius, corner_y,    # start point
-                corner_x, corner_y - radius,    # end point (NAHORU = minus radius)
-                corner_x, corner_y,             # corner point
-                radius
-            )
+            if is_merge_connection:
+                # Merge: oblouk dolů doleva (vertical→horizontal, směrem doprava klesá)
+                corner_points = self._calculate_rounded_corner_arc(
+                    corner_x - radius, corner_y,     # start point (levý horní vrchol čtverce)
+                    corner_x, corner_y + radius,     # end point (pravý dolní vrchol čtverce)
+                    corner_x, corner_y,              # corner point (jednoduché corner_x, corner_y)
+                    radius,
+                    arc_type="merge"
+                )
+            else:
+                # Normální: oblouk doprava dolů (horizontal→vertical)
+                corner_points = self._calculate_rounded_corner_arc(
+                    corner_x - radius, corner_y,    # start point
+                    corner_x, corner_y - radius,    # end point (NAHORU = minus radius)
+                    corner_x, corner_y,             # corner point
+                    radius,
+                    arc_type="branching"
+                )
 
             if len(corner_points) > 2:
                 corner_kwargs = {
@@ -182,19 +223,35 @@ class GraphDrawer:
                     **corner_kwargs
                 )
 
-        # 3) Vertical line od corner-radius až k cíli (NAHORU = minus radius)
-        if dy > radius:
-            line_kwargs = {
-                'fill': color,
-                'width': self.line_width
-            }
-            if stipple_pattern:
-                line_kwargs['stipple'] = stipple_pattern
-            canvas.create_line(
-                corner_x, corner_y - radius,
-                end_x, end_y,
-                **line_kwargs
-            )
+        # 3) Poslední úsek spojení
+        if is_merge_connection:
+            # Merge: horizontal line doleva od corner k cíli
+            if dx > radius:
+                line_kwargs = {
+                    'fill': color,
+                    'width': self.line_width
+                }
+                if stipple_pattern:
+                    line_kwargs['stipple'] = stipple_pattern
+                canvas.create_line(
+                    corner_x - radius, corner_y,
+                    end_x, end_y,
+                    **line_kwargs
+                )
+        else:
+            # Normální: vertical line od corner k cíli
+            if dy > radius:
+                line_kwargs = {
+                    'fill': color,
+                    'width': self.line_width
+                }
+                if stipple_pattern:
+                    line_kwargs['stipple'] = stipple_pattern
+                canvas.create_line(
+                    corner_x, corner_y - radius,
+                    end_x, end_y,
+                    **line_kwargs
+                )
 
         # Pro velmi krátké vzdálenosti - fallback na simple line
         if dx <= radius or dy <= radius:
@@ -209,20 +266,30 @@ class GraphDrawer:
                 **line_kwargs
             )
 
-    def _calculate_rounded_corner_arc(self, start_x: int, start_y: int, end_x: int, end_y: int, corner_x: int, corner_y: int, radius: int):
-        """Vypočítá body pro zaoblený roh pomocí circular arc - správný tvar pro L-shape"""
+    def _calculate_rounded_corner_arc(self, start_x: int, start_y: int, end_x: int, end_y: int, corner_x: int, corner_y: int, radius: int, arc_type: str = "branching"):
+        """Vypočítá body pro zaoblený roh pomocí circular arc podle typu"""
         import math
         points = []
         steps = 8
 
-        # Pro L-shaped corner: arc v pravém HORNÍM kvadrantu (jde NAHORU!)
-        # Center arc je POSUNUTÝ od corner: (corner_x - radius, corner_y - radius)
-        arc_center_x = corner_x - radius
-        arc_center_y = corner_y - radius
+        if arc_type == "branching":
+            # Branching: arc v pravém HORNÍM kvadrantu (jde NAHORU!)
+            arc_center_x = corner_x - radius
+            arc_center_y = corner_y - radius
+            start_angle = 0  # 0° - horizontal doprava
+            end_angle = math.pi / 2  # 90° - vertical nahoru
+        elif arc_type == "merge":
+            # Merge: arc v pravém DOLNÍM kvadrantu (jde DOLŮ!)
+            arc_center_x = corner_x - radius
+            arc_center_y = corner_y + radius
+            start_angle = 3 * math.pi / 2  # 270° - vertical dolů
+            end_angle = 2 * math.pi  # 360° (0°) - horizontal doprava
+        else:
+            raise ValueError(f"Neznámý arc_type: {arc_type}")
 
         for i in range(steps + 1):
-            # Arc od 0° do 90° (od horizontal doprava k vertical NAHORU)
-            angle = (i / steps) * (math.pi / 2)
+            # Interpolace mezi start_angle a end_angle
+            angle = start_angle + (i / steps) * (end_angle - start_angle)
 
             # Vypočítat bod na kružnici relative k arc centru
             x = arc_center_x + radius * math.cos(angle)
@@ -437,8 +504,9 @@ class GraphDrawer:
 
             # Zobrazit vlaječku podle použitého režimu
             if has_branch_heads:
-                # Nová logika - zobrazit vlaječku pro branch head commity
-                if commit.is_branch_head and commit.branch != 'unknown':
+                # Nová logika - zobrazit vlaječku pro branch head commity (ale ne pro virtuální merge větve)
+                if (commit.is_branch_head and commit.branch != 'unknown' and
+                    not commit.branch.startswith('merge-')):
                     clean_branch_name = commit.branch
                     if commit.branch.startswith('origin/'):
                         clean_branch_name = commit.branch[7:]  # Odstranit "origin/"
@@ -464,19 +532,21 @@ class GraphDrawer:
                     connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                     self._draw_flag_connection(canvas, x, y, connection_color)
             else:
-                # Fallback logika - původní chování (ale ne pro WIP commity)
+                # Fallback logika - původní chování (ale ne pro WIP a merge commity)
                 if (commit.branch != 'unknown' and
                     commit.branch not in drawn_branch_flags and
-                    not getattr(commit, 'is_uncommitted', False)):
+                    not getattr(commit, 'is_uncommitted', False) and
+                    not commit.branch.startswith('merge-')):
                     flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                     self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
                     drawn_branch_flags.add(commit.branch)
 
-                # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown' a WIP)
+                # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown', WIP a merge)
                 if (commit.branch != 'unknown' and
                     commit.branch in last_commits_by_branch and
                     last_commits_by_branch[commit.branch] == commit and
-                    not getattr(commit, 'is_uncommitted', False)):
+                    not getattr(commit, 'is_uncommitted', False) and
+                    not commit.branch.startswith('merge-')):
                     connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                     self._draw_flag_connection(canvas, x, y, connection_color)
 

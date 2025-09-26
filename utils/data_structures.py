@@ -42,11 +42,24 @@ class Commit:
     is_uncommitted: bool = False  # Je toto uncommitted change ("almost commit")
     uncommitted_type: str = "none"  # "staged", "working", "both" - typ uncommitted změn
 
+    # Pro handling merge branches
+    is_merge_branch: bool = False  # Je toto commit z virtuální merge větve
+
     def __post_init__(self):
         if self.tags is None:
             self.tags = []
         if self.additional_branches is None:
             self.additional_branches = []
+
+
+@dataclass
+class MergeBranch:
+    """Reprezentuje virtuální větev pro merge pattern - odbočku a návrat."""
+    branch_point_hash: str      # Commit odkud se větev odbočila
+    merge_point_hash: str       # Commit kde se větev sloučila (merge commit)
+    commits_in_branch: List[str] # Hashes commitů v merge větvi (bez branch/merge pointů)
+    virtual_branch_name: str    # Generovaný název pro layout (např. "merge-abc123")
+    original_color: str         # Barva hlavní větve (pro světlejší variantu)
 
 
 @dataclass
