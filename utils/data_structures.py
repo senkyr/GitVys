@@ -38,6 +38,10 @@ class Commit:
     is_branch_head: bool = False  # Je toto HEAD nějaké větve (pro vykreslení vlaječky)
     branch_head_type: str = "none"  # "local", "remote", "both"
 
+    # Pro handling uncommitted changes
+    is_uncommitted: bool = False  # Je toto uncommitted change ("almost commit")
+    uncommitted_type: str = "none"  # "staged", "working", "both" - typ uncommitted změn
+
     def __post_init__(self):
         if self.tags is None:
             self.tags = []

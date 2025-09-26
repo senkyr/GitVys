@@ -81,9 +81,16 @@ class GitRepository:
             except:
                 continue
 
-        commits.sort(key=lambda c: c.date, reverse=True)
-        self.commits = commits
-        return commits
+        # Přidat uncommitted změny na začátek (nejnovější)
+        uncommitted_info = self.get_uncommitted_changes()
+        uncommitted_commits = self._create_uncommitted_commits(uncommitted_info, commits)
+
+        # Kombinovat commity s uncommitted změnami
+        all_commits = uncommitted_commits + commits
+        all_commits.sort(key=lambda c: c.date, reverse=True)
+
+        self.commits = all_commits
+        return all_commits
 
     def _build_commit_branch_map(self) -> Dict[str, str]:
         """Vytvořuje mapu commit_hash -> branch_name pro rychlé vyhledávání."""
@@ -238,9 +245,16 @@ class GitRepository:
             commit_obj.description_short = self._truncate_description(description)
             commits.append(commit_obj)
 
-        commits.sort(key=lambda c: c.date, reverse=True)
-        self.commits = commits
-        return commits
+        # Přidat uncommitted změny na začátek (nejnovější)
+        uncommitted_info = self.get_uncommitted_changes()
+        uncommitted_commits = self._create_uncommitted_commits(uncommitted_info, commits)
+
+        # Kombinovat commity s uncommitted změnami
+        all_commits = uncommitted_commits + commits
+        all_commits.sort(key=lambda c: c.date, reverse=True)
+
+        self.commits = all_commits
+        return all_commits
 
     def _build_commit_branch_map_with_remote(self) -> tuple[Dict[str, str], Dict[str, str]]:
         """Vytvořuje mapy commit_hash -> branch_name pro lokální a remote větve."""
@@ -547,6 +561,134 @@ class GitRepository:
 
     def _get_full_date(self, date: datetime) -> str:
         return date.strftime("%d.%m.%Y @ %H:%M")
+
+    def get_uncommitted_changes(self) -> Dict[str, any]:
+        """Detekuje uncommitted změny (staged a working directory)."""
+        if not self.repo:
+            return {"has_changes": False}
+
+        try:
+            # Získat status repozitáře
+            status = self.repo.git.status(porcelain=True)
+
+            if not status.strip():
+                return {"has_changes": False}
+
+            # Analyzovat status výstup
+            staged_files = []
+            working_files = []
+
+            for line in status.strip().split('\n'):
+                if len(line) >= 3:
+                    staged_status = line[0]
+                    working_status = line[1]
+                    filename = line[3:]
+
+                    if staged_status != ' ':
+                        staged_files.append(filename)
+                    if working_status != ' ':
+                        working_files.append(filename)
+
+            has_staged = len(staged_files) > 0
+            has_working = len(working_files) > 0
+
+            if not has_staged and not has_working:
+                return {"has_changes": False}
+
+            # Určit typ změn
+            if has_staged and has_working:
+                uncommitted_type = "both"
+                change_desc = f"{len(staged_files)} staged, {len(working_files)} working"
+            elif has_staged:
+                uncommitted_type = "staged"
+                change_desc = f"{len(staged_files)} staged"
+            else:
+                uncommitted_type = "working"
+                change_desc = f"{len(working_files)} working"
+
+            return {
+                "has_changes": True,
+                "uncommitted_type": uncommitted_type,
+                "staged_files": staged_files,
+                "working_files": working_files,
+                "change_description": change_desc
+            }
+
+        except Exception as e:
+            return {"has_changes": False, "error": str(e)}
+
+    def _create_uncommitted_commits(self, uncommitted_info: Dict[str, any], existing_commits: List[Commit] = None) -> List[Commit]:
+        """Vytvoří pseudo-commity pro uncommitted změny pro každou větev."""
+        if not uncommitted_info.get("has_changes", False):
+            return []
+
+        uncommitted_commits = []
+        try:
+            # Získat aktuální větev
+            current_branch = self.repo.active_branch.name if self.repo.active_branch else "HEAD"
+
+            # Zjistit který typ změn máme
+            uncommitted_type = uncommitted_info["uncommitted_type"]
+            staged_files = uncommitted_info.get("staged_files", [])
+            working_files = uncommitted_info.get("working_files", [])
+
+            # Spočítat celkový počet dotčených souborů (bez duplikátů)
+            all_files = set(staged_files + working_files)
+            file_count = len(all_files)
+
+            # Vytvořit description podle počtu souborů
+            if file_count == 1:
+                description = "1 soubor"
+            elif file_count < 5:
+                description = f"{file_count} soubory"
+            else:
+                description = f"{file_count} souborů"
+
+            # Vytvořit pseudo-commit pro aktuální větev
+            now = datetime.now(timezone.utc)
+
+            # Hash pro uncommitted změny - použijeme speciální prefix
+            full_hash = f"uncommit_{current_branch}_{int(now.timestamp())}"
+            uncommitted_hash = full_hash[:8]
+
+            # Najít HEAD commit aktuální větve pro parent a barvu
+            head_commit = None
+            branch_color = '#CCCCCC'  # Defaultní šedá fallback
+
+            # Najít nejnovější commit v aktuální větvi (ne uncommitted)
+            commits_to_search = existing_commits if existing_commits else self.commits
+            for commit in sorted(commits_to_search, key=lambda c: c.date, reverse=True):
+                if commit.branch == current_branch and not getattr(commit, 'is_uncommitted', False):
+                    head_commit = commit
+                    branch_color = commit.branch_color
+                    break
+
+            uncommitted_commit = Commit(
+                hash=uncommitted_hash,
+                message="WIP (Work In Progress)",
+                short_message="WIP (Work In Progress)",
+                author="",  # Prázdné pole
+                author_short="",  # Prázdné pole
+                author_email="",  # Prázdné pole
+                date=now,
+                date_relative="",  # Prázdné pole
+                date_short="",  # Prázdné pole
+                parents=[head_commit.hash] if head_commit else [],  # Parent je HEAD commit větve
+                branch=current_branch,
+                branch_color=branch_color,
+                is_uncommitted=True,
+                uncommitted_type=uncommitted_type,
+                description=description,
+                description_short=description
+            )
+
+            uncommitted_commits.append(uncommitted_commit)
+
+        except Exception as e:
+            # V případě chyby vrátit prázdný seznam
+            pass
+
+        return uncommitted_commits
 
     def get_repository_stats(self) -> Dict[str, int]:
         if not self.repo or not self.commits:

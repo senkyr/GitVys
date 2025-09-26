@@ -1,5 +1,6 @@
 import tkinter as tk
 from typing import List, Dict, Tuple
+import math
 from utils.data_structures import Commit
 
 
@@ -32,6 +33,16 @@ class GraphDrawer:
         # Starý název pro zpětnou kompatibilitu
         self.separator_height = self.HEADER_HEIGHT
         self.user_column_widths = {}  # uživatelem nastavené šířky
+
+    def _create_circle_polygon(self, x: int, y: int, radius: int, num_points: int = 20) -> List[float]:
+        """Vytvoří body pro kruhový polygon (pro stipple support na Windows)."""
+        points = []
+        for i in range(num_points):
+            angle = 2 * math.pi * i / num_points
+            px = x + radius * math.cos(angle)
+            py = y + radius * math.sin(angle)
+            points.extend([px, py])
+        return points
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
         if not commits:
@@ -67,29 +78,41 @@ class GraphDrawer:
                     for parent_hash in commit.parents:
                         parent_pos = commit_positions.get(parent_hash)
                         if parent_pos:
-                            # Použít remote status dítěte pro kreslení spojnice
+                            # Použít remote status a uncommitted status dítěte pro kreslení spojnice
                             # Start from parent, draw to child
-                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color, commit.is_remote)
+                            is_uncommitted = getattr(commit, 'is_uncommitted', False)
+                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color, commit.is_remote, is_uncommitted)
 
-    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False):
+    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False, is_uncommitted: bool = False):
         start_x, start_y = start
         end_x, end_y = end
 
-        # Bledší barva pro remote spojnice
-        line_color = self._make_color_pale(color) if is_remote else color
+        # Určit barvu a stipple pattern pro spojnice
+        if is_uncommitted:
+            line_color = color  # Plná barva větve pro WIP commity
+            stipple_pattern = 'gray50'  # Stejné šrafování jako WIP kroužek
+        elif is_remote:
+            line_color = self._make_color_pale(color)  # Bledší barva pro remote
+            stipple_pattern = None
+        else:
+            line_color = color  # Normální barva pro lokální commity
+            stipple_pattern = None
 
         # Pokud jsou commity v různých sloupcích (větvení), kreslíme hladkou křivku
         if start_x != end_x:
-            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color)
+            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color, stipple_pattern)
         else:
             # Přímá svislá linka pro commity ve stejném sloupci
-            canvas.create_line(
-                start_x, start_y, end_x, end_y,
-                fill=line_color,
-                width=self.line_width
-            )
+            line_kwargs = {
+                'fill': line_color,
+                'width': self.line_width
+            }
+            if stipple_pattern:
+                line_kwargs['stipple'] = stipple_pattern
 
-    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str):
+            canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
+
+    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str, stipple_pattern=None):
         """Vykreslí hladké L-shaped spojení se zaoblenými rohy"""
 
         # Vzdálenosti
@@ -108,11 +131,16 @@ class GraphDrawer:
 
         # 1) Horizontal line až k corner-radius
         if dx > radius:
+            line_kwargs = {
+                'fill': color,
+                'width': self.line_width
+            }
+            if stipple_pattern:
+                line_kwargs['stipple'] = stipple_pattern
             canvas.create_line(
                 start_x, start_y,
                 corner_x - radius, corner_y,
-                fill=color,
-                width=self.line_width
+                **line_kwargs
             )
 
         # 2) Rounded corner (malá kvadratická Bezier křivka)
@@ -126,27 +154,43 @@ class GraphDrawer:
             )
 
             if len(corner_points) > 2:
+                corner_kwargs = {
+                    'fill': color,
+                    'width': self.line_width,
+                    'smooth': True
+                }
+                if stipple_pattern:
+                    corner_kwargs['stipple'] = stipple_pattern
                 canvas.create_line(
                     corner_points,
-                    fill=color,
-                    width=self.line_width,
-                    smooth=True
+                    **corner_kwargs
                 )
 
         # 3) Vertical line od corner-radius až k cíli (NAHORU = minus radius)
         if dy > radius:
+            line_kwargs = {
+                'fill': color,
+                'width': self.line_width
+            }
+            if stipple_pattern:
+                line_kwargs['stipple'] = stipple_pattern
             canvas.create_line(
                 corner_x, corner_y - radius,
                 end_x, end_y,
-                fill=color,
-                width=self.line_width
+                **line_kwargs
             )
 
         # Pro velmi krátké vzdálenosti - fallback na simple line
         if dx <= radius or dy <= radius:
+            line_kwargs = {
+                'fill': color,
+                'width': self.line_width
+            }
+            if stipple_pattern:
+                line_kwargs['stipple'] = stipple_pattern
             canvas.create_line(
                 start_x, start_y, end_x, end_y,
-                fill=color, width=self.line_width
+                **line_kwargs
             )
 
     def _calculate_rounded_corner_arc(self, start_x: int, start_y: int, end_x: int, end_y: int, corner_x: int, corner_y: int, radius: int):
@@ -321,9 +365,13 @@ class GraphDrawer:
         else:
             # Fallback logika - použít první commit každé větve (původní chování)
             drawn_branch_flags = set()
-            # Najít posledního commitu každé větve (podle času)
+            # Najít posledního commitu každé větve (podle času, ale ignorovat WIP commity)
             last_commits_by_branch = {}
             for commit in commits:
+                # Ignorovat WIP commity při hledání posledního skutečného commitu
+                if getattr(commit, 'is_uncommitted', False):
+                    continue
+
                 if commit.branch not in last_commits_by_branch:
                     last_commits_by_branch[commit.branch] = commit
                 elif commit.date > last_commits_by_branch[commit.branch].date:
@@ -332,22 +380,44 @@ class GraphDrawer:
         for commit in commits:
             x, y = commit.x, commit.y
 
-            # Vizuální rozlišení pro remote commity - bledší barva
-            if commit.is_remote:
+            # Vizuální rozlišení pro uncommitted změny, remote commity, nebo normální
+            if getattr(commit, 'is_uncommitted', False):
+                # WIP commity - šrafovaný polygon v barvě větve s černým obrysem
+                fill_color = commit.branch_color
+                outline_color = 'black'
+                stipple_pattern = 'gray50'  # 50% šrafování pro indikaci nehotovosti
+
+                # Vytvořit kruhový polygon místo ovals (stipple nefunguje s ovals na Windows)
+                points = self._create_circle_polygon(x, y, self.node_radius)
+                canvas.create_polygon(
+                    points,
+                    fill=fill_color,
+                    outline=outline_color,
+                    width=1,
+                    stipple=stipple_pattern
+                )
+            elif commit.is_remote:
                 # Bledší verze branch_color (50% transparence simulace)
                 fill_color = self._make_color_pale(commit.branch_color)
                 outline_color = '#CCCCCC'  # Světlejší obrys
+                canvas.create_oval(
+                    x - self.node_radius, y - self.node_radius,
+                    x + self.node_radius, y + self.node_radius,
+                    fill=fill_color,
+                    outline=outline_color,
+                    width=1
+                )
             else:
+                # Normální commity
                 fill_color = commit.branch_color
                 outline_color = 'black'
-
-            canvas.create_oval(
-                x - self.node_radius, y - self.node_radius,
-                x + self.node_radius, y + self.node_radius,
-                fill=fill_color,
-                outline=outline_color,
-                width=1
-            )
+                canvas.create_oval(
+                    x - self.node_radius, y - self.node_radius,
+                    x + self.node_radius, y + self.node_radius,
+                    fill=fill_color,
+                    outline=outline_color,
+                    width=1
+                )
 
             # Zobrazit vlaječku podle použitého režimu
             if has_branch_heads:
@@ -378,14 +448,19 @@ class GraphDrawer:
                     connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                     self._draw_flag_connection(canvas, x, y, connection_color)
             else:
-                # Fallback logika - původní chování
-                if commit.branch != 'unknown' and commit.branch not in drawn_branch_flags:
+                # Fallback logika - původní chování (ale ne pro WIP commity)
+                if (commit.branch != 'unknown' and
+                    commit.branch not in drawn_branch_flags and
+                    not getattr(commit, 'is_uncommitted', False)):
                     flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                     self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
                     drawn_branch_flags.add(commit.branch)
 
-                # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown')
-                if commit.branch != 'unknown' and last_commits_by_branch[commit.branch] == commit:
+                # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown' a WIP)
+                if (commit.branch != 'unknown' and
+                    commit.branch in last_commits_by_branch and
+                    last_commits_by_branch[commit.branch] == commit and
+                    not getattr(commit, 'is_uncommitted', False)):
                     connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
                     self._draw_flag_connection(canvas, x, y, connection_color)
 
@@ -397,13 +472,19 @@ class GraphDrawer:
 
             # Vytvořit kombinovaný text message + description
             if commit.description_short:
-                # Message v černé + description v šedé
+                # Určit barvu textu podle typu commitu
+                if getattr(commit, 'is_uncommitted', False):
+                    message_color = '#555555'  # Tmavě šedá pro WIP commity
+                else:
+                    message_color = 'black'  # Černá pro normální commity
+
+                # Message v odpovídající barvě + description v šedé
                 canvas.create_text(
                     text_x, y,
                     text=commit.message,
                     anchor='w',
                     font=font,
-                    fill='black',
+                    fill=message_color,
                     tags="commit_text"
                 )
 
@@ -436,52 +517,61 @@ class GraphDrawer:
                     canvas.tag_bind(f"desc_{commit.hash}", "<Leave>",
                         lambda e: self._hide_tooltip())
             else:
+                # Určit barvu textu podle typu commitu
+                if getattr(commit, 'is_uncommitted', False):
+                    message_color = '#555555'  # Tmavě šedá pro WIP commity
+                else:
+                    message_color = 'black'  # Černá pro normální commity
+
                 # Jen message bez description
                 canvas.create_text(
                     text_x, y,
                     text=commit.message,
                     anchor='w',
                     font=font,
-                    fill='black',
+                    fill=message_color,
                     tags="commit_text"
                 )
 
             text_x += self.column_widths['message']
 
-            # Author - zarovnaný na střed sloupce
-            author_center_x = text_x + self.column_widths['author'] // 2
-            canvas.create_text(
-                author_center_x, y,
-                text=commit.author,
-                anchor='center',
-                font=font,
-                fill='#333333',
-                tags="commit_text"
-            )
+            # Author - zarovnaný na střed sloupce (pouze pro normální commity)
+            if not getattr(commit, 'is_uncommitted', False):
+                author_center_x = text_x + self.column_widths['author'] // 2
+                canvas.create_text(
+                    author_center_x, y,
+                    text=commit.author,
+                    anchor='center',
+                    font=font,
+                    fill='#333333',
+                    tags="commit_text"
+                )
             text_x += self.column_widths['author']
 
-            # Email - zarovnaný na střed sloupce
-            email_center_x = text_x + self.column_widths['email'] // 2
-            canvas.create_text(
-                email_center_x, y,
-                text=commit.author_email,
-                anchor='center',
-                font=font,
-                fill='#666666',
-                tags="commit_text"
-            )
+            # Email - zarovnaný na střed sloupce (pouze pro normální commity)
+            if not getattr(commit, 'is_uncommitted', False):
+                email_center_x = text_x + self.column_widths['email'] // 2
+                canvas.create_text(
+                    email_center_x, y,
+                    text=commit.author_email,
+                    anchor='center',
+                    font=font,
+                    fill='#666666',
+                    tags="commit_text"
+                )
             text_x += self.column_widths['email']
 
-            # Date - zarovnaný na střed sloupce
-            date_center_x = text_x + self.column_widths['date'] // 2
-            canvas.create_text(
-                date_center_x, y,
-                text=commit.date_short,
-                anchor='center',
-                font=font,
-                fill='#666666',
-                tags="commit_text"
-            )
+            # Date - zarovnaný na střed sloupce (pouze pro normální commity)
+            if not getattr(commit, 'is_uncommitted', False):
+                date_center_x = text_x + self.column_widths['date'] // 2
+                canvas.create_text(
+                    date_center_x, y,
+                    text=commit.date_short,
+                    anchor='center',
+                    font=font,
+                    fill='#666666',
+                    tags="commit_text"
+                )
 
     def _show_tooltip(self, event, description_text: str):
         """Zobrazí tooltip s kompletním description textem."""
