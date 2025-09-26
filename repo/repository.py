@@ -123,7 +123,7 @@ class GitRepository:
         return commit_to_branch
 
     def parse_commits_with_remote(self) -> List[Commit]:
-        """Načte commity včetně remote větví z origin."""
+        """Načte commity včetně remote větví z origin s podporou divergence."""
         if not self.repo:
             return []
 
@@ -132,9 +132,35 @@ class GitRepository:
         commit_to_tags = self._build_commit_tag_map_with_remote()
         branch_availability = self._build_branch_availability_map()
 
+        # Detekovat divergence pro všechny větve
+        branch_divergences = {}
+        all_branch_names = set()
+        if hasattr(self.repo, 'heads'):
+            for head in self.repo.heads:
+                all_branch_names.add(head.name)
+        if hasattr(self.repo, 'remotes') and self.repo.remotes:
+            try:
+                for ref in self.repo.remotes.origin.refs:
+                    if not ref.name.endswith('/HEAD'):
+                        branch_name = ref.name.replace('origin/', '')
+                        all_branch_names.add(branch_name)
+            except:
+                pass
+
+        for branch_name in all_branch_names:
+            branch_divergences[branch_name] = self._detect_branch_divergence(branch_name)
+
         commits = []
         used_colors = set()
         branch_colors = {}
+
+        # Collect all branch heads for identification
+        branch_heads = {}  # branch_name -> {'local': commit_hash, 'remote': commit_hash}
+        for branch_name, div_info in branch_divergences.items():
+            branch_heads[branch_name] = {
+                'local': div_info.get('local_head'),
+                'remote': div_info.get('remote_head')
+            }
 
         for commit in self.repo.iter_commits(all=True):
             # Prioritně lokální větev
@@ -166,6 +192,29 @@ class GitRepository:
 
             branch_avail = branch_availability.get(clean_branch_name, 'local_only')
 
+            # Zjistit zda je tento commit HEAD nějaké větve
+            is_branch_head = False
+            branch_head_type = "none"
+
+            if clean_branch_name in branch_heads:
+                heads = branch_heads[clean_branch_name]
+                local_head = heads.get('local')
+                remote_head = heads.get('remote')
+
+                is_local_head = local_head and commit.hexsha == local_head.hexsha
+                is_remote_head = remote_head and commit.hexsha == remote_head.hexsha
+
+                if is_local_head and is_remote_head:
+                    is_branch_head = True
+                    branch_head_type = "both"
+                elif is_local_head:
+                    is_branch_head = True
+                    branch_head_type = "local"
+                elif is_remote_head:
+                    is_branch_head = True
+                    branch_head_type = "remote"
+
+
             commit_obj = Commit(
                 hash=commit.hexsha[:8],
                 message=subject,
@@ -181,7 +230,9 @@ class GitRepository:
                 branch_color=branch_colors[branch_name],
                 is_remote=is_remote,
                 tags=commit_tags,
-                branch_availability=branch_avail
+                branch_availability=branch_avail,
+                is_branch_head=is_branch_head,
+                branch_head_type=branch_head_type
             )
             commit_obj.description = description
             commit_obj.description_short = self._truncate_description(description)
@@ -282,6 +333,78 @@ class GitRepository:
                 availability_map[branch] = 'remote_only'
 
         return availability_map
+
+    def _detect_branch_divergence(self, branch_name: str) -> Dict:
+        """Detekuje divergenci mezi lokální a remote větví."""
+        try:
+            # Získat lokální a remote reference
+            local_head = None
+            remote_head = None
+
+            # Lokální větev
+            try:
+                local_head = self.repo.heads[branch_name].commit
+            except:
+                pass
+
+            # Remote větev
+            try:
+                remote_head = self.repo.remotes.origin.refs[branch_name].commit
+            except:
+                pass
+
+            # Pokud některá neexistuje, není divergence
+            if not local_head or not remote_head:
+                return {
+                    'diverged': False,
+                    'local_head': local_head,
+                    'remote_head': remote_head,
+                    'merge_base': None
+                }
+
+            # Pokud ukazují na stejný commit, není divergence
+            if local_head == remote_head:
+                return {
+                    'diverged': False,
+                    'local_head': local_head,
+                    'remote_head': remote_head,
+                    'merge_base': local_head
+                }
+
+            # Najít merge base
+            merge_bases = self.repo.merge_base(local_head, remote_head)
+            if not merge_bases:
+                # Žádný společný předek - divergence definitivně existuje
+                return {
+                    'diverged': True,
+                    'local_head': local_head,
+                    'remote_head': remote_head,
+                    'merge_base': None
+                }
+
+            merge_base = merge_bases[0]
+
+            # Zkontrolovat zda skutečně divergovaly (oba jsou ahead of merge base)
+            local_is_ahead = local_head != merge_base
+            remote_is_ahead = remote_head != merge_base
+
+            return {
+                'diverged': local_is_ahead and remote_is_ahead,
+                'local_head': local_head,
+                'remote_head': remote_head,
+                'merge_base': merge_base,
+                'local_ahead': local_is_ahead,
+                'remote_ahead': remote_is_ahead
+            }
+
+        except Exception as e:
+            return {
+                'diverged': False,
+                'local_head': None,
+                'remote_head': None,
+                'merge_base': None,
+                'error': str(e)
+            }
 
     def _build_commit_tag_map(self) -> Dict[str, List[Tag]]:
         """Vytvořuje mapu commit_hash -> List[Tag] pro lokální tagy."""

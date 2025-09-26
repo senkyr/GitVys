@@ -33,9 +33,16 @@ class Commit:
     tags: List[Tag] = None
     branch_availability: str = "local_only"  # local_only/remote_only/both
 
+    # Pro handling divergence - commit může být součástí více větví (local + remote)
+    additional_branches: List[str] = None  # Další větve, do kterých tento commit patří
+    is_branch_head: bool = False  # Je toto HEAD nějaké větve (pro vykreslení vlaječky)
+    branch_head_type: str = "none"  # "local", "remote", "both"
+
     def __post_init__(self):
         if self.tags is None:
             self.tags = []
+        if self.additional_branches is None:
+            self.additional_branches = []
 
 
 @dataclass

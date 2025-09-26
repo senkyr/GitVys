@@ -301,16 +301,33 @@ class GraphDrawer:
         # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
         font = ('Arial', self.font_size)
 
-        # Sledovat, které větve už mají vlaječku
-        drawn_branch_flags = set()
+        # Zkontrolovat, zda máme nějaké branch head commity
+        has_branch_heads = any(commit.is_branch_head for commit in commits)
 
-        # Najít posledního commitu každé větve (podle času)
-        last_commits_by_branch = {}
-        for commit in commits:
-            if commit.branch not in last_commits_by_branch:
-                last_commits_by_branch[commit.branch] = commit
-            elif commit.date > last_commits_by_branch[commit.branch].date:
-                last_commits_by_branch[commit.branch] = commit
+        if has_branch_heads:
+            # Nová logika - použít branch head commity
+            branch_head_commits = {}  # branch_name -> {'local': commit, 'remote': commit, 'both': commit}
+
+            for commit in commits:
+                if commit.is_branch_head:
+                    clean_branch_name = commit.branch
+                    if commit.branch.startswith('origin/'):
+                        clean_branch_name = commit.branch[7:]  # Odstranit "origin/"
+
+                    if clean_branch_name not in branch_head_commits:
+                        branch_head_commits[clean_branch_name] = {}
+
+                    branch_head_commits[clean_branch_name][commit.branch_head_type] = commit
+        else:
+            # Fallback logika - použít první commit každé větve (původní chování)
+            drawn_branch_flags = set()
+            # Najít posledního commitu každé větve (podle času)
+            last_commits_by_branch = {}
+            for commit in commits:
+                if commit.branch not in last_commits_by_branch:
+                    last_commits_by_branch[commit.branch] = commit
+                elif commit.date > last_commits_by_branch[commit.branch].date:
+                    last_commits_by_branch[commit.branch] = commit
 
         for commit in commits:
             x, y = commit.x, commit.y
@@ -332,16 +349,45 @@ class GraphDrawer:
                 width=1
             )
 
-            # Zobrazit vlaječku s názvem větve pro první commit každé větve (kromě 'unknown')
-            if commit.branch != 'unknown' and commit.branch not in drawn_branch_flags:
-                flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
-                self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
-                drawn_branch_flags.add(commit.branch)
+            # Zobrazit vlaječku podle použitého režimu
+            if has_branch_heads:
+                # Nová logika - zobrazit vlaječku pro branch head commity
+                if commit.is_branch_head and commit.branch != 'unknown':
+                    clean_branch_name = commit.branch
+                    if commit.branch.startswith('origin/'):
+                        clean_branch_name = commit.branch[7:]  # Odstranit "origin/"
 
-            # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown')
-            if commit.branch != 'unknown' and last_commits_by_branch[commit.branch] == commit:
-                connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
-                self._draw_flag_connection(canvas, x, y, connection_color)
+                    flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
+
+                    # Určit které symboly zobrazit podle branch_head_type
+                    if commit.branch_head_type == "both":
+                        # Zobrazit oba symboly (jako doteď)
+                        branch_avail = "both"
+                    elif commit.branch_head_type == "local":
+                        # Jen symbol počítače
+                        branch_avail = "local_only"
+                    elif commit.branch_head_type == "remote":
+                        # Jen symbol obláčku
+                        branch_avail = "remote_only"
+                    else:
+                        branch_avail = commit.branch_availability
+
+                    self._draw_branch_flag(canvas, x, y, clean_branch_name, flag_color, commit.is_remote, branch_avail)
+
+                    # Vykreslit connection line k vlaječce
+                    connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
+                    self._draw_flag_connection(canvas, x, y, connection_color)
+            else:
+                # Fallback logika - původní chování
+                if commit.branch != 'unknown' and commit.branch not in drawn_branch_flags:
+                    flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
+                    self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
+                    drawn_branch_flags.add(commit.branch)
+
+                # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown')
+                if commit.branch != 'unknown' and last_commits_by_branch[commit.branch] == commit:
+                    connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
+                    self._draw_flag_connection(canvas, x, y, connection_color)
 
             # Pevná pozice pro začátek "tabulky" - za všemi větvemi
             table_start_x = self._get_table_start_position()

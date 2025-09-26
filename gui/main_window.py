@@ -336,7 +336,7 @@ class MainWindow:
             else:
                 # Jen lokální tagy
                 tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
-            stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+            stats_text = f"{authors_text}, {branches_text}, {tags_text}, {commits_text}"
         else:
             stats_text = f"{authors_text}, {branches_text}, {commits_text}"
         self.stats_label.config(text=stats_text)
@@ -389,7 +389,7 @@ class MainWindow:
             else:
                 # Jen lokální tagy
                 tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
-            stats_text = f"{authors_text}, {branches_text}, {commits_text}, {tags_text}"
+            stats_text = f"{authors_text}, {branches_text}, {tags_text}, {commits_text}"
         else:
             stats_text = f"{authors_text}, {branches_text}, {commits_text}"
 
