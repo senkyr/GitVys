@@ -544,7 +544,7 @@ class GraphDrawer:
                 # Nejdříve černý obrys pro cloud symbol
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
-                        remote_x + dx, flag_y + dy,
+                        remote_x + dx, flag_y - 1 + dy,
                         text=remote_symbol,
                         anchor='center',
                         font=emoji_font,
@@ -552,7 +552,7 @@ class GraphDrawer:
                     )
                 # Pak bílý symbol na vrch
                 canvas.create_text(
-                    remote_x, flag_y,
+                    remote_x, flag_y - 1,
                     text=remote_symbol,
                     anchor='center',
                     font=emoji_font,
@@ -562,14 +562,14 @@ class GraphDrawer:
                 # Fallback - také s obrysem
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
-                        remote_x + dx, flag_y + dy,
+                        remote_x + dx, flag_y - 1 + dy,
                         text=remote_fallback,
                         anchor='center',
                         font=text_font,
                         fill='black'
                     )
                 canvas.create_text(
-                    remote_x, flag_y,
+                    remote_x, flag_y - 1,
                     text=remote_fallback,
                     anchor='center',
                     font=text_font,
@@ -583,7 +583,7 @@ class GraphDrawer:
                 # Nejdříve černý obrys pro laptop symbol
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
-                        local_x + dx, flag_y + dy,
+                        local_x + dx, flag_y - 1 + dy,
                         text=local_symbol,
                         anchor='center',
                         font=emoji_font,
@@ -591,7 +591,7 @@ class GraphDrawer:
                     )
                 # Pak bílý symbol na vrch
                 canvas.create_text(
-                    local_x, flag_y,
+                    local_x, flag_y - 1,
                     text=local_symbol,
                     anchor='center',
                     font=emoji_font,
@@ -601,19 +601,48 @@ class GraphDrawer:
                 # Fallback - také s obrysem
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
-                        local_x + dx, flag_y + dy,
+                        local_x + dx, flag_y - 1 + dy,
                         text=local_fallback,
                         anchor='center',
                         font=text_font,
                         fill='black'
                     )
                 canvas.create_text(
-                    local_x, flag_y,
+                    local_x, flag_y - 1,
                     text=local_fallback,
                     anchor='center',
                     font=text_font,
                     fill='white'
                 )
+
+    def _calculate_horizontal_line_extent(self, commit: Commit, commits: List[Commit]) -> int:
+        """Vypočítá nejdelší dosah horizontální spojnice od daného commitu."""
+        max_extent = commit.x  # Výchozí pozice commitu
+
+        # Vytvořit mapu hash -> commit pro rychlé vyhledání
+        commit_map = {c.hash: c for c in commits}
+
+        # Projít všechny child commity tohoto commitu
+        for other_commit in commits:
+            if commit.hash in other_commit.parents:
+                # Tento commit je parent pro other_commit
+                child_x = other_commit.x
+
+                if child_x != commit.x:  # Pouze horizontální spojnice (větvení)
+                    # Vypočítat dosah horizontální části L-shaped spojnice
+                    dx = abs(child_x - commit.x)
+                    dy = abs(other_commit.y - commit.y)
+
+                    # Radius zaoblení (stejná logika jako v _draw_bezier_curve)
+                    radius = min(dx, dy, 20) * self.curve_intensity
+                    radius = max(3, min(radius, 15))
+
+                    # Horizontální část končí na child_x - radius
+                    # (corner_x = child_x, takže horizontální část končí na corner_x - radius)
+                    horizontal_end = child_x - radius if dx > radius else child_x
+                    max_extent = max(max_extent, horizontal_end)
+
+        return max_extent
 
     def _draw_tags(self, canvas: tk.Canvas, commits: List[Commit]):
         """Vykreslí tag emoji a názvy pro commity s tagy."""
@@ -629,8 +658,19 @@ class GraphDrawer:
 
             x, y = commit.x, commit.y
 
-            # Pozice pro tagy - napravo od commit kolečka na stejné výšce
-            tag_x_start = x + self.node_radius + 15  # 15px mezera od kolečka
+            # Detekovat kolizi s horizontálními spojnicemi a dynamicky posunout tagy
+            horizontal_line_extent = self._calculate_horizontal_line_extent(commit, commits)
+
+            # Standardní pozice pro tagy
+            standard_tag_x = x + self.node_radius + 15  # 15px mezera od kolečka
+
+            # Pokud horizontální spojnice sahá za standardní pozici tagů, posunout tagy
+            if horizontal_line_extent > standard_tag_x:
+                # Posunout tagy za konec nejdelší horizontální spojnice + bezpečná mezera
+                tag_x_start = horizontal_line_extent + 20  # 20px bezpečná mezera
+            else:
+                # Použít standardní pozici
+                tag_x_start = standard_tag_x
 
             # Spočítat skutečný dostupný prostor pro tagy až do začátku tabulky
             available_tag_space = table_start_x - tag_x_start - self.BASE_MARGIN
@@ -683,7 +723,7 @@ class GraphDrawer:
             text_color = 'black'    # Normální barva
 
         canvas.create_text(
-            x, y,
+            x, y - 1,
             text=tag_emoji,
             anchor='center',
             font=font,
