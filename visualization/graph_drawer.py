@@ -19,6 +19,7 @@ class GraphDrawer:
         self.column_separators = {}  # pozice separátorů {column_name: x_position}
         self.dragging_separator = None  # název sloupce jehož separátor se táhne
         self.drag_start_x = 0
+        self.drag_redraw_scheduled = False  # Flag pro throttling překreslování během drag
 
         # Šířka grafického sloupce (Branch/Commit)
         self.graph_column_width = None  # Bude vypočítána dynamicky
@@ -1550,13 +1551,25 @@ class GraphDrawer:
 
         self.drag_start_x = event.x
 
-        # Překreslit graf s novými šířkami
-        self._redraw_with_new_widths(canvas)
+        # Throttlované překreslování - maximálně každých 16ms (60 FPS)
+        if not self.drag_redraw_scheduled:
+            self.drag_redraw_scheduled = True
+            canvas.after(16, lambda: self._throttled_redraw(canvas))
+
+    def _throttled_redraw(self, canvas: tk.Canvas):
+        """Throttlované překreslení během drag operace."""
+        self.drag_redraw_scheduled = False
+        if self.dragging_separator:  # Pouze pokud stále táhneme
+            self._redraw_with_new_widths(canvas)
 
     def _on_separator_release(self, event):
         """Ukončí tažení separátoru."""
         self.dragging_separator = None
         event.widget.config(cursor='')
+
+        # Finální překreslení po uvolnění (pokud čeká throttlovaný redraw, zrušit ho a provést ihned)
+        self.drag_redraw_scheduled = False
+        self._redraw_with_new_widths(event.widget)
 
 
     def _redraw_with_new_widths(self, canvas: tk.Canvas):
