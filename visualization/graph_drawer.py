@@ -143,74 +143,88 @@ class GraphDrawer:
     def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str, stipple_pattern=None, is_merge_connection: bool = False):
         """Vykreslí hladké L-shaped spojení se zaoblenými rohy"""
 
-        # Vzdálenosti
-        dx = abs(end_x - start_x)
-        dy = abs(end_y - start_y)
+        # Vzdálenosti SE ZNAMÉNKEM pro určení směru
+        dx_signed = end_x - start_x  # Kladné = doprava, záporné = doleva
+        dy_signed = end_y - start_y  # Kladné = dolů, záporné = nahoru
+        dx = abs(dx_signed)
+        dy = abs(dy_signed)
+
+        # Speciální případ: rovná linka (žádný oblouk)
+        if dx == 0 or dy == 0:
+            line_kwargs = {
+                'fill': color,
+                'width': self.line_width
+            }
+            if stipple_pattern:
+                line_kwargs['stipple'] = stipple_pattern
+            canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
+            return
 
         # Rádius zaoblení - malý, aby křivka zůstala v bounds
         radius = min(dx, dy, 20) * self.curve_intensity  # Max 20px radius
         radius = max(3, min(radius, 15))  # Limit mezi 3-15px
 
-        # Corner point (kde se původně lámala čára)
-        if is_merge_connection:
-            corner_x = start_x  # Na úrovni mergované větve (horizontálně)
-            corner_y = end_y    # Na úrovni merge commitu (výškově)
-        else:
+        # Určit směr spojení podle pozic (4 kvadranty)
+        # Kvadrant 1: doprava nahoru (dx>0, dy<0)
+        # Kvadrant 2: doleva nahoru (dx<0, dy<0)
+        # Kvadrant 3: doleva dolů (dx<0, dy>0)
+        # Kvadrant 4: doprava dolů (dx>0, dy>0)
+
+        if dx_signed > 0 and dy_signed > 0:
+            # Doprava dolů
+            arc_type = "right_down"
             corner_x = end_x
-            corner_y = start_y  # Na úrovni parent commitu
+            corner_y = start_y
+        elif dx_signed > 0 and dy_signed < 0:
+            # Doprava nahoru
+            arc_type = "right_up"
+            corner_x = end_x
+            corner_y = start_y
+        elif dx_signed < 0 and dy_signed > 0:
+            # Doleva dolů
+            arc_type = "left_down"
+            corner_x = end_x
+            corner_y = start_y
+        else:  # dx_signed < 0 and dy_signed < 0
+            # Doleva nahoru
+            arc_type = "left_up"
+            corner_x = end_x
+            corner_y = start_y
 
-        if is_merge_connection:
-            # MERGE CONNECTION: vertical→horizontal pattern
-            # 1) Vertical line dolů až k corner-radius
-            if dy > radius:
-                line_kwargs = {
-                    'fill': color,
-                    'width': self.line_width
-                }
-                if stipple_pattern:
-                    line_kwargs['stipple'] = stipple_pattern
-                canvas.create_line(
-                    start_x, start_y,
-                    corner_x, corner_y + radius,  # dolů k end pointu oblouku
-                    **line_kwargs
-                )
-        else:
-            # NORMÁLNÍ CONNECTION: horizontal→vertical pattern
-            # 1) Horizontal line až k corner-radius
+        # Vykreslení podle arc_type
+        line_kwargs = {
+            'fill': color,
+            'width': self.line_width
+        }
+        if stipple_pattern:
+            line_kwargs['stipple'] = stipple_pattern
+
+        # 1) První úsek (od start k rohu - radius)
+        if arc_type == "right_down":
+            # Horizontal doprava
             if dx > radius:
-                line_kwargs = {
-                    'fill': color,
-                    'width': self.line_width
-                }
-                if stipple_pattern:
-                    line_kwargs['stipple'] = stipple_pattern
-                canvas.create_line(
-                    start_x, start_y,
-                    corner_x - radius, corner_y,
-                    **line_kwargs
-                )
+                canvas.create_line(start_x, start_y, corner_x - radius, corner_y, **line_kwargs)
+        elif arc_type == "right_up":
+            # Horizontal doprava
+            if dx > radius:
+                canvas.create_line(start_x, start_y, corner_x - radius, corner_y, **line_kwargs)
+        elif arc_type == "left_down":
+            # Horizontal doleva
+            if dx > radius:
+                canvas.create_line(start_x, start_y, corner_x + radius, corner_y, **line_kwargs)
+        elif arc_type == "left_up":
+            # Horizontal doleva
+            if dx > radius:
+                canvas.create_line(start_x, start_y, corner_x + radius, corner_y, **line_kwargs)
 
-        # 2) Rounded corner (malá kvadratická Bezier křivka)
+        # 2) Rounded corner
         if dx > radius and dy > radius:
-            # Rounded corner pomocí arc místo Bezier (správný tvar)
-            if is_merge_connection:
-                # Merge: oblouk dolů doleva (vertical→horizontal, směrem doprava klesá)
-                corner_points = self._calculate_rounded_corner_arc(
-                    corner_x - radius, corner_y,     # start point (levý horní vrchol čtverce)
-                    corner_x, corner_y + radius,     # end point (pravý dolní vrchol čtverce)
-                    corner_x, corner_y,              # corner point (jednoduché corner_x, corner_y)
-                    radius,
-                    arc_type="merge"
-                )
-            else:
-                # Normální: oblouk doprava dolů (horizontal→vertical)
-                corner_points = self._calculate_rounded_corner_arc(
-                    corner_x - radius, corner_y,    # start point
-                    corner_x, corner_y - radius,    # end point (NAHORU = minus radius)
-                    corner_x, corner_y,             # corner point
-                    radius,
-                    arc_type="branching"
-                )
+            corner_points = self._calculate_rounded_corner_arc(
+                start_x, start_y, end_x, end_y,
+                corner_x, corner_y,
+                radius,
+                arc_type=arc_type
+            )
 
             if len(corner_points) > 2:
                 corner_kwargs = {
@@ -220,72 +234,72 @@ class GraphDrawer:
                 }
                 if stipple_pattern:
                     corner_kwargs['stipple'] = stipple_pattern
-                canvas.create_line(
-                    corner_points,
-                    **corner_kwargs
-                )
+                canvas.create_line(corner_points, **corner_kwargs)
 
-        # 3) Poslední úsek spojení
-        if is_merge_connection:
-            # Merge: horizontal line doleva od corner k cíli
-            if dx > radius:
-                line_kwargs = {
-                    'fill': color,
-                    'width': self.line_width
-                }
-                if stipple_pattern:
-                    line_kwargs['stipple'] = stipple_pattern
-                canvas.create_line(
-                    corner_x - radius, corner_y,
-                    end_x, end_y,
-                    **line_kwargs
-                )
-        else:
-            # Normální: vertical line od corner k cíli
+        # 3) Poslední úsek (od rohu + radius k end)
+        if arc_type == "right_down":
+            # Vertical dolů
             if dy > radius:
-                line_kwargs = {
-                    'fill': color,
-                    'width': self.line_width
-                }
-                if stipple_pattern:
-                    line_kwargs['stipple'] = stipple_pattern
-                canvas.create_line(
-                    corner_x, corner_y - radius,
-                    end_x, end_y,
-                    **line_kwargs
-                )
+                canvas.create_line(corner_x, corner_y + radius, end_x, end_y, **line_kwargs)
+        elif arc_type == "right_up":
+            # Vertical nahoru
+            if dy > radius:
+                canvas.create_line(corner_x, corner_y - radius, end_x, end_y, **line_kwargs)
+        elif arc_type == "left_down":
+            # Vertical dolů
+            if dy > radius:
+                canvas.create_line(corner_x, corner_y + radius, end_x, end_y, **line_kwargs)
+        elif arc_type == "left_up":
+            # Vertical nahoru
+            if dy > radius:
+                canvas.create_line(corner_x, corner_y - radius, end_x, end_y, **line_kwargs)
 
         # Pro velmi krátké vzdálenosti - fallback na simple line
         if dx <= radius or dy <= radius:
-            line_kwargs = {
-                'fill': color,
-                'width': self.line_width
-            }
-            if stipple_pattern:
-                line_kwargs['stipple'] = stipple_pattern
-            canvas.create_line(
-                start_x, start_y, end_x, end_y,
-                **line_kwargs
-            )
+            canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
 
-    def _calculate_rounded_corner_arc(self, start_x: int, start_y: int, end_x: int, end_y: int, corner_x: int, corner_y: int, radius: int, arc_type: str = "branching"):
+    def _calculate_rounded_corner_arc(self, start_x: int, start_y: int, end_x: int, end_y: int, corner_x: int, corner_y: int, radius: int, arc_type: str = "right_down"):
         """Vypočítá body pro zaoblený roh pomocí circular arc podle typu"""
         import math
         points = []
         steps = 8
 
-        if arc_type == "branching":
-            # Branching: arc v pravém HORNÍM kvadrantu (jde NAHORU!)
+        # Nové arc_types podle směru (4 kvadranty)
+        if arc_type == "right_down":
+            # Doprava dolů: horizontal→vertical, oblouk v pravém horním kvadrantu rohu
+            arc_center_x = corner_x - radius
+            arc_center_y = corner_y + radius
+            start_angle = 3 * math.pi / 2  # 270° - vertical nahoru (z horizontální)
+            end_angle = 0  # 0° - horizontal doprava (do vertikální)
+        elif arc_type == "right_up":
+            # Doprava nahoru: horizontal→vertical, oblouk v pravém dolním kvadrantu rohu
             arc_center_x = corner_x - radius
             arc_center_y = corner_y - radius
             start_angle = 0  # 0° - horizontal doprava
             end_angle = math.pi / 2  # 90° - vertical nahoru
+        elif arc_type == "left_down":
+            # Doleva dolů: horizontal→vertical, oblouk v levém horním kvadrantu rohu
+            arc_center_x = corner_x + radius
+            arc_center_y = corner_y + radius
+            start_angle = math.pi  # 180° - horizontal doleva
+            end_angle = 3 * math.pi / 2  # 270° - vertical dolů
+        elif arc_type == "left_up":
+            # Doleva nahoru: horizontal→vertical, oblouk v levém dolním kvadrantu rohu
+            arc_center_x = corner_x + radius
+            arc_center_y = corner_y - radius
+            start_angle = math.pi / 2  # 90° - vertical nahoru
+            end_angle = math.pi  # 180° - horizontal doleva
+        # Zpětná kompatibilita se starými názvy
+        elif arc_type == "branching":
+            arc_center_x = corner_x - radius
+            arc_center_y = corner_y - radius
+            start_angle = 0
+            end_angle = math.pi / 2
         elif arc_type == "merge":
-            # Merge: arc v pravém DOLNÍM kvadrantu (jde DOLŮ!)
             arc_center_x = corner_x - radius
             arc_center_y = corner_y + radius
-            start_angle = 3 * math.pi / 2  # 270° - vertical dolů
-            end_angle = 2 * math.pi  # 360° (0°) - horizontal doprava
+            start_angle = 3 * math.pi / 2
+            end_angle = 2 * math.pi
         else:
             raise ValueError(f"Neznámý arc_type: {arc_type}")
 

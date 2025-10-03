@@ -20,8 +20,8 @@ class GraphLayout:
         # Seřadit podle času globálně - toto určuje Y pozice
         all_commits = sorted(self.commits, key=lambda c: c.date, reverse=True)
 
-        # Přiřadit lanes větvím
-        self._assign_lanes(all_commits)
+        # Přiřadit lanes větvím s recyklací
+        self._assign_lanes_with_recycling(all_commits)
 
         # Každý commit dostane Y pozici podle svého chronologického pořadí
         # X pozici podle své větve
@@ -184,3 +184,88 @@ class GraphLayout:
 
     def get_branch_lane(self, branch_name: str) -> int:
         return self.branch_lanes.get(branch_name, 0)
+
+    def _assign_lanes_with_recycling(self, commits: List[Commit]):
+        """Přiřadí lanes větvím s recyklací - uvolňuje lanes po skončení větví."""
+        # Analyzovat parent-child vztahy
+        branch_relationships = self._analyze_branch_relationships(commits)
+        self._add_merge_branches_to_relationships(branch_relationships)
+
+        # Vytvořit časovou osu commitů pro sledování, kdy větve končí
+        commit_timeline = sorted(commits, key=lambda c: c.date, reverse=True)
+
+        # Mapa: větev -> index posledního (nejstaršího) commitu této větve
+        branch_last_commit_index = {}
+        for i, commit in enumerate(commit_timeline):
+            branch = commit.branch
+            # Vždy aktualizovat na vyšší index (starší commit)
+            branch_last_commit_index[branch] = max(branch_last_commit_index.get(branch, -1), i)
+
+        # Sledování aktivních lanes v průběhu času
+        active_lanes = {}  # lane_number -> branch_name
+        free_lanes = set()  # Sada volných lane čísel
+        next_lane = 0  # Čítač pro nové lanes
+
+        # Rozdělit větve na normální a merge
+        normal_branches = []
+        merge_branches = []
+        for branch_name, info in branch_relationships.items():
+            if branch_name.startswith('merge-'):
+                merge_branches.append((branch_name, info))
+            else:
+                normal_branches.append((branch_name, info))
+
+        # Seřadit podle času vytvoření
+        normal_branches_by_time = sorted(normal_branches, key=lambda x: x[1]['creation_time'], reverse=True)
+        merge_branches_by_time = sorted(merge_branches, key=lambda x: x[1]['creation_time'], reverse=True)
+
+        # FÁZE 1: Přiřadit main větev na lane 0
+        main_branches = ['main', 'master']
+        main_branch = None
+        for branch_name, _ in normal_branches_by_time:
+            if branch_name.lower() in main_branches:
+                main_branch = branch_name
+                break
+
+        if main_branch:
+            self.branch_lanes[main_branch] = 0
+            active_lanes[0] = main_branch
+            next_lane = 1
+
+        # FÁZE 2: Procházet commity chronologicky a přiřazovat/uvolňovat lanes
+        for i, commit in enumerate(commit_timeline):
+            branch = commit.branch
+
+            # Pokud tato větev ještě nemá lane, přiřadit ji
+            if branch not in self.branch_lanes:
+                # Zjistit minimální lane (musí být vpravo od parent větví)
+                min_lane = 0
+                branch_info = branch_relationships.get(branch, {})
+                for parent_branch in branch_info.get('parent_branches', []):
+                    if parent_branch in self.branch_lanes:
+                        min_lane = max(min_lane, self.branch_lanes[parent_branch] + 1)
+
+                # Najít první volnou lane >= min_lane
+                assigned_lane = None
+
+                # Zkusit použít recyklovanou lane
+                available_free = sorted([l for l in free_lanes if l >= min_lane])
+                if available_free:
+                    assigned_lane = available_free[0]
+                    free_lanes.remove(assigned_lane)
+                else:
+                    # Žádná volná lane, použít novou
+                    assigned_lane = max(next_lane, min_lane)
+                    next_lane = assigned_lane + 1
+
+                self.branch_lanes[branch] = assigned_lane
+                active_lanes[assigned_lane] = branch
+
+            # Pokud je to poslední commit této větve, uvolnit její lane
+            if i == branch_last_commit_index.get(branch, -1):
+                # Větev končí - uvolnit její lane (pokud to není main)
+                if branch != main_branch and branch in self.branch_lanes:
+                    lane = self.branch_lanes[branch]
+                    if lane in active_lanes and active_lanes[lane] == branch:
+                        del active_lanes[lane]
+                        free_lanes.add(lane)
