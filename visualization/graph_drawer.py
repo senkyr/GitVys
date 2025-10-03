@@ -73,10 +73,11 @@ class GraphDrawer:
         # Upravit description_short podle škálování
         self._adjust_descriptions_for_scaling(commits)
 
+        # Vypočítat flag_width před ostatními výpočty, které ho používají
+        self._calculate_flag_width(canvas, commits)
         # Uložit informace o lanes pro výpočet pozice tabulky
         self._update_branch_lanes(commits)
         self._calculate_column_widths(canvas, commits)
-        self._calculate_flag_width(canvas, commits)
         self._calculate_required_tag_space(canvas, commits)
         self._draw_connections(canvas, commits)
         self._draw_commits(canvas, commits)
