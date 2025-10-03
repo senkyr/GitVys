@@ -15,6 +15,12 @@ class GraphCanvas(ttk.Frame):
         self.commits: List[Commit] = []
         self.graph_drawer = GraphDrawer()
         self.on_drop_callback = on_drop_callback
+
+        # Smooth scrolling state
+        self.scroll_animation_id = None
+        self.target_scroll_position = None
+        self.current_scroll_velocity = 0
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -238,18 +244,58 @@ class GraphCanvas(ttk.Frame):
         if self._can_scroll_vertically():
             current_top, current_bottom = self.canvas.yview()
 
-            # Calculate new position
-            scroll_amount = int(delta) * 0.01  # Scroll by 1% of visible area for very smooth movement
-            new_top = current_top + scroll_amount
+            # Calculate scroll amount - use smaller steps for smoother animation
+            scroll_amount = int(delta) * 0.02  # 2% per wheel notch
+
+            # Calculate target position
+            target_top = current_top + scroll_amount
 
             # Apply bounds checking
-            if new_top < 0:
-                new_top = 0
-            elif new_top > 1 - (current_bottom - current_top):
-                new_top = 1 - (current_bottom - current_top)
+            if target_top < 0:
+                target_top = 0
+            elif target_top > 1 - (current_bottom - current_top):
+                target_top = 1 - (current_bottom - current_top)
 
-            self.canvas.yview_moveto(new_top)
+            # Start smooth scroll animation
+            self._animate_scroll_to(target_top)
+
+    def _animate_scroll_to(self, target_position: float):
+        """Animuje plynulé scrollování k cílové pozici."""
+        # Zrušit předchozí animaci, pokud existuje
+        if self.scroll_animation_id is not None:
+            self.after_cancel(self.scroll_animation_id)
+            self.scroll_animation_id = None
+
+        self.target_scroll_position = target_position
+        self._perform_scroll_step()
+
+    def _perform_scroll_step(self):
+        """Provede jeden krok animace scrollování."""
+        if self.target_scroll_position is None:
+            return
+
+        current_top, current_bottom = self.canvas.yview()
+        distance = self.target_scroll_position - current_top
+
+        # Pokud jsme dostatečně blízko cíle, skončit
+        if abs(distance) < 0.001:
+            self.canvas.yview_moveto(self.target_scroll_position)
             self._update_column_separators()
+            self.scroll_animation_id = None
+            self.target_scroll_position = None
+            return
+
+        # Easing funkce - exponenciální vyhlazení pro přirozený pocit
+        # Pohybujeme se o 30% zbývající vzdálenosti každý krok
+        ease_factor = 0.3
+        step = distance * ease_factor
+
+        new_position = current_top + step
+        self.canvas.yview_moveto(new_position)
+        self._update_column_separators()
+
+        # Naplánovat další krok animace (přibližně 60 FPS)
+        self.scroll_animation_id = self.after(16, self._perform_scroll_step)
 
     def _update_column_separators(self):
         """Aktualizuje pozici separátorů sloupců po scrollování."""
