@@ -716,27 +716,55 @@ class GraphDrawer:
             # Author - zarovnaný na střed sloupce (pouze pro normální commity)
             if not getattr(commit, 'is_uncommitted', False):
                 author_center_x = text_x + self.column_widths['author'] // 2
-                canvas.create_text(
+
+                # Zkrátit author podle dostupné šířky
+                author_to_display = self._truncate_text_to_width(
+                    canvas, font, commit.author, self.column_widths['author']
+                )
+
+                # Vykreslit s tagem
+                author_item = canvas.create_text(
                     author_center_x, y,
-                    text=commit.author,
+                    text=author_to_display,
                     anchor='center',
                     font=font,
                     fill='#333333',
-                    tags="commit_text"
+                    tags=("commit_text", f"author_{commit.hash}")
                 )
+
+                # Přidat tooltip pokud byl zkrácen
+                if author_to_display != commit.author:
+                    canvas.tag_bind(f"author_{commit.hash}", "<Enter>",
+                        lambda e, author=commit.author: self._show_tooltip(e, author))
+                    canvas.tag_bind(f"author_{commit.hash}", "<Leave>",
+                        lambda e: self._hide_tooltip())
             text_x += self.column_widths['author']
 
             # Email - zarovnaný na střed sloupce (pouze pro normální commity)
             if not getattr(commit, 'is_uncommitted', False):
                 email_center_x = text_x + self.column_widths['email'] // 2
-                canvas.create_text(
+
+                # Zkrátit email podle dostupné šířky
+                email_to_display = self._truncate_text_to_width(
+                    canvas, font, commit.author_email, self.column_widths['email']
+                )
+
+                # Vykreslit s tagem
+                email_item = canvas.create_text(
                     email_center_x, y,
-                    text=commit.author_email,
+                    text=email_to_display,
                     anchor='center',
                     font=font,
                     fill='#666666',
-                    tags="commit_text"
+                    tags=("commit_text", f"email_{commit.hash}")
                 )
+
+                # Přidat tooltip pokud byl zkrácen
+                if email_to_display != commit.author_email:
+                    canvas.tag_bind(f"email_{commit.hash}", "<Enter>",
+                        lambda e, email=commit.author_email: self._show_tooltip(e, email))
+                    canvas.tag_bind(f"email_{commit.hash}", "<Leave>",
+                        lambda e: self._hide_tooltip())
             text_x += self.column_widths['email']
 
             # Date - zarovnaný na střed sloupce (pouze pro normální commity)
