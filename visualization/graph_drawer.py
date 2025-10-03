@@ -1309,33 +1309,71 @@ class GraphDrawer:
 
     def _add_tooltip_to_flag(self, canvas, flag_item, flag_x, flag_y, flag_width, flag_height, full_name):
         """Přidá tooltip funkcionalitu k vlaječce."""
-        tooltip = None
+        tooltip_tag = None
 
         def show_tooltip(event):
-            nonlocal tooltip
-            if tooltip:
+            nonlocal tooltip_tag
+            if tooltip_tag:
                 return
 
-            # Vytvořit tooltip okno
-            tooltip = canvas.create_rectangle(
-                flag_x - flag_width // 2, flag_y + flag_height // 2 + 5,
-                flag_x + flag_width // 2, flag_y + flag_height // 2 + 25,
-                fill='#FFFFCC', outline='black', width=1
+            # Vytvořit unikátní tag pro tento tooltip
+            tooltip_tag = f"tooltip_{id(flag_item)}_{id(event)}"
+
+            # Vypočítat dynamickou šířku podle délky textu
+            # Přibližně 6px na znak + padding
+            text_width = len(full_name) * 6 + 20
+            tooltip_height = 20
+
+            # Určit pozici tooltipu
+            tooltip_top_y = flag_y + flag_height // 2 + 5
+            tooltip_bottom_y = tooltip_top_y + tooltip_height
+
+            # Určit horizontální pozici - defaultně vycentrováno
+            tooltip_left_x = flag_x - text_width // 2
+            tooltip_right_x = flag_x + text_width // 2
+
+            # Získat šířku canvasu
+            canvas_width = canvas.winfo_width()
+
+            # Kontrola přetečení vpravo
+            if tooltip_right_x > canvas_width:
+                # Posunout doleva tak, aby pravý okraj byl na canvas_width
+                offset = tooltip_right_x - canvas_width
+                tooltip_left_x -= offset
+                tooltip_right_x -= offset
+
+            # Kontrola přetečení vlevo
+            if tooltip_left_x < 0:
+                # Posunout doprava tak, aby levý okraj byl na 0
+                offset = -tooltip_left_x
+                tooltip_left_x += offset
+                tooltip_right_x += offset
+
+            # Vypočítat centrum pro text
+            tooltip_center_x = (tooltip_left_x + tooltip_right_x) // 2
+
+            # Vytvořit tooltip okno s tagem
+            canvas.create_rectangle(
+                tooltip_left_x, tooltip_top_y,
+                tooltip_right_x, tooltip_bottom_y,
+                fill='#FFFFCC', outline='black', width=1,
+                tags=tooltip_tag
             )
 
             canvas.create_text(
-                flag_x, flag_y + flag_height // 2 + 15,
+                tooltip_center_x, tooltip_top_y + tooltip_height // 2,
                 text=full_name,
                 anchor='center',
                 font=('Arial', 8),
-                fill='black'
+                fill='black',
+                tags=tooltip_tag
             )
 
         def hide_tooltip(event):
-            nonlocal tooltip
-            if tooltip:
-                canvas.delete(tooltip)
-                tooltip = None
+            nonlocal tooltip_tag
+            if tooltip_tag:
+                canvas.delete(tooltip_tag)
+                tooltip_tag = None
 
         # Bind eventi k celé oblasti vlaječky
         canvas.tag_bind(flag_item, '<Enter>', show_tooltip)
