@@ -106,7 +106,14 @@ class GraphDrawer:
                             # Pro merge commit: první parent = normální, ostatní = merge connections
                             is_merge_connection = is_merge_commit and parent_index > 0
 
-                            self._draw_line(canvas, parent_pos, child_pos, commit.branch_color, commit.is_remote, is_uncommitted, is_merge_connection)
+                            # Pro merge connections použít barvu parenta (mergované větve), ne child (merge commitu)
+                            if is_merge_connection:
+                                parent_commit = commit_info.get(parent_hash)
+                                line_color = parent_commit.branch_color if parent_commit else commit.branch_color
+                            else:
+                                line_color = commit.branch_color
+
+                            self._draw_line(canvas, parent_pos, child_pos, line_color, commit.is_remote, is_uncommitted, is_merge_connection)
 
     def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False, is_uncommitted: bool = False, is_merge_connection: bool = False):
         start_x, start_y = start
@@ -117,7 +124,7 @@ class GraphDrawer:
             line_color = color  # Plná barva větve pro WIP commity
             stipple_pattern = 'gray50'  # Stejné šrafování jako WIP kroužek
         elif is_merge_connection:
-            line_color = self._make_color_pale(color, blend_type="merge")  # Světlá barva pro merge connections
+            line_color = color  # Použít barvu jak je (už je mdlá z parenta, nepřidávat další vyblednutí)
             stipple_pattern = None
         elif is_remote:
             line_color = self._make_color_pale(color)  # Bledší barva pro remote

@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import git
@@ -638,6 +639,12 @@ class GitRepository:
         merge_branches = []
         commit_map = {commit.hash: commit for commit in commits}
 
+        # Vytvořit used_colors set z existujících commitů
+        used_colors = set()
+        for commit in commits:
+            if commit.branch_color:
+                used_colors.add(commit.branch_color)
+
         # Rozšířený commit map pro plné hashe (může být nutné pro GitPython)
         full_hash_map = {}
         if self.repo:
@@ -694,12 +701,75 @@ class GitRepository:
 
                             # Pokud jsme našli nějaké commity v merge branch
                             if merge_branch_commits:
+                                # Získat commity v HLAVNÍ LINII větví s HEAD (first-parent path)
+                                commits_in_branches_with_head = set()
+                                if self.repo:
+                                    try:
+                                        for branch_head in self.repo.heads:
+                                            # Traversovat jen hlavní linii (first parent)
+                                            try:
+                                                commit = branch_head.commit
+                                                while commit:
+                                                    commits_in_branches_with_head.add(commit.hexsha[:8])
+                                                    if commit.parents:
+                                                        commit = commit.parents[0]  # Jen first parent
+                                                    else:
+                                                        break
+                                            except:
+                                                continue
+                                    except:
+                                        pass
+
+                                # Filtrovat commity - odstranit ty, které jsou v cestě k HEAD
+                                # (ty mají zůstat sytě barevné)
+                                filtered_commits = [c for c in merge_branch_commits
+                                                   if c not in commits_in_branches_with_head]
+
+                                # Pokud po filtraci nezbyly žádné commity, přeskočit
+                                if not filtered_commits:
+                                    continue
+
+                                merge_branch_commits = filtered_commits
+
                                 # Vytvořit virtuální název větve
                                 virtual_name = f"merge-{merge_commit.hash}"
 
-                                # Určit původní barvu (z hlavní větve)
-                                main_parent = commit_map.get(main_parent_hash)
-                                original_color = main_parent.branch_color if main_parent else '#666666'
+                                # Určit původní barvu (z názvu mergované větve v commit message)
+                                original_color = '#666666'  # Default fallback
+
+                                # Pokusit se extrahovat název větve z merge commit message
+                                try:
+                                    merge_commit_full_hash = full_hash_map.get(merge_commit.hash)
+                                    if merge_commit_full_hash and self.repo:
+                                        merge_commit_obj = self.repo.commit(merge_commit_full_hash)
+                                        merge_message = merge_commit_obj.message
+
+                                        # Různé formáty merge messages
+                                        patterns = [
+                                            r"Merge branch ['\"]([^'\"]+)['\"]",           # Git standard: Merge branch 'feature/xyz'
+                                            r"Merge branch ['\"]([^'\"]+)['\"] into",      # S target: Merge branch 'feature/xyz' into main
+                                            r"Merge pull request #\d+ from [^/]+/([^\s]+)", # GitHub: Merge pull request #123 from user/feature-xyz
+                                            r"Merged in ([^\s\(]+)",                       # Bitbucket: Merged in feature/xyz
+                                            r"Merge remote-tracking branch ['\"]origin/([^'\"]+)['\"]", # Remote merge
+                                        ]
+
+                                        branch_name = None
+                                        for pattern in patterns:
+                                            match = re.search(pattern, merge_message)
+                                            if match:
+                                                branch_name = match.group(1)
+                                                break
+
+                                        if branch_name:
+                                            # Získat barvu pro tuto větev
+                                            original_color = get_branch_color(branch_name, used_colors)
+                                except:
+                                    pass
+
+                                # Fallback: neutrální šedá pokud se nepodařilo detekovat název větve
+                                # (NE merge_parent.branch_color, protože může být main i když to byla feature)
+                                if original_color == '#666666':
+                                    original_color = '#999999'  # Neutrální světle šedá pro neznámé větve
 
                                 merge_branch = MergeBranch(
                                     branch_point_hash=branch_point_hash,
@@ -726,15 +796,18 @@ class GitRepository:
             return
 
         # Vytvořit mapu commit hash -> merge branch pro rychlé vyhledávání
+        # Pokud commit patří do více merge větví, první vyhraje (nepřepisovat)
         commit_to_merge_branch = {}
         for merge_branch in merge_branches:
             for commit_hash in merge_branch.commits_in_branch:
-                commit_to_merge_branch[commit_hash] = merge_branch
+                if commit_hash not in commit_to_merge_branch:
+                    commit_to_merge_branch[commit_hash] = merge_branch
 
         # Aplikovat styling na commity v merge větvích
         styled_count = 0
         for commit in commits:
-            if commit.hash in commit_to_merge_branch:
+            # Nepřemalovat commit pokud už byl přemapován na merge větev (první merge vyhraje)
+            if commit.hash in commit_to_merge_branch and not getattr(commit, 'is_merge_branch', False):
                 merge_branch = commit_to_merge_branch[commit.hash]
 
                 # Změnit branch na virtuální název
