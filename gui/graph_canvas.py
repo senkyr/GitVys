@@ -59,6 +59,7 @@ class GraphCanvas(ttk.Frame):
         self.canvas.bind('<MouseWheel>', self.on_mousewheel)
         self.canvas.bind('<Button-4>', self.on_mousewheel)
         self.canvas.bind('<Button-5>', self.on_mousewheel)
+        self.canvas.bind('<Configure>', self.on_canvas_resize)
 
         if DND_FILES is not None and self.on_drop_callback:
             self.canvas.drop_target_register(DND_FILES)
@@ -324,6 +325,11 @@ class GraphCanvas(ttk.Frame):
 
         # Naplánovat další krok animace (přibližně 60 FPS)
         self.scroll_animation_id = self.after(16, self._perform_momentum_step)
+
+    def on_canvas_resize(self, event):
+        """Handler pro změnu velikosti canvasu - aktualizuje záhlaví."""
+        # Překreslit záhlaví při změně šířky okna
+        self._update_column_separators()
 
     def _update_column_separators(self):
         """Aktualizuje pozici separátorů sloupců po scrollování."""

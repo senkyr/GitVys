@@ -1478,6 +1478,28 @@ class GraphDrawer:
 
             current_x += self.column_widths[column]
 
+        # Vyplnit zbývající prostor vpravo až do konce viditelného okna
+        viewport_width = canvas.winfo_width()
+        if viewport_width > 1:  # winfo_width vrací 1 pokud ještě není inicializováno
+            # Získat scroll pozici a vypočítat pravý okraj viditelného viewportu
+            scroll_x_left, scroll_x_right = canvas.xview()
+            scrollregion = canvas.cget('scrollregion').split()
+            if scrollregion and len(scrollregion) == 4:
+                total_width = float(scrollregion[2])
+                right_edge = scroll_x_left * total_width + viewport_width
+            else:
+                right_edge = current_x + viewport_width
+
+            # Vykreslit výplň od konce posledního sloupce až do pravého okraje viewportu
+            if right_edge > current_x:
+                header_fill = canvas.create_rectangle(
+                    current_x, separator_y,
+                    right_edge, separator_y + 25,
+                    outline='',
+                    fill='#f0f0f0',
+                    tags=("column_header", "header_fill")
+                )
+
         # Zajistit správné vrstvení: pozadí záhlaví dolů, separátory nahoru, text záhlaví na vrch
         canvas.tag_lower("graph_header_bg")   # Pozadí grafického záhlaví dolů
         for column in ['message', 'author', 'email', 'date']:
