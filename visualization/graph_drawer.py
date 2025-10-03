@@ -103,19 +103,24 @@ class GraphDrawer:
                             # Start from parent, draw to child
                             is_uncommitted = getattr(commit, 'is_uncommitted', False)
 
-                            # Pro merge commit: první parent = normální, ostatní = merge connections
+                            # Zjistit typ spojení
+                            parent_commit = commit_info.get(parent_hash)
+
+                            # Branchování: parent a child v různých větvích (ale ne merge connection)
+                            is_branching = parent_commit and parent_commit.branch != commit.branch and not is_merge_commit
+
+                            # Merge connection: druhý+ parent merge commitu
                             is_merge_connection = is_merge_commit and parent_index > 0
 
                             # Pro merge connections použít barvu parenta (mergované větve), ne child (merge commitu)
                             if is_merge_connection:
-                                parent_commit = commit_info.get(parent_hash)
                                 line_color = parent_commit.branch_color if parent_commit else commit.branch_color
                             else:
                                 line_color = commit.branch_color
 
-                            self._draw_line(canvas, parent_pos, child_pos, line_color, commit.is_remote, is_uncommitted, is_merge_connection)
+                            self._draw_line(canvas, parent_pos, child_pos, line_color, commit.is_remote, is_uncommitted, is_merge_connection, is_branching)
 
-    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False, is_uncommitted: bool = False, is_merge_connection: bool = False):
+    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False, is_uncommitted: bool = False, is_merge_connection: bool = False, is_branching: bool = False):
         start_x, start_y = start
         end_x, end_y = end
 
@@ -135,7 +140,7 @@ class GraphDrawer:
 
         # Pokud jsou commity v různých sloupcích (větvení), kreslíme hladkou křivku
         if start_x != end_x:
-            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color, stipple_pattern, is_merge_connection)
+            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color, stipple_pattern, is_merge_connection, is_branching)
         else:
             # Přímá svislá linka pro commity ve stejném sloupci
             line_kwargs = {
@@ -147,11 +152,12 @@ class GraphDrawer:
 
             canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
 
-    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str, stipple_pattern=None, is_merge_connection: bool = False):
+    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str, stipple_pattern=None, is_merge_connection: bool = False, is_branching: bool = False):
         """Vykreslí hladké L-shaped spojení se zaoblenými rohy.
 
         Pro merge connections: vodorovná část ve výšce end (merge commit)
         Pro branchování: vodorovná část ve výšce start (parent commit)
+        Pro normální spojení: přímá nebo minimální oblouk
         """
 
         # Vzdálenosti SE ZNAMÉNKEM pro určení směru
@@ -160,7 +166,7 @@ class GraphDrawer:
         dx = abs(dx_signed)
         dy = abs(dy_signed)
 
-        # Speciální případ: rovná linka (žádný oblouk)
+        # Speciální případ: vertikální nebo horizontální přímá linka
         if dx == 0 or dy == 0:
             line_kwargs = {
                 'fill': color,
@@ -186,7 +192,7 @@ class GraphDrawer:
             # Merge: vodorovná část ve výšce end (merge commit)
             corner_y = end_y
             corner_x = start_x
-        else:
+        else:  # is_branching
             # Branchování: vodorovná část ve výšce start (parent commit)
             corner_y = start_y
             corner_x = end_x
@@ -362,8 +368,17 @@ class GraphDrawer:
             else:
                 raise ValueError(f"Neznámý arc_type: {arc_type}")
 
+        # Zajistit že interpolace jde krátkou cestou po kružnici
+        angle_diff = end_angle - start_angle
+        if angle_diff < 0 and abs(angle_diff) > math.pi:
+            # Přidat 2π k end_angle pro interpolaci přes 360°/0°
+            end_angle += 2 * math.pi
+        elif angle_diff > 0 and angle_diff > math.pi:
+            # Odečíst 2π od end_angle
+            end_angle -= 2 * math.pi
+
         for i in range(steps + 1):
-            # Interpolace mezi start_angle a end_angle
+            # Interpolace mezi start_angle a end_angle (krátkou cestou)
             angle = start_angle + (i / steps) * (end_angle - start_angle)
 
             # Vypočítat bod na kružnici relative k arc centru
