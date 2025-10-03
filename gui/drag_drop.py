@@ -18,46 +18,84 @@ class DragDropFrame(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        self.drop_frame = ttk.Frame(self, relief='ridge', borderwidth=2)
-        self.drop_frame.grid(row=0, column=0, padx=40, pady=40, sticky='nsew')
-        self.drop_frame.columnconfigure(0, weight=1)
-        self.drop_frame.rowconfigure(0, weight=1)
+        # Získat systémovou barvu ttk.Frame pro pozadí
+        style = ttk.Style()
+        bg_color = style.lookup('TFrame', 'background')
 
+        # Použít Canvas pro možnost nastavit background color
+        self.drop_canvas = tk.Canvas(
+            self,
+            bg=bg_color,  # Systémová šedá barva
+            highlightthickness=0
+        )
+        self.drop_canvas.grid(row=0, column=0, padx=40, pady=40, sticky='nsew')
+
+        # Vytvořit label a button
         self.drop_label = ttk.Label(
-            self.drop_frame,
+            self.drop_canvas,
             text="Přetáhni sem složku repozitáře nebo ji vyhledej tlačítkem...",
             font=('Arial', 12),
-            anchor='center'
+            background='#F0F8FF'  # Alice blue - shodná s plochou
         )
-        self.drop_label.grid(row=0, column=0, pady=(20, 10))
 
         self.browse_button = ttk.Button(
-            self.drop_frame,
+            self.drop_canvas,
             text="Najít na disku...",
             command=self.browse_folder
         )
-        self.browse_button.grid(row=1, column=0, pady=(10, 20))
+
+        # Bind pro resize aby se prvky centrovaly
+        self.drop_canvas.bind('<Configure>', self._center_widgets)
 
         self.bind_drop_events()
 
-    def bind_drop_events(self):
-        self.drop_frame.bind('<Button-1>', self.on_click)
-        self.drop_label.bind('<Button-1>', self.on_click)
+    def _center_widgets(self, event=None):
+        """Vycentruje widgety na canvas při resize."""
+        canvas_width = self.drop_canvas.winfo_width()
+        canvas_height = self.drop_canvas.winfo_height()
 
+        center_x = canvas_width // 2
+        center_y = canvas_height // 2
+
+        # Vymazat vše
+        self.drop_canvas.delete('all')
+
+        # Modrá varianta - interaktivní accent
+        padding = 5
+
+        # Světle modrá plocha s čárkovaným modrým rámečkem
+        self.drop_canvas.create_rectangle(
+            padding, padding,
+            canvas_width - padding, canvas_height - padding,
+            fill='#F0F8FF',  # Alice blue - velmi světle modrá
+            outline='#4A90E2',  # Modrá - interaktivní barva
+            width=2,
+            dash=(5, 3)  # Čárkovaná čára (5px čárka, 3px mezera)
+        )
+
+        # Umístit label a button
+        self.drop_canvas.create_window(
+            center_x, center_y - 30,
+            window=self.drop_label,
+            anchor='center'
+        )
+        self.drop_canvas.create_window(
+            center_x, center_y + 30,
+            window=self.browse_button,
+            anchor='center'
+        )
+
+    def bind_drop_events(self):
+        # Pouze drag & drop binding, žádný click binding
         if TkinterDnD is not None:
-            self.drop_frame.drop_target_register(DND_FILES)
-            self.drop_frame.dnd_bind('<<Drop>>', self.on_drop)
-            self.drop_label.drop_target_register(DND_FILES)
-            self.drop_label.dnd_bind('<<Drop>>', self.on_drop)
+            self.drop_canvas.drop_target_register(DND_FILES)
+            self.drop_canvas.dnd_bind('<<Drop>>', self.on_drop)
 
     def on_drop(self, event):
-        files = self.drop_frame.tk.splitlist(event.data)
+        files = self.drop_canvas.tk.splitlist(event.data)
         if files:
             folder_path = files[0]
             self.process_folder(folder_path)
-
-    def on_click(self, event):
-        self.browse_folder()
 
     def browse_folder(self):
         folder_path = filedialog.askdirectory(
