@@ -16,10 +16,11 @@ class GraphCanvas(ttk.Frame):
         self.graph_drawer = GraphDrawer()
         self.on_drop_callback = on_drop_callback
 
-        # Smooth scrolling state
+        # Smooth scrolling state with momentum
         self.scroll_animation_id = None
-        self.target_scroll_position = None
-        self.current_scroll_velocity = 0
+        self.scroll_velocity = 0  # Aktuální rychlost scrollování
+        self.last_scroll_time = 0  # Čas posledního scroll eventu
+        self.scroll_timeout_id = None  # ID timeoutu pro reset velocity
 
         self.setup_ui()
 
@@ -242,60 +243,87 @@ class GraphCanvas(ttk.Frame):
 
         # Only scroll if content is larger than visible area
         if self._can_scroll_vertically():
-            current_top, current_bottom = self.canvas.yview()
+            import time
+            current_time = time.time()
+            time_since_last_scroll = current_time - self.last_scroll_time
 
-            # Calculate scroll amount - use smaller steps for smoother animation
-            scroll_amount = int(delta) * 0.02  # 2% per wheel notch
+            # Základní scroll krok - začíná pomalu
+            base_scroll_amount = 0.005  # 0.5% per wheel notch - jemnější scrollování
 
-            # Calculate target position
-            target_top = current_top + scroll_amount
+            # Detekce nepřetržitého scrollování - pokud je interval kratší než 100ms, považujeme to za nepřetržité scrollování
+            if time_since_last_scroll < 0.1 and self.scroll_velocity != 0:
+                # Uživatel nepřetržitě scrolluje - postupně zrychlovat
+                # Čím rychleji scrolluje (kratší interval), tím více momentu přidáme
+                acceleration_factor = max(1.2, 2.0 - time_since_last_scroll * 8)  # 1.2 až ~2.0x
+                scroll_increment = int(delta) * base_scroll_amount * acceleration_factor
 
-            # Apply bounds checking
-            if target_top < 0:
-                target_top = 0
-            elif target_top > 1 - (current_bottom - current_top):
-                target_top = 1 - (current_bottom - current_top)
+                # Přidat k existující velocity (s omezením max rychlosti)
+                self.scroll_velocity += scroll_increment
+                # Omezit maximální rychlost na rozumnou hodnotu
+                max_velocity = 0.2  # Max 20% viewportu za krok pro rychlé scrollování
+                self.scroll_velocity = max(-max_velocity, min(max_velocity, self.scroll_velocity))
+            else:
+                # Pomalé scrollování nebo první scroll po pauze - začít pomalu
+                self.scroll_velocity = int(delta) * base_scroll_amount
 
-            # Start smooth scroll animation
-            self._animate_scroll_to(target_top)
+            self.last_scroll_time = current_time
 
-    def _animate_scroll_to(self, target_position: float):
-        """Animuje plynulé scrollování k cílové pozici."""
-        # Zrušit předchozí animaci, pokud existuje
+            # Zrušit předchozí timeout pro reset velocity
+            if self.scroll_timeout_id is not None:
+                self.after_cancel(self.scroll_timeout_id)
+
+            # Naplánovat reset velocity pokud uživatel přestane scrollovat
+            self.scroll_timeout_id = self.after(200, self._reset_scroll_velocity)
+
+            # Spustit/restartovat animaci s momentum
+            self._start_momentum_scroll()
+
+    def _reset_scroll_velocity(self):
+        """Resetuje scroll velocity po pauze."""
+        self.scroll_velocity = 0
+        self.scroll_timeout_id = None
+
+    def _start_momentum_scroll(self):
+        """Spustí nebo restartuje momentum-based scrollování."""
+        # Pokud už animace běží, nezačínat novou
         if self.scroll_animation_id is not None:
-            self.after_cancel(self.scroll_animation_id)
+            return
+
+        self._perform_momentum_step()
+
+    def _perform_momentum_step(self):
+        """Provede jeden krok momentum-based scrollování."""
+        # Pokud je velocity téměř nulová, zastavit animaci
+        if abs(self.scroll_velocity) < 0.0005:
+            self.scroll_velocity = 0
             self.scroll_animation_id = None
-
-        self.target_scroll_position = target_position
-        self._perform_scroll_step()
-
-    def _perform_scroll_step(self):
-        """Provede jeden krok animace scrollování."""
-        if self.target_scroll_position is None:
             return
 
         current_top, current_bottom = self.canvas.yview()
-        distance = self.target_scroll_position - current_top
 
-        # Pokud jsme dostatečně blízko cíle, skončit
-        if abs(distance) < 0.001:
-            self.canvas.yview_moveto(self.target_scroll_position)
-            self._update_column_separators()
-            self.scroll_animation_id = None
-            self.target_scroll_position = None
-            return
+        # Aplikovat velocity
+        new_position = current_top + self.scroll_velocity
 
-        # Easing funkce - exponenciální vyhlazení pro přirozený pocit
-        # Pohybujeme se o 30% zbývající vzdálenosti každý krok
-        ease_factor = 0.3
-        step = distance * ease_factor
+        # Bounds checking
+        viewport_height = current_bottom - current_top
+        if new_position < 0:
+            new_position = 0
+            self.scroll_velocity = 0  # Zastavit při dosažení konce
+        elif new_position > 1 - viewport_height:
+            new_position = 1 - viewport_height
+            self.scroll_velocity = 0  # Zastavit při dosažení konce
 
-        new_position = current_top + step
+        # Aplikovat novou pozici
         self.canvas.yview_moveto(new_position)
         self._update_column_separators()
 
+        # Deceleration - postupné zpomalování (lehký efekt dojezdu)
+        # Použít slabší deceleration (15%) pro rychlejší zastavení a lepší kontrolu
+        deceleration = 0.85  # Ponechat 85% rychlosti = 15% útlum
+        self.scroll_velocity *= deceleration
+
         # Naplánovat další krok animace (přibližně 60 FPS)
-        self.scroll_animation_id = self.after(16, self._perform_scroll_step)
+        self.scroll_animation_id = self.after(16, self._perform_momentum_step)
 
     def _update_column_separators(self):
         """Aktualizuje pozici separátorů sloupců po scrollování."""
