@@ -559,7 +559,7 @@ class GraphDrawer:
             elif commit.is_remote:
                 # Bledší verze branch_color (50% transparence simulace)
                 fill_color = self._make_color_pale(commit.branch_color)
-                outline_color = '#CCCCCC'  # Světlejší obrys
+                outline_color = 'black'  # Jednotné černé rámování
                 canvas.create_oval(
                     x - self.node_radius, y - self.node_radius,
                     x + self.node_radius, y + self.node_radius,
@@ -570,7 +570,7 @@ class GraphDrawer:
             else:
                 # Normální commity
                 fill_color = commit.branch_color
-                outline_color = 'black'
+                outline_color = 'black'  # Jednotné černé rámování
                 canvas.create_oval(
                     x - self.node_radius, y - self.node_radius,
                     x + self.node_radius, y + self.node_radius,
@@ -785,8 +785,8 @@ class GraphDrawer:
         flag_x = self.BASE_MARGIN + flag_width // 2
         flag_y = y
 
-        # Bledší obrys pro remote větve
-        outline_color = '#CCCCCC' if is_remote else 'black'
+        # Jednotné černé rámování (remote status je viditelný z emotikonu)
+        outline_color = 'black'
 
         # Vytvořit obdélník vlaječky
         canvas.create_rectangle(
