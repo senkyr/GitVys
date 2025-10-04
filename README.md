@@ -4,10 +4,17 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 
 ## Funkce
 
-- **Drag & drop rozhraní** - jednoduše přetáhni složku repozitáře
+- **Drag & drop rozhraní** - jednoduše přetáhni složku repozitáře nebo URL
+- **URL support** - otevření remote repozitářů (GitHub, GitLab, Bitbucket)
 - **Vizualizace podobná GitKrakenu** - přehledný graf větví a commitů
+- **Tag podpora** - zobrazení Git tagů s emoji ikonami
+- **Remote větve** - načítání remote větví tlačítkem
+- **Interaktivní sloupce** - změna šířky sloupců táhnutím
+- **Tooltips** - detailní informace při najetí myší
+- **Smooth scrolling** - plynulé scrollování s momentem
 - **Scrollovatelné zobrazení** - procházej historii repozitáře
 - **Barevné rozlišení větví** - každá větev má svou barvu
+- **Refresh (F5)** - obnovení repozitáře
 - **Jednoduché spuštění** - samostatný .exe soubor
 
 ## Rychlý start

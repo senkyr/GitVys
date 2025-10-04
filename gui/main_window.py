@@ -297,7 +297,7 @@ class MainWindow:
         try:
             from git import Repo
 
-            # Klonovat s progress (zatím bez callbacku)
+            # Klonovat repozitář
             Repo.clone_from(url, path)
 
             # Po úspěšném klonování načíst jako běžný repo

@@ -43,20 +43,17 @@ Vytvořit jednoduchou desktop aplikaci pro vizualizaci Git repozitářů určeno
 git-visualizer/
 ├── main.py              # Vstupní bod aplikace
 ├── gui/
-│   ├── main_window.py   # Hlavní okno
-│   ├── graph_canvas.py  # Graf komponenta (vlevo)
-│   ├── commit_table.py  # Tabulka commitů (vpravo)
-│   └── drag_drop.py     # Drag & drop funkcionalita
-├── git/
-│   ├── repository.py    # Práce s Git repozitářem
-│   └── parser.py        # Parsování Git dat
+│   ├── main_window.py   # Hlavní okno s drag & drop a URL support
+│   ├── graph_canvas.py  # Canvas pro graf s scrollbary
+│   └── drag_drop.py     # Drag & drop pro složky i URL
+├── repo/
+│   └── repository.py    # Git operace pomocí GitPython
 ├── visualization/
-│   ├── graph_drawer.py  # Kreslení grafu
-│   ├── table_formatter.py # Formátování tabulky
-│   ├── layout.py        # Rozmístění uzlů
-│   └── colors.py        # Barevné schéma
+│   ├── graph_drawer.py  # Kreslení grafu, tagů, tooltipů, column resizing
+│   ├── layout.py        # Layout s lane recycling
+│   └── colors.py        # Barevné schéma s prefixovými větvemi
 ├── utils/
-│   └── helpers.py       # Pomocné funkce
+│   └── data_structures.py # Commit, MergeBranch
 └── requirements.txt
 ```
 
@@ -83,16 +80,16 @@ class Commit:
     table_row: int         # pozice v tabulce
 ```
 
-### Branch objekt
+### MergeBranch objekt
 
 ```python
 @dataclass
-class Branch:
-    name: str
-    color: str
-    commits: List[Commit]
-    start_commit: str
-    end_commit: str
+class MergeBranch:
+    virtual_branch_name: str  # např. "merge-abc123"
+    branch_point_hash: str    # kde se větev odbočila
+    merge_point_hash: str     # kde se větev sloučila
+    commits_in_branch: List[str]  # commity v merge větvi
+    original_branch_color: str  # barva původní větve
 ```
 
 ## 5. UI Design
@@ -160,21 +157,25 @@ class Branch:
    - Vytvoření .exe pomocí PyInstaller
    - Dokumentace pro distribuci
 
-### Fáze 2: Vylepšení (budoucí)
+### Fáze 2: Vylepšení
 
-1. **Lepší vizualizace**
-   - Smooth křivky místo přímých čar
-   - Ikony pro různé typy commitů
-   - Lepší barevné schéma
+✅ **Implementováno:**
 
-2. **Základní interaktivita**
-   - Klikání na commit pro detail
-   - Zoom in/out
-   - Vyhledávání
+- Smooth křivky pomocí Bézier curves
+- Ikony pro tagy (emoji: 🏷️ 📌 🚀)
+- Barevné schéma s prefixovými větvemi
+- Interaktivita: tooltips, column resizing
+- Smooth scrolling s momentum
+- URL support pro remote repozitáře
+- Tag zobrazení s emojis
 
-3. **Export funkcionalita**
-   - Export do PNG/SVG
-   - Print preview
+🔜 **Budoucí vylepšení:**
+
+- Klikání na commit pro detail
+- Zoom in/out
+- Vyhledávání v commitech
+- Export do PNG/SVG
+- Print preview
 
 ## 7. Technické detaily
 
@@ -236,9 +237,71 @@ git show-branch --all
 - Velmi velký repozitář
 - Repozitář s nestandarními znaky
 
-## 10. Rozšíření do budoucna
+## 10. Implementované funkce (v1.1)
 
-### Možné funkce v.2.0
+### URL Support & Temp Clone Management
+
+- Drag & drop URL z prohlížeče (GitHub, GitLab, Bitbucket)
+- Automatické klonování do temp složky (`tempfile.mkdtemp()`)
+- Cleanup s Windows file handle managementem
+  - `GitPython repo.close()` před mazáním
+  - `onerror` handler pro readonly files
+  - Cleanup při: otevření nového repo, zavření repo, zavření aplikace (atexit)
+- Display name extraction z URL (místo temp folder názvu)
+
+### Tag System
+
+- Emoji ikony podle typu tagu:
+  - 🏷️ normal tags
+  - 📌 release tags (release/*, v*.*.*)
+  - 🚀 version tags (v*, ver*)
+- Tooltips s plnou zprávou anotovaných tagů
+- Intelligent placement (vpravo od commit node)
+- Multiple tags per commit support
+
+### Interactive UI
+
+- **Column resizing** by dragging separators
+  - Throttled redraw (60 FPS)
+  - Min width constraints (50px text, 100px graph)
+  - User preferences preserved during session
+- **Floating headers** (stay visible while scrolling)
+  - Dynamic calculation of header fill
+  - Selective bbox (excludes headers from scrollregion)
+- **Smooth scrolling** with momentum and acceleration
+  - Velocity-based scrolling
+  - Deceleration (85% per frame)
+  - Scroll bounds checking
+- **Tooltips** for all truncated text
+  - Commits, authors, branch names, tags
+  - Auto-show on hover, auto-hide on leave
+  - Positioned smartly (避免截断)
+
+### Performance Optimizations
+
+- **Lane recycling** for better space utilization
+  - Reuse lanes from ended branches
+  - Reduces horizontal width for complex repos
+- **Background threading** for Git operations
+  - Repository loading in separate thread
+  - UI stays responsive during heavy operations
+- **Selective rendering** during column resize
+  - Delete only necessary canvas items
+  - Keep graph structure intact
+- **Smart bbox calculation**
+  - Excludes floating headers
+  - Accurate scrollregion sizing
+
+### Remote Branches Support
+
+- "Načíst remote/větve" button (for local repos)
+- "Načíst větve" button (for cloned repos)
+- Remote branch visualization with origin/ prefix
+- Remote tag support (显示远程标签)
+
+## 11. Rozšíření do budoucna
+
+### Možné funkce v2.0
 
 - Podpora více repozitářů najednou (tabs)
 - Filtrování podle autora/data přímo v GUI
@@ -246,7 +309,10 @@ git show-branch --all
 - Export historie do různých formátů (PDF, HTML)
 - Zobrazení více detailů (změny souborů, diff statistiky)
 - Podpora pro Git hooks a workflow vizualizace
+- Kliknutí na commit pro diff view
+- Zoom in/out functionality
+- Search & filter UI
 
 ---
 
-**Priorita implementace**: Fáze 1 je MVP která by měla pokrýt 80% potřeb studentů. Fáze 2 až podle potřeby a zpětné vazby.
+**Priorita implementace**: Fáze 1 (MVP) a většina Fáze 2 jsou implementovány. v2.0 funkce podle potřeby a zpětné vazby.

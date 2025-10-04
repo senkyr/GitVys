@@ -54,19 +54,45 @@ This is a Python desktop application that visualizes Git repository history usin
 
 ### Application Flow
 
-1. User drags Git repository folder into application
-2. GitRepository class loads and parses commit history
-3. GraphLayout calculates positions for commits based on timeline and branches
-4. GraphDrawer renders the visualization on canvas
-5. UI displays commit graph with branch colors and commit details
+1. User drags Git repository folder OR Git URL into application
+2. For URLs: Repository is cloned to temporary directory with automatic cleanup
+3. GitRepository class loads and parses commit history
+4. GraphLayout calculates positions for commits based on timeline and branches (with lane recycling)
+5. GraphDrawer renders the visualization on canvas with:
+   - Interactive column resizing
+   - Tooltips for truncated text
+   - Tag display with emojis
+   - Smooth scrolling with momentum
+6. UI displays commit graph with branch colors and commit details
+
+### Features
+
+- **URL Support**: Clone remote repositories (GitHub, GitLab, Bitbucket) to temp directory
+- **Temp Clone Management**: Automatic cleanup of cloned repositories with proper Windows file handle management
+- **Tags**: Display Git tags with emoji icons (🏷️ normal, 📌 release, 🚀 version) and tooltips for annotated tags
+- **Remote Branches**: Load remote branches via "Načíst remote/větve" button
+- **Interactive Columns**: Resize column widths by dragging separators
+- **Smooth Scrolling**: Momentum-based scrolling with acceleration
+- **Tooltips**: Hover tooltips for truncated text (commits, authors, branch names, tags)
+- **Column Headers**: Floating headers that stay visible while scrolling
 
 ### Data Model
 
-The main data structure is the Commit class which includes:
+The main data structures:
+
+**Commit class:**
 
 - Basic Git data (hash, message, author, date, parents)
 - UI-specific data (truncated messages, relative dates, branch colors)
 - Layout data (x/y positions for rendering)
+- Tag information (attached tags with emoji)
+- Uncommitted changes support (WIP commits)
+
+**MergeBranch class:**
+
+- Virtual branches for merge commits
+- Branch point and merge point hashes
+- List of commits in the merge branch
 
 ### Threading
 

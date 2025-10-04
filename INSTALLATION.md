@@ -47,12 +47,52 @@ pyinstaller --onefile --windowed --name="GitVisualizer" main.py
 ## Použití
 
 1. Spusť aplikaci
-2. Přetáhni složku s Git repozitářem do aplikace nebo klikni na "Procházet..."
-3. Aplikace automaticky načte a zobrazí historii commitů
+2. Přetáhni složku s Git repozitářem nebo URL repozitáře do aplikace, nebo klikni na "Otevřít složku" / "Otevřít URL"
+3. Pro remote repozitáře (URL): aplikace automaticky naklonuje do dočasné složky
+4. Aplikace automaticky načte a zobrazí historii commitů
+5. Volitelně: klikni "Načíst remote/větve" pro zobrazení remote větví
+6. Pro obnovení použij tlačítko "Refresh" nebo klávesovou zkratku F5
 
 ## Testování
 
 Aplikaci můžeš otestovat s jakýmkoliv Git repozitářem, včetně tohoto projektu.
+
+## Pokročilé funkce
+
+### URL support - otevření remote repozitáře
+
+Můžeš otevřít repozitář přímo z URL:
+
+- Přetáhni URL z prohlížeče (např. `https://github.com/user/repo.git`)
+- Nebo klikni "Otevřít URL" a zadej URL
+- Aplikace automaticky naklonuje repozitář do dočasné složky
+- Po zavření repozitáře se temp složka automaticky smaže
+
+### Interaktivní sloupce
+
+- **Změna šířky sloupců**: Táhni separátory mezi sloupci pro změnu šířky
+- Šířka se uchová během celé session
+- Min. šířka: 50px pro textové sloupce, 100px pro grafický sloupec
+
+### Tooltips
+
+- Najeď myší na zkrácený text pro zobrazení plné verze
+- Funguje pro: commit zprávy, autory, branch názvy, tagy
+
+### Smooth scrolling
+
+- Scrolluj kolečkem myši pro plynulý pohyb s momentum efektem
+- Rychlejší scrollování = větší akcelerace
+
+### Remote větve
+
+- Klikni "Načíst remote/větve" (lokální repo) nebo "Načíst větve" (klonované repo)
+- Zobrazí všechny remote větve s origin/ prefixem
+
+### Klávesové zkratky
+
+- **F5** - Obnovit repozitář
+- **Ctrl+C** - Ukončit aplikaci (v příkazové řádce)
 
 ## Řešení problémů
 
@@ -70,3 +110,14 @@ Aplikaci můžeš otestovat s jakýmkoliv Git repozitářem, včetně tohoto pro
 
 - Repozitář může být prázdný (žádné commity)
 - Zkus jiný repozitář s historií commitů
+
+### Chyba při klonování URL
+
+- Zkontroluj, že je URL správná Git URL (začíná `https://`, `http://`, nebo `git@`)
+- Zkontroluj internetové připojení
+- Některé repozitáře vyžadují autentizaci - použij lokální klon místo URL
+
+### Horizontální scrollbar se nezmenší po zúžení sloupců
+
+- **OPRAVENO v aktuální verzi**
+- Scrollregion se nyní správně aktualizuje při změně šířky sloupců
