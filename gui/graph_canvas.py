@@ -2,9 +2,10 @@ import tkinter as tk
 from tkinter import ttk
 from typing import List, Dict, Callable
 try:
-    from tkinterdnd2 import DND_FILES
+    from tkinterdnd2 import DND_FILES, DND_TEXT
 except ImportError:
     DND_FILES = None
+    DND_TEXT = None
 from utils.data_structures import Commit
 from visualization.graph_drawer import GraphDrawer
 
@@ -62,7 +63,11 @@ class GraphCanvas(ttk.Frame):
         self.canvas.bind('<Configure>', self.on_canvas_resize)
 
         if DND_FILES is not None and self.on_drop_callback:
-            self.canvas.drop_target_register(DND_FILES)
+            # Registrovat jak soubory tak textové URL
+            if DND_TEXT is not None:
+                self.canvas.drop_target_register(DND_FILES, DND_TEXT)
+            else:
+                self.canvas.drop_target_register(DND_FILES)
             self.canvas.dnd_bind('<<Drop>>', self.on_drop)
 
     def _can_scroll_vertically(self) -> bool:

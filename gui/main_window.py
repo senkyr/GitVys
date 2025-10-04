@@ -35,6 +35,7 @@ class MainWindow:
         self.is_cloned_repo = False  # True pokud repo bylo načteno z URL (klonováno)
         self.temp_clones = []  # Seznam temp složek ke smazání při zavření
         self.current_temp_clone = None  # Cesta k aktuálně otevřenému temp klonu
+        self.display_name = None  # Reálný název repozitáře (pro klonované repo)
 
         # Vyčistit staré temp složky z předchozích sessions
         self._cleanup_old_temp_clones()
@@ -229,12 +230,20 @@ class MainWindow:
         else:
             # Lokální složka - načíst přímo
 
+            # Zavřít GitPython repo před mazáním temp složky
+            if self.git_repo and hasattr(self.git_repo, 'repo') and self.git_repo.repo:
+                try:
+                    self.git_repo.repo.close()
+                except:
+                    pass
+
             # Pokud byl předtím otevřený klonovaný repo → smazat temp
             if self.is_cloned_repo and self.current_temp_clone:
                 self._cleanup_single_clone(self.current_temp_clone)
                 self.current_temp_clone = None
 
             self.is_cloned_repo = False  # Lokální repo, ne klonované
+            self.display_name = None  # Resetovat display name pro lokální repo
             self.update_status("Načítám repozitář...")
             self.progress.config(value=50)
             self.progress.start()
@@ -258,10 +267,12 @@ class MainWindow:
         """Klonuje online repozitář do temp složky."""
         import tempfile
 
-        # Pokud už existuje starý temp klon → smazat ho
-        if self.current_temp_clone:
-            self._cleanup_single_clone(self.current_temp_clone)
-            self.current_temp_clone = None
+        # Smazat VŠECHNY staré temp klony (nejen current)
+        # Řeší race conditions a failed clones
+        if self.temp_clones:
+            for old_clone in self.temp_clones[:]:  # Kopie listu pro bezpečnou iteraci
+                self._cleanup_single_clone(old_clone)
+        self.current_temp_clone = None
 
         # Vytvořit temp složku
         temp_dir = tempfile.mkdtemp(prefix='gitvys_clone_')
@@ -269,6 +280,7 @@ class MainWindow:
 
         # Extrahovat název repo z URL pro zobrazení
         repo_name = url.rstrip('/').split('/')[-1].replace('.git', '')
+        self.display_name = repo_name  # Uložit reálný název pro pozdější zobrazení
 
         self.update_status(f"Klonuji {repo_name}...")
         self.progress.start()
@@ -292,6 +304,8 @@ class MainWindow:
             self.root.after(0, self._on_clone_complete, path)
 
         except Exception as e:
+            # Smazat temp složku při chybě klonování
+            self.root.after(0, self._cleanup_single_clone, path)
             self.root.after(0, self.show_error, f"Chyba klonování:\n{str(e)}")
             self.root.after(0, self.progress.stop)
 
@@ -313,6 +327,16 @@ class MainWindow:
         import tempfile
         import glob
         import shutil
+        import stat
+
+        def handle_remove_readonly(func, path, exc):
+            """Error handler pro Windows readonly files."""
+            if func in (os.unlink, os.rmdir):
+                # Změnit readonly flag a zkusit znovu
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            else:
+                raise
 
         try:
             temp_dir = tempfile.gettempdir()
@@ -321,7 +345,7 @@ class MainWindow:
             for old_temp in glob.glob(pattern):
                 try:
                     if os.path.exists(old_temp) and os.path.isdir(old_temp):
-                        shutil.rmtree(old_temp)
+                        shutil.rmtree(old_temp, onerror=handle_remove_readonly)
                 except:
                     pass  # Ignorovat chyby u jednotlivých složek
         except:
@@ -330,11 +354,22 @@ class MainWindow:
     def _cleanup_single_clone(self, path: str):
         """Smaže jeden konkrétní temp klon."""
         import shutil
+        import stat
+
+        def handle_remove_readonly(func, path, exc):
+            """Error handler pro Windows readonly files."""
+            if func in (os.unlink, os.rmdir):
+                # Změnit readonly flag a zkusit znovu
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            else:
+                raise
+
         try:
             if os.path.exists(path):
-                shutil.rmtree(path)
-                # Odebrat z listu
-                if path in self.temp_clones:
+                shutil.rmtree(path, onerror=handle_remove_readonly)
+                # Odebrat z listu JEN pokud mazání skutečně uspělo
+                if not os.path.exists(path) and path in self.temp_clones:
                     self.temp_clones.remove(path)
         except Exception as e:
             # Logovat ale nepadnout
@@ -343,10 +378,29 @@ class MainWindow:
     def _cleanup_temp_clones(self):
         """Smaže dočasné klonované repozitáře při zavření (fallback)."""
         import shutil
+        import stat
+
+        # Zavřít GitPython repo pokud je stále otevřený
+        if hasattr(self, 'git_repo') and self.git_repo:
+            if hasattr(self.git_repo, 'repo') and self.git_repo.repo:
+                try:
+                    self.git_repo.repo.close()
+                except:
+                    pass
+
+        def handle_remove_readonly(func, path, exc):
+            """Error handler pro Windows readonly files."""
+            if func in (os.unlink, os.rmdir):
+                # Změnit readonly flag a zkusit znovu
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            else:
+                raise
+
         for temp_dir in self.temp_clones:
             try:
                 if os.path.exists(temp_dir):
-                    shutil.rmtree(temp_dir)
+                    shutil.rmtree(temp_dir, onerror=handle_remove_readonly)
             except:
                 pass  # Ignorovat chyby při cleanup
 
@@ -534,7 +588,8 @@ class MainWindow:
         # Nastavit název repozitáře (tučně) a statistiky (normálně) vedle sebe
         if self.git_repo and self.git_repo.repo_path:
             import os
-            repo_name = os.path.basename(self.git_repo.repo_path)
+            # Pro klonované repo použít reálný název, jinak název složky
+            repo_name = self.display_name if self.display_name else os.path.basename(self.git_repo.repo_path)
             self.repo_name_label.config(text=repo_name)
             self.stats_label.config(text=stats_text)
         else:
@@ -562,6 +617,14 @@ class MainWindow:
         if hasattr(self, 'graph_canvas') and hasattr(self.graph_canvas, 'graph_drawer'):
             self.graph_canvas.graph_drawer.reset()
 
+        # Zavřít GitPython repo aby uvolnil file handles
+        if self.git_repo and hasattr(self.git_repo, 'repo') and self.git_repo.repo:
+            try:
+                self.git_repo.repo.close()
+            except:
+                pass
+        self.git_repo = None
+
         # Pokud je otevřený klonovaný repo → smazat temp klon
         if self.is_cloned_repo and self.current_temp_clone:
             self._cleanup_single_clone(self.current_temp_clone)
@@ -581,6 +644,7 @@ class MainWindow:
         # Reset remote stavu
         self.is_remote_loaded = False
         self.is_cloned_repo = False
+        self.display_name = None
 
         # Obnovit defaultní titul a velikost okna
         self.root.title(self.default_title)
