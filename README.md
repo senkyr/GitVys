@@ -23,9 +23,24 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 2. Přetáhni složku Git repozitáře do aplikace
 3. Prohlížej si historii commitů graficky
 
+## Screenshot
+
+![Git Visualizer](docs/screenshot.png)
+
+*Vizualizace Git repozitáře s barevnými větvemi, tagy a commit historií*
+
 ## Vývoj
 
-Viz [INSTALLATION.md](INSTALLATION.md) pro instrukce k instalaci a spuštění ze zdrojového kódu.
+Viz [docs/INSTALLATION.md](docs/INSTALLATION.md) pro instrukce k instalaci a spuštění ze zdrojového kódu.
+
+## Dokumentace
+
+- **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Instalace ze zdrojového kódu a vývoj
+- **[docs/BUILD-INSTRUCTIONS.md](docs/BUILD-INSTRUCTIONS.md)** - Vytvoření .exe pomocí PyInstaller
+- **[docs/DESIGN.md](docs/DESIGN.md)** - Architektura a design projektu
+- **[docs/CHANGELOG.md](docs/CHANGELOG.md)** - Historie verzí a změn
+- **[CLAUDE.md](CLAUDE.md)** - Instrukce pro Claude Code
+- **[LICENSE.md](LICENSE.md)** - Licence projektu
 
 ## Struktura projektu
 

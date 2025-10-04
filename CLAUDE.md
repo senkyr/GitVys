@@ -101,3 +101,41 @@ Repository loading runs in background threads to prevent UI blocking, with resul
 ## Czech Language Support
 
 The application uses Czech language for UI text and date formatting. User-facing messages and labels are in Czech.
+
+## Versioning & Changelog
+
+This project uses Git tags for versioning.
+
+### Updating CHANGELOG
+
+**IMPORTANT:** When creating a new version tag, update `docs/CHANGELOG.md`:
+
+1. **Extract changes from Git history** between the previous tag and current HEAD:
+
+   ```bash
+   git log --pretty=format:"%h|%ad|%s" --date=short vPREVIOUS_TAG..HEAD
+   ```
+
+2. **Create new version section** in `docs/CHANGELOG.md` following Keep a Changelog format:
+
+   ```markdown
+   ## [X.Y.Z] - YYYY-MM-DD
+
+   ### Added
+   - New features from commits
+
+   ### Changed
+   - Changes to existing functionality
+
+   ### Fixed
+   - Bug fixes
+
+   ### Documentation
+   - Documentation updates
+   ```
+
+3. **Categorize commits** into appropriate sections (Added/Changed/Fixed/Documentation/etc.)
+
+4. **Update version in code:**
+   - `setup.py` - version field
+   - `gui/main_window.py` - default_title with version number

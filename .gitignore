@@ -126,3 +126,11 @@ dmypy.json
 build_temp/
 *.spec
 *.exe
+
+# IDE and editor settings
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
