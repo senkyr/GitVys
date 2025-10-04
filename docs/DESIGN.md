@@ -53,7 +53,9 @@ git-visualizer/
 │   ├── layout.py        # Layout s lane recycling
 │   └── colors.py        # Barevné schéma s prefixovými větvemi
 ├── utils/
-│   └── data_structures.py # Commit, MergeBranch
+│   ├── data_structures.py # Commit, MergeBranch
+│   ├── constants.py       # Konstanty aplikace (layout, barvy, rozměry)
+│   └── logging_config.py  # Centralizované logování
 └── requirements.txt
 ```
 
@@ -200,6 +202,49 @@ git show-branch --all
 - Virtualizace scrollingu
 - Cache pro Git operace
 
+## 7.5. Error Handling & Logging
+
+### Logging systém
+
+**Konfigurace** (`utils/logging_config.py`):
+
+- Centralizované nastavení pro celou aplikaci
+- File handler: `gitvisualizer.log` v aktuálním adresáři
+  - Level: WARNING a výše
+  - Format: `YYYY-MM-DD HH:MM:SS - module - LEVEL - message`
+- Console handler: pouze ERROR a výše (nezahlcovat output)
+
+**Použití v kódu**:
+
+```python
+from utils.logging_config import get_logger
+logger = get_logger(__name__)
+
+try:
+    # nějaká operace
+except Exception as e:
+    logger.warning(f"Failed to do something: {e}")
+```
+
+### Exception handling pattern
+
+**Pravidla**:
+
+- ❌ **Nikdy** `except:` (bare except)
+- ✅ **Vždy** `except Exception as e:` s logováním
+- Všechny exceptions jsou logovány s kontextem
+- User-friendly zprávy v GUI (messagebox)
+- Debug informace v log souboru
+
+### Konstanty
+
+**Organizace** (`utils/constants.py`):
+
+- Layout konstanty: spacing, rozměry, pozice
+- Barvy: tolerance, sytost, světlost
+- UI: velikosti fontů, radiusy, šířky
+- Vyhnutí se "magic numbers" v kódu
+
 ## 8. Nasazení
 
 ### Požadavky
@@ -298,6 +343,36 @@ git show-branch --all
 - "Načíst větve" button (for cloned repos)
 - Remote branch visualization with origin/ prefix
 - Remote tag support (显示远程标签)
+
+### Code Quality Improvements (v1.1)
+
+**Refactoring:**
+
+- `_detect_merge_branches()` (160 řádků) → rozděleno na 4 helper funkce:
+  - `_build_full_hash_map()` - vytvoření hash mapy
+  - `_trace_merge_branch_commits()` - trasování commitů
+  - `_get_commits_in_branches_with_head()` - hlavní linie větví
+  - `_extract_branch_name_from_merge()` - extrakce názvu z merge message
+- Zlepšená čitelnost a testovatelnost
+
+**Error Handling:**
+
+- 40+ bare `except:` nahrazeno `except Exception as e:` + logging
+- Centralizovaný logging systém (`utils/logging_config.py`)
+- Konzistentní error reporting
+
+**Security:**
+
+- URL validace s whitelist trusted hosts:
+  - GitHub, GitLab, Bitbucket, Codeberg, sr.ht, gitea.io
+  - Podpora HTTP(S) i SSH (git@) formátu
+  - Odmítnutí untrusted hostů s logováním
+
+**Maintainability:**
+
+- Magic numbers nahrazeny konstantami (`utils/constants.py`)
+- Pinnuté verze závislostí (reproducible builds)
+- Lepší type hints a dokumentace
 
 ## 11. Rozšíření do budoucna
 

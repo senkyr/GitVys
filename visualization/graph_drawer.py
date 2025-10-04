@@ -2,13 +2,21 @@ import tkinter as tk
 from typing import List, Dict, Tuple
 import math
 from utils.data_structures import Commit
+from utils.logging_config import get_logger
+from utils.constants import (
+    NODE_RADIUS, LINE_WIDTH, FONT_SIZE, SEPARATOR_HEIGHT,
+    MIN_COLUMN_WIDTH_TEXT, MIN_COLUMN_WIDTH_GRAPH,
+    HEADER_HEIGHT, BASE_MARGIN, BRANCH_LANE_SPACING
+)
+
+logger = get_logger(__name__)
 
 
 class GraphDrawer:
     def __init__(self):
-        self.node_radius = 8
-        self.line_width = 2
-        self.font_size = 10
+        self.node_radius = NODE_RADIUS
+        self.line_width = LINE_WIDTH
+        self.font_size = FONT_SIZE
         self.column_widths = {}
         self.tooltip = None
         self.branch_lanes = {}  # Uložit lanes pro výpočet pozice tabulky
@@ -28,9 +36,9 @@ class GraphDrawer:
         self.curve_intensity = 0.8  # Intenzita zakřivení pro rounded corners (0-1)
 
         # Layout konstanty - jednotný systém marginů
-        self.HEADER_HEIGHT = 25  # Výška záhlaví/separátoru
-        self.BASE_MARGIN = 25    # Základní margin (stejný jako výška záhlaví)
-        self.BRANCH_SPACING = 20 # Vzdálenost mezi větvemi (lanes)
+        self.HEADER_HEIGHT = HEADER_HEIGHT  # Výška záhlaví/separátoru
+        self.BASE_MARGIN = BASE_MARGIN    # Základní margin (stejný jako výška záhlaví)
+        self.BRANCH_SPACING = BRANCH_LANE_SPACING # Vzdálenost mezi větvemi (lanes)
 
         # Starý název pro zpětnou kompatibilitu
         self.separator_height = self.HEADER_HEIGHT
@@ -480,7 +488,8 @@ class GraphDrawer:
             try:
                 text_width = canvas.tk.call("font", "measure", font, display_name)
                 max_text_width = max(max_text_width, text_width)
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to measure text width for branch {display_name}: {e}")
                 # Fallback pro případ chyby
                 max_text_width = max(max_text_width, len(display_name) * 6)
 
@@ -909,7 +918,8 @@ class GraphDrawer:
                     font=emoji_font,
                     fill='white'
                 )
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to render remote symbol with emoji font: {e}")
                 # Fallback - také s obrysem
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
@@ -948,7 +958,8 @@ class GraphDrawer:
                     font=emoji_font,
                     fill='white'
                 )
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to render local symbol with emoji font: {e}")
                 # Fallback - také s obrysem
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
@@ -1172,7 +1183,8 @@ class GraphDrawer:
         try:
             dpi = canvas.winfo_fpixels('1i')
             self.scaling_factor = dpi / 96  # 96 je standardní DPI
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to detect DPI scaling factor: {e}")
             self.scaling_factor = 1.0  # Fallback
 
     def _adjust_descriptions_for_scaling(self, commits: List[Commit]):
@@ -1311,7 +1323,8 @@ class GraphDrawer:
                     b = int(b * 255)
 
                     return f'#{r:02x}{g:02x}{b:02x}'
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to make color {color} pale: {e}")
                 pass
 
         # Pro pojmenované barvy - jednoduchá mapování
@@ -1444,7 +1457,8 @@ class GraphDrawer:
         for column in ['message', 'author', 'email', 'date']:
             try:
                 canvas.tag_lower(f"column_bg_{column}")  # Pozadí jednotlivých sloupců dolů
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to lower column background {column}: {e}")
                 pass
         canvas.tag_raise("column_separator")  # Separátory nahoru (aby byly klikatelné)
         canvas.tag_raise("column_header")      # Text záhlaví na vrch
@@ -1661,7 +1675,8 @@ class GraphDrawer:
         for column in ['message', 'author', 'email', 'date']:
             try:
                 canvas.tag_lower(f"column_bg_{column}")  # Pozadí jednotlivých sloupců dolů
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to lower column background {column}: {e}")
                 pass
         canvas.tag_raise("column_separator")  # Separátory nahoru (aby byly klikatelné)
         canvas.tag_raise("column_header")      # Text záhlaví na vrch

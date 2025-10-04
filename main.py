@@ -6,9 +6,13 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gui.main_window import MainWindow
+from utils.logging_config import setup_logging
 
 
 def main():
+    # Inicializovat logging
+    setup_logging()
+
     try:
         app = MainWindow()
         app.run()

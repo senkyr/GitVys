@@ -58,7 +58,9 @@ git-visualizer/
 │   ├── layout.py        # Rozmístění uzlů
 │   └── colors.py        # Barevné schéma
 └── utils/               # Pomocné utility
-    └── data_structures.py # Datové struktury
+    ├── data_structures.py # Datové struktury
+    ├── constants.py       # Konstanty aplikace
+    └── logging_config.py  # Centralizované logování
 ```
 
 ## Technologie

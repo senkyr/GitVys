@@ -6,6 +6,9 @@ try:
 except ImportError:
     TkinterDnD = None
     DND_FILES = None
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class DragDropFrame(ttk.Frame):
@@ -118,8 +121,9 @@ class DragDropFrame(ttk.Frame):
             try:
                 from tkinterdnd2 import DND_TEXT
                 self.drop_canvas.drop_target_register(DND_FILES, DND_TEXT)
-            except:
+            except Exception as e:
                 # Fallback pokud DND_TEXT není dostupný
+                logger.debug(f"DND_TEXT not available, using DND_FILES only: {e}")
                 self.drop_canvas.drop_target_register(DND_FILES)
             self.drop_canvas.dnd_bind('<<Drop>>', self.on_drop)
 
@@ -135,16 +139,58 @@ class DragDropFrame(ttk.Frame):
                 self.process_folder(data)
 
     def _is_git_url(self, text: str) -> bool:
-        """Detekuje zda je text Git URL."""
-        text = text.lower().strip()
+        """
+        Detekuje zda je text Git URL s bezpečnostní validací.
 
-        # Kontrola URL prefixů
-        if text.startswith(('http://', 'https://', 'git@')):
-            return True
+        Podporuje:
+        - HTTP(S) URL z důvěryhodných hostů (GitHub, GitLab, Bitbucket)
+        - Git SSH format (git@host:user/repo.git)
+        """
+        from urllib.parse import urlparse
+        import re
 
-        # Kontrola známých Git hostingů
-        git_hosts = ['github.com', 'gitlab.com', 'bitbucket.org', 'gitea.']
-        return any(host in text for host in git_hosts)
+        text = text.strip()
+
+        # Git SSH format: git@github.com:user/repo.git
+        ssh_pattern = r'^git@([\w\.-]+):([\w\-/]+)(\.git)?$'
+        ssh_match = re.match(ssh_pattern, text, re.IGNORECASE)
+        if ssh_match:
+            host = ssh_match.group(1).lower()
+            # Whitelist důvěryhodných SSH hostů
+            trusted_ssh_hosts = {'github.com', 'gitlab.com', 'bitbucket.org'}
+            if host in trusted_ssh_hosts or any(host.endswith(f'.{trusted}') for trusted in trusted_ssh_hosts):
+                return True
+            logger.warning(f"Untrusted SSH host: {host}")
+            return False
+
+        # HTTP(S) URL format s whitelist důvěryhodných hostů
+        try:
+            parsed = urlparse(text)
+
+            # Povolit pouze http a https schéma
+            if parsed.scheme not in ('http', 'https'):
+                logger.debug(f"Invalid URL scheme: {parsed.scheme}")
+                return False
+
+            # Whitelist důvěryhodných hostů
+            trusted_hosts = {
+                'github.com', 'gitlab.com', 'bitbucket.org',
+                'gitea.io', 'codeberg.org', 'sr.ht'  # Další známé Git hosty
+            }
+
+            netloc = parsed.netloc.lower()
+
+            # Exact match nebo subdoména důvěryhodného hostu
+            for trusted_host in trusted_hosts:
+                if netloc == trusted_host or netloc.endswith(f'.{trusted_host}'):
+                    return True
+
+            logger.warning(f"Untrusted Git host: {netloc}")
+            return False
+
+        except Exception as e:
+            logger.warning(f"Failed to parse URL: {e}")
+            return False
 
     def browse_folder(self):
         folder_path = filedialog.askdirectory(
@@ -173,7 +219,6 @@ class DragDropFrame(ttk.Frame):
         # Entry - 80 znaků
         entry = ttk.Entry(dialog, width=80)
         entry.pack(padx=MARGIN, pady=(0, MARGIN))
-        entry.focus()
 
         result = [None]
 
@@ -188,7 +233,7 @@ class DragDropFrame(ttk.Frame):
 
         parent.bind('<Button-1>', on_parent_interaction, add='+')
 
-        # Focus monitoring - udržet focus na dialogu
+        # Focus monitoring - udržet focus v rámci dialogu
         # Také kontrolovat jestli parent ještě existuje
         def maintain_focus():
             if not dialog.winfo_exists():
@@ -199,16 +244,23 @@ class DragDropFrame(ttk.Frame):
                 if not parent.winfo_exists():
                     dialog.destroy()
                     return
-            except:
+            except Exception as e:
+                logger.debug(f"Parent window check failed: {e}")
                 dialog.destroy()
                 return
 
-            current = dialog.focus_displayof()
-            if current != dialog:
-                dialog.focus_force()
+            # Získat aktuální widget s focusem
+            current_focus = dialog.focus_displayof()
+
+            # Pokud focus není v rámci dialogu (je None nebo mimo dialog),
+            # vrátit ho na entry pole (ne na dialog jako takový)
+            if current_focus is None or not str(current_focus).startswith(str(dialog)):
+                entry.focus_set()
 
             dialog.after(100, maintain_focus)
 
+        # Nastavit iniciální focus na entry po zobrazení dialogu
+        dialog.after(50, lambda: entry.focus_set())
         maintain_focus()
 
         # Cleanup

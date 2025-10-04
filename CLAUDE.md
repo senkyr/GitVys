@@ -44,6 +44,9 @@ This is a Python desktop application that visualizes Git repository history usin
   - `layout.py` - Calculates positioning for commits and branches
   - `colors.py` - Manages branch color schemes
 - **Data Structures**: `utils/data_structures.py` - Defines Commit and Branch data classes
+- **Utilities**: `utils/` directory contains helper modules
+  - `logging_config.py` - Centralized logging configuration
+  - `constants.py` - Application-wide constants (layout, colors, UI dimensions)
 
 ### Key Technologies
 
@@ -98,6 +101,56 @@ The main data structures:
 
 Repository loading runs in background threads to prevent UI blocking, with results passed back to main thread for display.
 
+### Error Handling & Logging
+
+The application uses centralized logging for error tracking and debugging:
+
+**Logging System** (`utils/logging_config.py`):
+
+- File logging: `gitvisualizer.log` in current directory
+- Log level: WARNING and above for file handler
+- Log level: ERROR and above for console handler
+- Format: `YYYY-MM-DD HH:MM:SS - module - LEVEL - message`
+
+**Exception Handling Pattern**:
+
+- All exceptions are caught with `except Exception as e:`
+- Logged with context: `logger.warning(f"Failed to X: {e}")`
+- Never silently swallowed - always logged for debugging
+- User-friendly error messages shown in GUI when appropriate
+
+**Constants** (`utils/constants.py`):
+
+- Layout constants: `COMMIT_VERTICAL_SPACING`, `BRANCH_LANE_SPACING`, `COMMIT_START_X/Y`
+- Repository constants: `MESSAGE_MAX_LENGTH`, `AUTHOR_NAME_MAX_LENGTH`
+- Color constants: `COLOR_HUE_TOLERANCE`, `COLOR_SATURATION`, `COLOR_LIGHTNESS`
+- Graph drawer constants: `NODE_RADIUS`, `LINE_WIDTH`, `FONT_SIZE`, `SEPARATOR_HEIGHT`
+- UI constants: `DEFAULT_WINDOW_WIDTH/HEIGHT`, `MIN_COLUMN_WIDTH_*`
+
+### Code Quality
+
+**Refactored Functions**:
+
+- `_detect_merge_branches()` split into helper functions:
+  - `_build_full_hash_map()` - Maps short hashes to full hashes
+  - `_trace_merge_branch_commits()` - Traces commits in merge branch
+  - `_get_commits_in_branches_with_head()` - Gets commits in main line
+  - `_extract_branch_name_from_merge()` - Extracts branch name from merge message
+
+**URL Security**:
+
+- Whitelist of trusted Git hosts (GitHub, GitLab, Bitbucket, Codeberg, sr.ht, gitea.io)
+- Validates both HTTP(S) and SSH (git@) URLs
+- Rejects untrusted hosts with logged warning
+- Supports subdomains of trusted hosts
+
+**Dependencies**:
+
+- Pinned versions in `requirements.txt` for reproducibility:
+  - `GitPython==3.1.40`
+  - `Pillow==10.1.0`
+  - `tkinterdnd2==0.3.0`
+
 ## Czech Language Support
 
 The application uses Czech language for UI text and date formatting. User-facing messages and labels are in Czech.
@@ -139,3 +192,4 @@ This project uses Git tags for versioning.
 4. **Update version in code:**
    - `setup.py` - version field
    - `gui/main_window.py` - default_title with version number
+   - **IMPORTANT:** Version number in code MUST match the version in CHANGELOG.md (e.g., if CHANGELOG shows v1.1.1, gui/main_window.py must also show v1.1.1)

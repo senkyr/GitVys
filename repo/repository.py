@@ -6,6 +6,10 @@ import git
 from git import Repo, InvalidGitRepositoryError
 from utils.data_structures import Commit, Branch, Tag, MergeBranch
 from visualization.colors import get_branch_color
+from utils.logging_config import get_logger
+from utils.constants import MESSAGE_MAX_LENGTH, AUTHOR_NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH
+
+logger = get_logger(__name__)
 
 
 class GitRepository:
@@ -64,7 +68,7 @@ class GitRepository:
                     commit_obj = Commit(
                         hash=commit.hexsha[:8],
                         message=subject,
-                        short_message=self._truncate_message(subject, 50),
+                        short_message=self._truncate_message(subject, MESSAGE_MAX_LENGTH),
                         author=commit.author.name,
                         author_short=self._truncate_name(commit.author.name),
                         author_email=commit.author.email,
@@ -80,7 +84,8 @@ class GitRepository:
                     commit_obj.description = description
                     commit_obj.description_short = self._truncate_description(description)
                     commits.append(commit_obj)
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to process commit from branch {head.name}: {e}")
                 continue
 
         # Přidat uncommitted změny na začátek (nejnovější)
@@ -117,7 +122,8 @@ class GitRepository:
                     try:
                         for commit in self.repo.iter_commits(head):
                             commit_to_branch[commit.hexsha] = branch_name
-                    except:
+                    except Exception as e:
+                        logger.warning(f"Failed to iterate commits for branch {branch_name}: {e}")
                         continue
                 else:
                     other_branches.append((head, branch_name))
@@ -129,7 +135,8 @@ class GitRepository:
                         commit_hash = commit.hexsha
                         if commit_hash not in commit_to_branch:
                             commit_to_branch[commit_hash] = branch_name
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to iterate commits for branch {branch_name}: {e}")
                     continue
 
         except Exception:
@@ -159,7 +166,8 @@ class GitRepository:
                     if not ref.name.endswith('/HEAD'):
                         branch_name = ref.name.replace('origin/', '')
                         all_branch_names.add(branch_name)
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to fetch remote refs: {e}")
                 pass
 
         for branch_name in all_branch_names:
@@ -233,7 +241,7 @@ class GitRepository:
             commit_obj = Commit(
                 hash=commit.hexsha[:8],
                 message=subject,
-                short_message=self._truncate_message(subject, 50),
+                short_message=self._truncate_message(subject, MESSAGE_MAX_LENGTH),
                 author=commit.author.name,
                 author_short=self._truncate_name(commit.author.name),
                 author_email=commit.author.email,
@@ -286,7 +294,8 @@ class GitRepository:
                     try:
                         for commit in self.repo.iter_commits(head):
                             local_commit_map[commit.hexsha] = branch_name
-                    except:
+                    except Exception as e:
+                        logger.warning(f"Failed to iterate commits for main branch {branch_name}: {e}")
                         continue
                 else:
                     other_local_branches.append((head, branch_name))
@@ -296,7 +305,8 @@ class GitRepository:
                     for commit in self.repo.iter_commits(head):
                         if commit.hexsha not in local_commit_map:
                             local_commit_map[commit.hexsha] = branch_name
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to iterate commits for local branch {branch_name}: {e}")
                     continue
 
             # 2. Remote větve - jen pro commity bez lokální větve
@@ -311,13 +321,16 @@ class GitRepository:
                         for commit in self.repo.iter_commits(remote_ref):
                             if commit.hexsha not in local_commit_map:
                                 remote_commit_map[commit.hexsha] = remote_ref.name
-                    except:
+                    except Exception as e:
+                        logger.warning(f"Failed to iterate commits for remote ref {remote_ref.name}: {e}")
                         continue
-            except:
+            except Exception as e:
                 # Pokud remote neexistuje, pokračovat jen s lokálními větvemi
+                logger.debug(f"Failed to access remote refs: {e}")
                 pass
 
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to build commit-branch map with remote: {e}")
             pass
 
         return local_commit_map, remote_commit_map
@@ -331,7 +344,8 @@ class GitRepository:
         try:
             for head in self.repo.heads:
                 local_branches.add(head.name)
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to get local branches: {e}")
             pass
 
         # Získat remote větve pouze pokud je to požadováno
@@ -345,7 +359,8 @@ class GitRepository:
                     if remote_ref.name.startswith('origin/'):
                         branch_name = remote_ref.name[7:]  # Odstranit "origin/"
                         remote_branches.add(branch_name)
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get remote branches: {e}")
                 pass
 
         # Vytvořit mapu dostupnosti
@@ -372,13 +387,15 @@ class GitRepository:
             # Lokální větev
             try:
                 local_head = self.repo.heads[branch_name].commit
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get local head for branch {branch_name}: {e}")
                 pass
 
             # Remote větev
             try:
                 remote_head = self.repo.remotes.origin.refs[branch_name].commit
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get remote head for branch {branch_name}: {e}")
                 pass
 
             # Pokud některá neexistuje, není divergence
@@ -452,9 +469,11 @@ class GitRepository:
                     if tag_commit.hexsha not in commit_to_tags:
                         commit_to_tags[tag_commit.hexsha] = []
                     commit_to_tags[tag_commit.hexsha].append(tag_obj)
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to process tag {tag.name}: {e}")
                     continue
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to iterate tags: {e}")
             pass
 
         return commit_to_tags
@@ -502,9 +521,11 @@ class GitRepository:
                     existing_names = [t.name for t in commit_to_tags[tag_commit.hexsha]]
                     if tag_name not in existing_names:
                         commit_to_tags[tag_commit.hexsha].append(tag_obj)
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to process remote tag {remote_ref.name}: {e}")
                     continue
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to iterate remote tags: {e}")
             pass
 
         return commit_to_tags
@@ -515,14 +536,14 @@ class GitRepository:
         return message[:max_length-3] + '...'
 
     def _truncate_name(self, name: str) -> str:
-        if len(name) <= 15:
+        if len(name) <= AUTHOR_NAME_MAX_LENGTH:
             return name
         parts = name.split()
         if len(parts) > 1:
             return f"{parts[0][0]}. {parts[-1]}"
         return name[:12] + '...'
 
-    def _truncate_description(self, description: str, max_length: int = 80) -> str:
+    def _truncate_description(self, description: str, max_length: int = DESCRIPTION_MAX_LENGTH) -> str:
         """Zkrátí description na první řádek s maximální délkou a přidá vynechávku."""
         if not description:
             return ""
@@ -631,6 +652,85 @@ class GitRepository:
         except Exception as e:
             return {"has_changes": False, "error": str(e)}
 
+    def _build_full_hash_map(self) -> Dict[str, str]:
+        """Vytvoří mapu zkrácených hashů na plné hashe pro GitPython."""
+        full_hash_map = {}
+        if self.repo:
+            try:
+                for commit in self.repo.iter_commits(all=True):
+                    short_hash = commit.hexsha[:8]
+                    full_hash_map[short_hash] = commit.hexsha
+            except Exception as e:
+                logger.warning(f"Failed to build full hash map: {e}")
+        return full_hash_map
+
+    def _trace_merge_branch_commits(self, merge_parent_hash: str, branch_point_hash: str, commit_map: Dict[str, Commit]) -> List[str]:
+        """Trasuje zpětně commity v merge větvi od merge parent k branch point."""
+        merge_branch_commits = []
+        current = merge_parent_hash
+        visited = set()
+
+        while current and current != branch_point_hash and current not in visited:
+            visited.add(current)
+            if current in commit_map:
+                commit = commit_map[current]
+                merge_branch_commits.append(current)
+                # Pokračovat k prvnímu parentu (lineární path)
+                if commit.parents:
+                    current = commit.parents[0]
+                else:
+                    break
+            else:
+                break
+
+        return merge_branch_commits
+
+    def _get_commits_in_branches_with_head(self) -> set:
+        """Získá všechny commity v hlavní linii (first-parent path) větví s HEAD."""
+        commits_in_branches_with_head = set()
+        if self.repo:
+            try:
+                for branch_head in self.repo.heads:
+                    try:
+                        commit = branch_head.commit
+                        while commit:
+                            commits_in_branches_with_head.add(commit.hexsha[:8])
+                            if commit.parents:
+                                commit = commit.parents[0]  # Jen first parent
+                            else:
+                                break
+                    except Exception as e:
+                        logger.warning(f"Failed to traverse branch {branch_head.name}: {e}")
+                        continue
+            except Exception as e:
+                logger.warning(f"Failed to get branches with HEAD: {e}")
+        return commits_in_branches_with_head
+
+    def _extract_branch_name_from_merge(self, merge_commit: Commit, full_hash_map: Dict[str, str]) -> Optional[str]:
+        """Extrahuje název větve z merge commit message."""
+        try:
+            merge_commit_full_hash = full_hash_map.get(merge_commit.hash)
+            if merge_commit_full_hash and self.repo:
+                merge_commit_obj = self.repo.commit(merge_commit_full_hash)
+                merge_message = merge_commit_obj.message
+
+                # Různé formáty merge messages
+                patterns = [
+                    r"Merge branch ['\"]([^'\"]+)['\"]",           # Git standard
+                    r"Merge branch ['\"]([^'\"]+)['\"] into",      # S target
+                    r"Merge pull request #\d+ from [^/]+/([^\s]+)", # GitHub
+                    r"Merged in ([^\s\(]+)",                       # Bitbucket
+                    r"Merge remote-tracking branch ['\"]origin/([^'\"]+)['\"]", # Remote merge
+                ]
+
+                for pattern in patterns:
+                    match = re.search(pattern, merge_message)
+                    if match:
+                        return match.group(1)
+        except Exception as e:
+            logger.debug(f"Failed to extract branch name from merge commit {merge_commit.hash}: {e}")
+        return None
+
     def _detect_merge_branches(self, commits: List[Commit]) -> List[MergeBranch]:
         """Detekuje merge patterns a vytvoří virtuální merge větve."""
         if not commits:
@@ -645,15 +745,8 @@ class GitRepository:
             if commit.branch_color:
                 used_colors.add(commit.branch_color)
 
-        # Rozšířený commit map pro plné hashe (může být nutné pro GitPython)
-        full_hash_map = {}
-        if self.repo:
-            try:
-                for commit in self.repo.iter_commits(all=True):
-                    short_hash = commit.hexsha[:8]
-                    full_hash_map[short_hash] = commit.hexsha
-            except:
-                pass
+        # Rozšířený commit map pro plné hashe
+        full_hash_map = self._build_full_hash_map()
 
         # Najít merge commity (více než 1 parent)
         merge_commits = [commit for commit in commits if len(commit.parents) >= 2]
@@ -678,50 +771,17 @@ class GitRepository:
                         if merge_base:
                             branch_point_hash = merge_base[0].hexsha[:8]
 
-                            # Získat všechny commity v merge branch (od branch point k merge parent)
-                            merge_branch_commits = []
-
-                            # Trasovat zpětně od merge parent k branch point
-                            current = merge_parent_hash
-                            visited = set()
-
-                            while current and current != branch_point_hash and current not in visited:
-                                visited.add(current)
-                                if current in commit_map:
-                                    commit = commit_map[current]
-                                    merge_branch_commits.append(current)
-
-                                    # Pokračovat k prvnímu parentu (lineární path)
-                                    if commit.parents:
-                                        current = commit.parents[0]
-                                    else:
-                                        break
-                                else:
-                                    break
+                            # Trasovat commity v merge větvi
+                            merge_branch_commits = self._trace_merge_branch_commits(
+                                merge_parent_hash, branch_point_hash, commit_map
+                            )
 
                             # Pokud jsme našli nějaké commity v merge branch
                             if merge_branch_commits:
-                                # Získat commity v HLAVNÍ LINII větví s HEAD (first-parent path)
-                                commits_in_branches_with_head = set()
-                                if self.repo:
-                                    try:
-                                        for branch_head in self.repo.heads:
-                                            # Traversovat jen hlavní linii (first parent)
-                                            try:
-                                                commit = branch_head.commit
-                                                while commit:
-                                                    commits_in_branches_with_head.add(commit.hexsha[:8])
-                                                    if commit.parents:
-                                                        commit = commit.parents[0]  # Jen first parent
-                                                    else:
-                                                        break
-                                            except:
-                                                continue
-                                    except:
-                                        pass
+                                # Získat commity v hlavní linii větví s HEAD
+                                commits_in_branches_with_head = self._get_commits_in_branches_with_head()
 
                                 # Filtrovat commity - odstranit ty, které jsou v cestě k HEAD
-                                # (ty mají zůstat sytě barevné)
                                 filtered_commits = [c for c in merge_branch_commits
                                                    if c not in commits_in_branches_with_head]
 
@@ -738,33 +798,9 @@ class GitRepository:
                                 original_color = '#666666'  # Default fallback
 
                                 # Pokusit se extrahovat název větve z merge commit message
-                                try:
-                                    merge_commit_full_hash = full_hash_map.get(merge_commit.hash)
-                                    if merge_commit_full_hash and self.repo:
-                                        merge_commit_obj = self.repo.commit(merge_commit_full_hash)
-                                        merge_message = merge_commit_obj.message
-
-                                        # Různé formáty merge messages
-                                        patterns = [
-                                            r"Merge branch ['\"]([^'\"]+)['\"]",           # Git standard: Merge branch 'feature/xyz'
-                                            r"Merge branch ['\"]([^'\"]+)['\"] into",      # S target: Merge branch 'feature/xyz' into main
-                                            r"Merge pull request #\d+ from [^/]+/([^\s]+)", # GitHub: Merge pull request #123 from user/feature-xyz
-                                            r"Merged in ([^\s\(]+)",                       # Bitbucket: Merged in feature/xyz
-                                            r"Merge remote-tracking branch ['\"]origin/([^'\"]+)['\"]", # Remote merge
-                                        ]
-
-                                        branch_name = None
-                                        for pattern in patterns:
-                                            match = re.search(pattern, merge_message)
-                                            if match:
-                                                branch_name = match.group(1)
-                                                break
-
-                                        if branch_name:
-                                            # Získat barvu pro tuto větev
-                                            original_color = get_branch_color(branch_name, used_colors)
-                                except:
-                                    pass
+                                branch_name = self._extract_branch_name_from_merge(merge_commit, full_hash_map)
+                                if branch_name:
+                                    original_color = get_branch_color(branch_name, used_colors)
 
                                 # Fallback: neutrální šedá pokud se nepodařilo detekovat název větve
                                 # (NE merge_parent.branch_color, protože může být main i když to byla feature)
@@ -864,7 +900,8 @@ class GitRepository:
                     b = int(b * 255)
 
                     return f'#{r:02x}{g:02x}{b:02x}'
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to convert color {color} to pale variant: {e}")
                 pass
 
         # Fallback na světle šedou

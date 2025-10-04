@@ -94,6 +94,17 @@ Můžeš otevřít repozitář přímo z URL:
 - **F5** - Obnovit repozitář
 - **Ctrl+C** - Ukončit aplikaci (v příkazové řádce)
 
+### Logování
+
+Aplikace vytváří log soubor pro debugging:
+
+- **Umístění**: `gitvisualizer.log` v aktuálním adresáři
+- **Obsah**: Warnings a errors z běhu aplikace
+- **Formát**: `YYYY-MM-DD HH:MM:SS - modul - LEVEL - zpráva`
+- **Účel**: Pomoc při řešení problémů a debugování
+
+Pokud narazíš na problém, zkontroluj log soubor pro detaily.
+
 ## Řešení problémů
 
 ### "Vybraná složka neobsahuje Git repozitář"
@@ -117,7 +128,34 @@ Můžeš otevřít repozitář přímo z URL:
 - Zkontroluj internetové připojení
 - Některé repozitáře vyžadují autentizaci - použij lokální klon místo URL
 
+### "URL byla odmítnuta" / Untrusted Git host
+
+Aplikace z bezpečnostních důvodů akceptuje pouze důvěryhodné hosty:
+
+**Podporované hosty:**
+
+- GitHub (github.com)
+- GitLab (gitlab.com)
+- Bitbucket (bitbucket.org)
+- Codeberg (codeberg.org)
+- SourceHut (sr.ht)
+- Gitea (gitea.io)
+
+**Řešení:**
+
+- Použij URL z podporovaného hostu
+- Nebo naklonuj repozitář lokálně a otevři složku místo URL
+- Pro vlastní Git server: naklonuj manuálně pomocí `git clone` a pak otevři složku
+
 ### Horizontální scrollbar se nezmenší po zúžení sloupců
 
 - **OPRAVENO v aktuální verzi**
 - Scrollregion se nyní správně aktualizuje při změně šířky sloupců
+
+### Chyby v log souboru
+
+Pokud vidíš warnings v `gitvisualizer.log`:
+
+- **"Failed to..."** warnings jsou normální pro některé operace (např. remote větve u lokálního repo)
+- **ERROR** zprávy indikují skutečný problém - nahlásit jako issue
+- Log file pomáhá při reportování bugů

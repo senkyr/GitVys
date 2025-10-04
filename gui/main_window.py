@@ -10,6 +10,9 @@ from repo.repository import GitRepository
 from visualization.layout import GraphLayout
 from gui.drag_drop import DragDropFrame
 from gui.graph_canvas import GraphCanvas
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class MainWindow:
@@ -20,7 +23,7 @@ class MainWindow:
             self.root = tk.Tk()
 
         # Defaultní hodnoty pro obnovení
-        self.default_title = "Git Visualizer v1.1.0"
+        self.default_title = "Git Visualizer v1.1.1"
         self.default_width = 600
         self.default_height = 400
 
@@ -115,7 +118,8 @@ class MainWindow:
                 actual_width = bbox[2] - bbox[0]
                 # Přidat rozumný buffer pro UI elementy
                 return actual_width + 40
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to calculate optimal width: {e}")
             pass
 
         # Fallback: použít column_widths pokud jsou dostupné
@@ -234,7 +238,8 @@ class MainWindow:
             if self.git_repo and hasattr(self.git_repo, 'repo') and self.git_repo.repo:
                 try:
                     self.git_repo.repo.close()
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to close GitPython repo: {e}")
                     pass
 
             # Pokud byl předtím otevřený klonovaný repo → smazat temp
@@ -346,9 +351,11 @@ class MainWindow:
                 try:
                     if os.path.exists(old_temp) and os.path.isdir(old_temp):
                         shutil.rmtree(old_temp, onerror=handle_remove_readonly)
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup orphaned temp clone {old_temp}: {e}")
                     pass  # Ignorovat chyby u jednotlivých složek
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to cleanup temp clones: {e}")
             pass  # Ignorovat chyby celého cleaningu
 
     def _cleanup_single_clone(self, path: str):
@@ -385,7 +392,8 @@ class MainWindow:
             if hasattr(self.git_repo, 'repo') and self.git_repo.repo:
                 try:
                     self.git_repo.repo.close()
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to close GitPython repo during cleanup: {e}")
                     pass
 
         def handle_remove_readonly(func, path, exc):
@@ -401,7 +409,8 @@ class MainWindow:
             try:
                 if os.path.exists(temp_dir):
                     shutil.rmtree(temp_dir, onerror=handle_remove_readonly)
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to cleanup temp clone {temp_dir}: {e}")
                 pass  # Ignorovat chyby při cleanup
 
     def load_repository(self, repo_path: str):
@@ -621,7 +630,8 @@ class MainWindow:
         if self.git_repo and hasattr(self.git_repo, 'repo') and self.git_repo.repo:
             try:
                 self.git_repo.repo.close()
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to close GitPython repo: {e}")
                 pass
         self.git_repo = None
 

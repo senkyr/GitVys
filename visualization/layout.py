@@ -1,9 +1,10 @@
 from typing import List, Dict, Set
 from utils.data_structures import Commit, MergeBranch
+from utils.constants import BRANCH_LANE_SPACING, COMMIT_START_X, COMMIT_VERTICAL_SPACING, COMMIT_START_Y
 
 
 class GraphLayout:
-    def __init__(self, commits: List[Commit], branch_spacing: int = 20, commit_start_x: int = 160, merge_branches: List[MergeBranch] = None):
+    def __init__(self, commits: List[Commit], branch_spacing: int = BRANCH_LANE_SPACING, commit_start_x: int = COMMIT_START_X, merge_branches: List[MergeBranch] = None):
         self.commits = commits
         self.branch_lanes: Dict[str, int] = {}
         self.used_lanes: Set[int] = set()
@@ -32,7 +33,7 @@ class GraphLayout:
             commit.x = branch_lane * self.branch_spacing + self.commit_start_x
 
             # Y pozice podle chronologického pořadí (řádek)
-            commit.y = i * 30 + 50
+            commit.y = i * COMMIT_VERTICAL_SPACING + COMMIT_START_Y
 
             # table_row pro tabulku
             commit.table_row = i

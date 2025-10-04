@@ -4,6 +4,42 @@ Všechny významné změny v tomto projektu.
 
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
+## [1.1.1] - 2025-10-04
+
+### Added
+
+- **Centralizované logování** (`utils/logging_config.py`)
+  - Logging do souboru `gitvisualizer.log`
+  - File handler: WARNING a výše
+  - Console handler: ERROR a výše
+
+### Changed
+
+- **Vylepšení kvality kódu**
+  - Robustnější error handling (40+ oprav bare exception)
+  - Všechny exceptions jsou logovány s kontextem
+  - Refaktoring `_detect_merge_branches()` (160 řádků → ~80 řádků)
+  - Rozdělení na 4 helper funkce pro lepší maintainability
+  - Magic numbers nahrazeny konstantami (`utils/constants.py`)
+  - Pinnuté verze závislostí pro reproducible builds
+    - GitPython==3.1.40
+    - Pillow==10.1.0
+    - tkinterdnd2==0.3.0
+
+### Security
+
+- **Bezpečnostní vylepšení URL validace**
+  - Whitelist trusted Git hostů (GitHub, GitLab, Bitbucket, Codeberg, sr.ht, gitea.io)
+  - Podpora HTTP(S) i SSH formátu
+  - Odmítnutí untrusted hostů s logováním
+
+### Documentation
+
+- Aktualizace README.md s novými utils soubory
+- Aktualizace CLAUDE.md s error handling & logging sekcí
+- Aktualizace DESIGN.md s code quality improvements
+- Aktualizace INSTALLATION.md s logováním a troubleshooting
+
 ## [1.1.0] - 2025-10-04
 
 ### Added
