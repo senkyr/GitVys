@@ -146,7 +146,16 @@ def main():
         sys.exit(1)
 
     print("\nBuild dokoncen!")
-    print(f"Spustitelny soubor: dist\\GitVisualizer.exe")
+
+    # Cleanup build_temp
+    print("Mazani docasnych build souboru...")
+    if os.path.exists("build_temp"):
+        if safe_remove("build_temp"):
+            print("OK: build_temp/ smazan")
+        else:
+            print("VAROVANI: Nelze smazat build_temp/ - smazte rucne")
+
+    print(f"\nSpustitelny soubor: dist\\GitVisualizer.exe")
     print("Pro vytvoreni dalsiho buildu spust: build\\build-exe.bat")
 
 if __name__ == "__main__":
