@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import os
 try:
     from tkinterdnd2 import TkinterDnD
 except ImportError:
@@ -31,7 +32,18 @@ class MainWindow:
 
         self.git_repo = None
         self.is_remote_loaded = False  # Sledování stavu remote načtení
+        self.is_cloned_repo = False  # True pokud repo bylo načteno z URL (klonováno)
+        self.temp_clones = []  # Seznam temp složek ke smazání při zavření
+        self.current_temp_clone = None  # Cesta k aktuálně otevřenému temp klonu
+
+        # Vyčistit staré temp složky z předchozích sessions
+        self._cleanup_old_temp_clones()
+
         self.setup_ui()
+
+        # Cleanup handler pro temp složky
+        import atexit
+        atexit.register(self._cleanup_temp_clones)
 
     def _center_window(self, width: int, height: int):
         screen_width = self.root.winfo_screenwidth()
@@ -210,16 +222,133 @@ class MainWindow:
         self.root.focus_set()  # Zajistit focus pro key bindings
 
     def on_repository_selected(self, repo_path: str):
-        self.update_status("Načítám repozitář...")
-        self.progress.config(value=50)
+        # Detekce URL vs lokální cesta
+        if self._is_git_url(repo_path):
+            # Online repozitář - klonovat
+            self.clone_repository(repo_path)
+        else:
+            # Lokální složka - načíst přímo
+
+            # Pokud byl předtím otevřený klonovaný repo → smazat temp
+            if self.is_cloned_repo and self.current_temp_clone:
+                self._cleanup_single_clone(self.current_temp_clone)
+                self.current_temp_clone = None
+
+            self.is_cloned_repo = False  # Lokální repo, ne klonované
+            self.update_status("Načítám repozitář...")
+            self.progress.config(value=50)
+            self.progress.start()
+
+            thread = threading.Thread(
+                target=self.load_repository,
+                args=(repo_path,),
+                daemon=True
+            )
+            thread.start()
+
+    def _is_git_url(self, text: str) -> bool:
+        """Detekuje zda je text Git URL."""
+        text = text.lower().strip()
+        if text.startswith(('http://', 'https://', 'git@')):
+            return True
+        git_hosts = ['github.com', 'gitlab.com', 'bitbucket.org', 'gitea.']
+        return any(host in text for host in git_hosts)
+
+    def clone_repository(self, url: str):
+        """Klonuje online repozitář do temp složky."""
+        import tempfile
+
+        # Pokud už existuje starý temp klon → smazat ho
+        if self.current_temp_clone:
+            self._cleanup_single_clone(self.current_temp_clone)
+            self.current_temp_clone = None
+
+        # Vytvořit temp složku
+        temp_dir = tempfile.mkdtemp(prefix='gitvys_clone_')
+        self.temp_clones.append(temp_dir)
+
+        # Extrahovat název repo z URL pro zobrazení
+        repo_name = url.rstrip('/').split('/')[-1].replace('.git', '')
+
+        self.update_status(f"Klonuji {repo_name}...")
         self.progress.start()
 
         thread = threading.Thread(
-            target=self.load_repository,
-            args=(repo_path,),
+            target=self._clone_worker,
+            args=(url, temp_dir),
             daemon=True
         )
         thread.start()
+
+    def _clone_worker(self, url: str, path: str):
+        """Worker thread pro klonování repozitáře."""
+        try:
+            from git import Repo
+
+            # Klonovat s progress (zatím bez callbacku)
+            Repo.clone_from(url, path)
+
+            # Po úspěšném klonování načíst jako běžný repo
+            self.root.after(0, self._on_clone_complete, path)
+
+        except Exception as e:
+            self.root.after(0, self.show_error, f"Chyba klonování:\n{str(e)}")
+            self.root.after(0, self.progress.stop)
+
+    def _on_clone_complete(self, path: str):
+        """Callback po úspěšném klonování."""
+        self.is_cloned_repo = True  # Označit že repo bylo klonováno z URL
+        self.current_temp_clone = path  # Uložit cestu k aktuálnímu temp klonu
+        self.update_status("Načítám naklonovaný repozitář...")
+
+        thread = threading.Thread(
+            target=self.load_repository,
+            args=(path,),
+            daemon=True
+        )
+        thread.start()
+
+    def _cleanup_old_temp_clones(self):
+        """Při startu smaže všechny temp složky z předchozích sessions."""
+        import tempfile
+        import glob
+        import shutil
+
+        try:
+            temp_dir = tempfile.gettempdir()
+            pattern = os.path.join(temp_dir, 'gitvys_clone_*')
+
+            for old_temp in glob.glob(pattern):
+                try:
+                    if os.path.exists(old_temp) and os.path.isdir(old_temp):
+                        shutil.rmtree(old_temp)
+                except:
+                    pass  # Ignorovat chyby u jednotlivých složek
+        except:
+            pass  # Ignorovat chyby celého cleaningu
+
+    def _cleanup_single_clone(self, path: str):
+        """Smaže jeden konkrétní temp klon."""
+        import shutil
+        try:
+            if os.path.exists(path):
+                shutil.rmtree(path)
+                # Odebrat z listu
+                if path in self.temp_clones:
+                    self.temp_clones.remove(path)
+        except Exception as e:
+            # Logovat ale nepadnout
+            print(f"Warning: Nepodařilo se smazat temp klon: {e}")
+
+    def _cleanup_temp_clones(self):
+        """Smaže dočasné klonované repozitáře při zavření (fallback)."""
+        import shutil
+        for temp_dir in self.temp_clones:
+            try:
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+            except:
+                pass  # Ignorovat chyby při cleanup
 
     def load_repository(self, repo_path: str):
         try:
@@ -254,7 +383,7 @@ class MainWindow:
             self.fetch_remote_data()
         else:
             # Obnovit jen lokálně
-            self.update_status("Obnovujem repozitář...")
+            self.update_status("Načítám repozitář...")
             self.progress.start()
 
             thread = threading.Thread(
@@ -344,7 +473,13 @@ class MainWindow:
             stats_text = f"{authors_text}, {branches_text}, {commits_text}"
         self.stats_label.config(text=stats_text)
 
-        self.fetch_button.config(text="Načíst remote", state="normal")
+        # Po načtení remote dat vrátit původní text tlačítka
+        if self.is_cloned_repo:
+            button_text = "Načíst větve"
+        else:
+            button_text = "Načíst remote"
+        self.fetch_button.config(text=button_text, state="normal")
+
         self.progress.stop()
         self.progress.config(value=100)
         self.update_status(f"Načteno {len(commits)} commitů (včetně remote)")
@@ -413,6 +548,12 @@ class MainWindow:
         self.progress.config(value=100)
         self.update_status(f"Načteno {len(commits)} commitů")
 
+        # Nastavit text fetch tlačítka podle zdroje repozitáře
+        if self.is_cloned_repo:
+            self.fetch_button.config(text="Načíst větve")
+        else:
+            self.fetch_button.config(text="Načíst remote")
+
         # Zobrazit Refresh tlačítko
         self.refresh_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
 
@@ -420,6 +561,11 @@ class MainWindow:
         # Reset GraphDrawer state to clear column widths and cached data
         if hasattr(self, 'graph_canvas') and hasattr(self.graph_canvas, 'graph_drawer'):
             self.graph_canvas.graph_drawer.reset()
+
+        # Pokud je otevřený klonovaný repo → smazat temp klon
+        if self.is_cloned_repo and self.current_temp_clone:
+            self._cleanup_single_clone(self.current_temp_clone)
+            self.current_temp_clone = None
 
         self.graph_canvas.grid_remove()
         self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
@@ -434,6 +580,7 @@ class MainWindow:
 
         # Reset remote stavu
         self.is_remote_loaded = False
+        self.is_cloned_repo = False
 
         # Obnovit defaultní titul a velikost okna
         self.root.title(self.default_title)

@@ -33,15 +33,24 @@ class DragDropFrame(ttk.Frame):
         # Vytvořit label a button
         self.drop_label = ttk.Label(
             self.drop_canvas,
-            text="Přetáhni sem složku repozitáře nebo ji vyhledej tlačítkem...",
-            font=('Arial', 12),
-            background='#F0F8FF'  # Alice blue - shodná s plochou
+            text="Přetáhni sem složku nebo URL repozitáře",
+            font=('Arial', 11),
+            background='#F0F8FF',  # Alice blue - shodná s plochou
+            justify='center'
         )
 
         self.browse_button = ttk.Button(
             self.drop_canvas,
-            text="Najít na disku...",
-            command=self.browse_folder
+            text="Otevřít složku",
+            command=self.browse_folder,
+            width=15
+        )
+
+        self.url_button = ttk.Button(
+            self.drop_canvas,
+            text="Otevřít URL",
+            command=self.open_url_dialog,
+            width=15
         )
 
         # Bind pro resize aby se prvky centrovaly
@@ -73,29 +82,69 @@ class DragDropFrame(ttk.Frame):
             dash=(5, 3)  # Čárkovaná čára (5px čárka, 3px mezera)
         )
 
-        # Umístit label a button
+        # Symetrické rozložení:
+        # Vzdálenost od horní hrany k labelu = vzdálenost mezi labelem a tlačítky
+        padding_inner = 5  # Padding rámečku
+        top_margin = (canvas_height - padding_inner * 2) / 3  # 1/3 dostupné výšky
+
+        label_y = padding_inner + top_margin
+        button_y = label_y + top_margin
+
+        # Umístit label
         self.drop_canvas.create_window(
-            center_x, center_y - 30,
+            center_x, int(label_y),
             window=self.drop_label,
             anchor='center'
         )
+
+        # Umístit tlačítka vedle sebe
+        button_spacing = 20  # Mezera mezi tlačítky
+
         self.drop_canvas.create_window(
-            center_x, center_y + 30,
+            center_x - 75 - button_spacing // 2, int(button_y),
             window=self.browse_button,
+            anchor='center'
+        )
+        self.drop_canvas.create_window(
+            center_x + 75 + button_spacing // 2, int(button_y),
+            window=self.url_button,
             anchor='center'
         )
 
     def bind_drop_events(self):
         # Pouze drag & drop binding, žádný click binding
         if TkinterDnD is not None:
-            self.drop_canvas.drop_target_register(DND_FILES)
+            # Registrovat jak soubory tak textové URL
+            try:
+                from tkinterdnd2 import DND_TEXT
+                self.drop_canvas.drop_target_register(DND_FILES, DND_TEXT)
+            except:
+                # Fallback pokud DND_TEXT není dostupný
+                self.drop_canvas.drop_target_register(DND_FILES)
             self.drop_canvas.dnd_bind('<<Drop>>', self.on_drop)
 
     def on_drop(self, event):
-        files = self.drop_canvas.tk.splitlist(event.data)
-        if files:
-            folder_path = files[0]
-            self.process_folder(folder_path)
+        data_list = self.drop_canvas.tk.splitlist(event.data)
+        if data_list:
+            data = data_list[0].strip()
+
+            # Auto-detect: URL nebo folder path
+            if self._is_git_url(data):
+                self.process_url(data)
+            else:
+                self.process_folder(data)
+
+    def _is_git_url(self, text: str) -> bool:
+        """Detekuje zda je text Git URL."""
+        text = text.lower().strip()
+
+        # Kontrola URL prefixů
+        if text.startswith(('http://', 'https://', 'git@')):
+            return True
+
+        # Kontrola známých Git hostingů
+        git_hosts = ['github.com', 'gitlab.com', 'bitbucket.org', 'gitea.']
+        return any(host in text for host in git_hosts)
 
     def browse_folder(self):
         folder_path = filedialog.askdirectory(
@@ -103,6 +152,131 @@ class DragDropFrame(ttk.Frame):
         )
         if folder_path:
             self.process_folder(folder_path)
+
+    def open_url_dialog(self):
+        """Otevře dialog pro zadání URL repozitáře."""
+        dialog = tk.Toplevel(self)
+        dialog.title("Otevřít online repozitář")
+        dialog.resizable(False, False)
+
+        # Konzistentní margin pro celý dialog
+        MARGIN = 20
+
+        # Label
+        label = ttk.Label(
+            dialog,
+            text="Zadej URL Git repozitáře:\n(např. https://github.com/user/repo.git)",
+            justify='center'
+        )
+        label.pack(pady=MARGIN)
+
+        # Entry - 80 znaků
+        entry = ttk.Entry(dialog, width=80)
+        entry.pack(padx=MARGIN, pady=(0, MARGIN))
+        entry.focus()
+
+        result = [None]
+
+        # Setup "soft modal" behavior
+        parent = self.winfo_toplevel()
+
+        # Zachytit kliknutí na parent → vrátit focus na dialog
+        def on_parent_interaction(event):
+            if dialog.winfo_exists():
+                dialog.focus_force()
+                dialog.lift()
+
+        parent.bind('<Button-1>', on_parent_interaction, add='+')
+
+        # Focus monitoring - udržet focus na dialogu
+        # Také kontrolovat jestli parent ještě existuje
+        def maintain_focus():
+            if not dialog.winfo_exists():
+                return
+
+            # Kontrola: žije ještě parent?
+            try:
+                if not parent.winfo_exists():
+                    dialog.destroy()
+                    return
+            except:
+                dialog.destroy()
+                return
+
+            current = dialog.focus_displayof()
+            if current != dialog:
+                dialog.focus_force()
+
+            dialog.after(100, maintain_focus)
+
+        maintain_focus()
+
+        # Cleanup
+        def cleanup_and_close():
+            parent.unbind('<Button-1>')
+            dialog.destroy()
+
+        def on_ok():
+            result[0] = entry.get()
+            cleanup_and_close()
+
+        def on_cancel():
+            cleanup_and_close()
+
+        # Enter a Escape key binding
+        entry.bind('<Return>', lambda e: on_ok())
+        dialog.bind('<Escape>', lambda e: on_cancel())
+
+        # Tlačítka
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=(0, MARGIN))
+
+        ok_button = ttk.Button(button_frame, text="OK", command=on_ok, width=10)
+        ok_button.pack(side='left', padx=5)
+
+        cancel_button = ttk.Button(button_frame, text="Zrušit", command=on_cancel, width=10)
+        cancel_button.pack(side='left', padx=5)
+
+        # Nastavit soft modal dialog (bez grab_set)
+        dialog.transient(self.master)
+        dialog.attributes('-topmost', True)
+
+        # Nastavit close handler na dialogu
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+
+        # Nechat tkinter vypočítat velikost
+        dialog.update_idletasks()
+
+        # Vycentrovat dialog v hlavním okně
+        parent = self.winfo_toplevel()
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+
+        dialog_width = dialog.winfo_width()
+        dialog_height = dialog.winfo_height()
+
+        x = parent_x + (parent_width - dialog_width) // 2
+        y = parent_y + (parent_height - dialog_height) // 2
+
+        dialog.geometry(f"+{x}+{y}")
+
+        # Počkat na zavření dialogu
+        dialog.wait_window()
+
+        if result[0] and result[0].strip():
+            self.process_url(result[0].strip())
+
+    def process_url(self, url: str):
+        """Zpracuje URL repozitáře - klonuje do temp složky."""
+        if not self._is_git_url(url):
+            messagebox.showerror("Chyba", "Zadaná URL není platná Git URL")
+            return
+
+        if self.on_drop_callback:
+            # Callback dostane URL místo cesty - main_window to rozpozná
+            self.on_drop_callback(url)
 
     def process_folder(self, folder_path):
         if not os.path.isdir(folder_path):
