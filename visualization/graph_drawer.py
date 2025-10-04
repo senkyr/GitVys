@@ -20,6 +20,7 @@ class GraphDrawer:
         self.dragging_separator = None  # název sloupce jehož separátor se táhne
         self.drag_start_x = 0
         self.drag_redraw_scheduled = False  # Flag pro throttling překreslování během drag
+        self.on_resize_callback = None  # Callback volaný po změně šířky sloupce
 
         # Šířka grafického sloupce (Branch/Commit)
         self.graph_column_width = None  # Bude vypočítána dynamicky
@@ -1665,8 +1666,10 @@ class GraphDrawer:
         canvas.tag_raise("column_separator")  # Separátory nahoru (aby byly klikatelné)
         canvas.tag_raise("column_header")      # Text záhlaví na vrch
 
-    def setup_column_resize_events(self, canvas: tk.Canvas):
+    def setup_column_resize_events(self, canvas: tk.Canvas, on_resize_callback=None):
         """Nastaví event handlery pro změnu velikosti sloupců."""
+        self.on_resize_callback = on_resize_callback
+
         # Místo bindování na celý canvas, zabindujeme přímo na separátory
         # To se udělá v _draw_column_separators()
 
@@ -1745,6 +1748,10 @@ class GraphDrawer:
 
         # Překreslit separátory
         self._draw_column_separators(canvas)
+
+        # Zavolat callback pro aktualizaci scrollregion a scrollbarů
+        if self.on_resize_callback:
+            self.on_resize_callback()
 
     def _recalculate_descriptions_for_width(self, canvas: tk.Canvas, commits):
         """Přepočítá description texty podle aktuální šířky message sloupce."""

@@ -202,13 +202,16 @@ class GraphCanvas(ttk.Frame):
         self.graph_drawer.draw_graph(self.canvas, commits)
 
         # Nastavit event handlery pro změnu velikosti sloupců
-        self.graph_drawer.setup_column_resize_events(self.canvas)
+        self.graph_drawer.setup_column_resize_events(
+            self.canvas,
+            on_resize_callback=self.update_scrollregion_and_scrollbars
+        )
 
         # Počkat až se vše vykreslí, pak spočítat skutečné rozměry
         self.canvas.update_idletasks()
 
-        # Použít bbox('all') pro skutečné rozměry obsahu
-        bbox = self.canvas.bbox('all')
+        # Použít bbox bez záhlaví pro skutečné rozměry obsahu
+        bbox = self._get_content_bbox_without_header()
         if bbox:
             # Přidat malý buffer okolo obsahu
             buffer = 50
@@ -234,6 +237,56 @@ class GraphCanvas(ttk.Frame):
 
         # Update column headers to reflect new scroll position
         self._update_column_separators()
+
+    def _get_content_bbox_without_header(self):
+        """Vrátí bbox všech objektů kromě column_header."""
+        all_items = self.canvas.find_all()
+
+        # Filtrovat objekty - vzít jen ty které NEMAJÍ tag "column_header"
+        content_items = []
+        for item in all_items:
+            tags = self.canvas.gettags(item)
+            if "column_header" not in tags:
+                content_items.append(item)
+
+        if not content_items:
+            return None
+
+        # Spočítat společný bbox všech content objektů
+        bboxes = []
+        for item in content_items:
+            item_bbox = self.canvas.bbox(item)
+            if item_bbox:  # Může být None pro neviditelné objekty
+                bboxes.append(item_bbox)
+
+        if not bboxes:
+            return None
+
+        # Najít min/max souřadnice
+        min_x = min(b[0] for b in bboxes)
+        min_y = min(b[1] for b in bboxes)
+        max_x = max(b[2] for b in bboxes)
+        max_y = max(b[3] for b in bboxes)
+
+        return (min_x, min_y, max_x, max_y)
+
+    def update_scrollregion_and_scrollbars(self):
+        """Aktualizuje scrollregion a viditelnost scrollbarů po změně obsahu."""
+        self.canvas.update_idletasks()
+
+        # Aktualizovat scrollregion podle obsahu BEZ záhlaví
+        # (záhlaví je floating element a nemá ovlivňovat scrollregion)
+        bbox = self._get_content_bbox_without_header()
+        if bbox:
+            buffer = 50
+            scroll_x1 = max(0, bbox[0] - buffer)
+            scroll_y1 = max(0, bbox[1] - buffer)
+            scroll_x2 = bbox[2] + buffer
+            scroll_y2 = bbox[3] + buffer
+            self.canvas.configure(scrollregion=(scroll_x1, scroll_y1, scroll_x2, scroll_y2))
+
+        # Aktualizovat viditelnost scrollbarů
+        self._update_scrollbars_visibility()
 
     def on_drop(self, event):
         files = self.canvas.tk.splitlist(event.data)

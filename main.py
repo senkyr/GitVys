@@ -13,7 +13,7 @@ def main():
         app = MainWindow()
         app.run()
     except KeyboardInterrupt:
-        print("\nAplikace ukončena uživatelem")
+        print("\nAplikace ukončena uživatelem.")
     except Exception as e:
         print(f"Neočekávaná chyba: {e}")
 
