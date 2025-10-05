@@ -23,7 +23,7 @@ class MainWindow:
             self.root = tk.Tk()
 
         # Defaultní hodnoty pro obnovení
-        self.default_title = "Git Visualizer v1.1.1"
+        self.default_title = "Git Visualizer v1.2.0"
         self.default_width = 600
         self.default_height = 400
 

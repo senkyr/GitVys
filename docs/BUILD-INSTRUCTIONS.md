@@ -44,7 +44,7 @@
 ### .exe se nespustí z jiných důvodů
 
 - Zkontroluj že máš všechny dependencies: `pip install -r requirements.txt`
-- Zkus spustit `python main.py` - pokud to nefunguje, oprav chyby a pak buildni znovu
+- Zkus spustit `python src/main.py` - pokud to nefunguje, oprav chyby a pak buildni znovu
 
 ### Build selže s "Permission denied" chybou
 

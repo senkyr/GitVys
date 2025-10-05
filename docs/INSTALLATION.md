@@ -17,13 +17,13 @@ pip install -r requirements.txt
 ### 2. Spuštění aplikace
 
 ```bash
-python main.py
+python src/main.py
 ```
 
 nebo
 
 ```bash
-python3 main.py
+python3 src/main.py
 ```
 
 ## Vytvoření spustitelného souboru (.exe)
@@ -38,8 +38,14 @@ pip install pyinstaller
 
 2. Vytvoř .exe soubor:
 
+**Doporučeno - použij build script:**
 ```bash
-pyinstaller --onefile --windowed --name="GitVisualizer" main.py
+python build/build.py
+```
+
+**Nebo manuálně:**
+```bash
+pyinstaller --onefile --windowed --name="GitVisualizer" --icon=build/icon.ico src/main.py
 ```
 
 3. Spustitelný soubor najdeš ve složce `dist/`

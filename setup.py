@@ -2,10 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
     name="git-visualizer",
-    version="1.1.0",
+    version="1.2.0",
     description="Simple Git repository visualizer for students",
     author="Git Visualizer Team",
-    packages=find_packages(),
+    packages=find_packages(where='src'),
+    package_dir={'': 'src'},
     install_requires=[
         "GitPython==3.1.40",
         "Pillow==10.1.0",

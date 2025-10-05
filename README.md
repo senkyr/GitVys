@@ -46,21 +46,29 @@ Viz [docs/INSTALLATION.md](docs/INSTALLATION.md) pro instrukce k instalaci a spu
 
 ```
 git-visualizer/
-├── main.py              # Vstupní bod aplikace
-├── gui/                 # GUI komponenty
-│   ├── main_window.py   # Hlavní okno
-│   ├── graph_canvas.py  # Graf komponenta
-│   └── drag_drop.py     # Drag & drop funkcionalita
-├── repo/                # Git operace
-│   └── repository.py    # Práce s Git repozitářem
-├── visualization/       # Vizualizace
-│   ├── graph_drawer.py  # Kreslení grafu
-│   ├── layout.py        # Rozmístění uzlů
-│   └── colors.py        # Barevné schéma
-└── utils/               # Pomocné utility
-    ├── data_structures.py # Datové struktury
-    ├── constants.py       # Konstanty aplikace
-    └── logging_config.py  # Centralizované logování
+├── src/                 # Zdrojový kód
+│   ├── main.py          # Vstupní bod aplikace
+│   ├── gui/             # GUI komponenty
+│   │   ├── main_window.py   # Hlavní okno
+│   │   ├── graph_canvas.py  # Graf komponenta
+│   │   └── drag_drop.py     # Drag & drop funkcionalita
+│   ├── repo/            # Git operace
+│   │   └── repository.py    # Práce s Git repozitářem
+│   ├── visualization/   # Vizualizace
+│   │   ├── graph_drawer.py  # Kreslení grafu
+│   │   ├── layout.py        # Rozmístění uzlů
+│   │   └── colors.py        # Barevné schéma
+│   └── utils/           # Pomocné utility
+│       ├── data_structures.py # Datové struktury
+│       ├── constants.py       # Konstanty aplikace
+│       └── logging_config.py  # Centralizované logování
+├── build/               # Build skripty a assety
+│   ├── build.py         # Build skript pro .exe
+│   ├── icon.ico         # Ikona aplikace
+│   └── feather.png      # Zdrojový asset ikony
+├── docs/                # Dokumentace
+├── dist/                # Build výstup (.exe)
+└── [config files]       # setup.py, requirements.txt, atd.
 ```
 
 ## Technologie

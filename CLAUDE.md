@@ -7,9 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Running the Application
 
 ```bash
-python main.py
+python src/main.py
 # or
-python3 main.py
+python3 src/main.py
 ```
 
 ### Installing Dependencies
@@ -22,7 +22,9 @@ pip install -r requirements.txt
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed --name="GitVisualizer" main.py
+python build/build.py
+# or manually:
+pyinstaller --onefile --windowed --name="GitVisualizer" --icon=build/icon.ico src/main.py
 ```
 
 The executable will be in the `dist/` folder.
@@ -31,22 +33,43 @@ The executable will be in the `dist/` folder.
 
 This is a Python desktop application that visualizes Git repository history using tkinter. The application follows a modular architecture with clear separation of concerns:
 
+### Project Structure
+
+```
+GitVys/
+├── src/                    # Source code
+│   ├── main.py            # Entry point - initializes the GUI
+│   ├── gui/               # UI components
+│   │   ├── main_window.py # Main application window with drag & drop
+│   │   ├── graph_canvas.py # Canvas component for rendering commit graph
+│   │   └── drag_drop.py   # Drag & drop operations for repository folders
+│   ├── repo/              # Git operations
+│   │   └── repository.py  # GitRepository class (uses GitPython)
+│   ├── visualization/     # Graph rendering logic
+│   │   ├── graph_drawer.py # Draws commit nodes and connections
+│   │   ├── layout.py      # Calculates positioning for commits/branches
+│   │   └── colors.py      # Branch color schemes
+│   └── utils/             # Utilities
+│       ├── data_structures.py # Commit and Branch data classes
+│       ├── logging_config.py  # Centralized logging
+│       └── constants.py   # Application-wide constants
+├── build/                 # Build scripts and assets
+│   ├── build.py          # Build script for creating .exe
+│   ├── icon.ico          # Application icon
+│   └── feather.png       # Icon source asset
+├── docs/                  # Documentation
+├── dist/                  # Build output (ignored by git)
+└── [config files]         # setup.py, requirements.txt, etc.
+```
+
 ### Core Components
 
-- **Main Entry Point**: `main.py` - Simple launcher that initializes the GUI
-- **GUI Layer**: `gui/` directory contains all UI components
-  - `main_window.py` - Main application window with drag & drop functionality
-  - `graph_canvas.py` - Canvas component for rendering the commit graph
-  - `drag_drop.py` - Handles drag & drop operations for repository folders
-- **Git Operations**: `repo/repository.py` - GitRepository class handles all Git operations using GitPython
-- **Visualization**: `visualization/` directory contains graph rendering logic
-  - `graph_drawer.py` - Draws commit nodes and connections on canvas
-  - `layout.py` - Calculates positioning for commits and branches
-  - `colors.py` - Manages branch color schemes
-- **Data Structures**: `utils/data_structures.py` - Defines Commit and Branch data classes
-- **Utilities**: `utils/` directory contains helper modules
-  - `logging_config.py` - Centralized logging configuration
-  - `constants.py` - Application-wide constants (layout, colors, UI dimensions)
+- **Main Entry Point**: `src/main.py` - Simple launcher that initializes the GUI
+- **GUI Layer**: `src/gui/` directory contains all UI components
+- **Git Operations**: `src/repo/repository.py` - GitRepository class handles all Git operations using GitPython
+- **Visualization**: `src/visualization/` directory contains graph rendering logic
+- **Data Structures**: `src/utils/data_structures.py` - Defines Commit and Branch data classes
+- **Utilities**: `src/utils/` directory contains helper modules
 
 ### Key Technologies
 
@@ -191,5 +214,5 @@ This project uses Git tags for versioning.
 
 4. **Update version in code:**
    - `setup.py` - version field
-   - `gui/main_window.py` - default_title with version number
-   - **IMPORTANT:** Version number in code MUST match the version in CHANGELOG.md (e.g., if CHANGELOG shows v1.1.1, gui/main_window.py must also show v1.1.1)
+   - `src/gui/main_window.py` - default_title with version number
+   - **IMPORTANT:** Version number in code MUST match the version in CHANGELOG.md (e.g., if CHANGELOG shows v1.2.0, src/gui/main_window.py must also show v1.2.0)

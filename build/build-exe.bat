@@ -3,12 +3,12 @@ echo GitVisualizer Build Script
 echo ========================
 echo.
 
-REM Přepnout do root složky projektu
+REM Prepnout do root slozky projektu
 cd /d "%~dp0\.."
 
 REM Spustit build script
 python build\build.py
 
 echo.
-echo Build dokončen! Výsledek je v dist\ složce.
+echo Build dokoncen! Vysledek je v dist\ slozce.
 pause

@@ -4,7 +4,7 @@ Všechny významné změny v tomto projektu.
 
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
-## [1.1.1] - 2025-10-04
+## [1.2.0] - 2025-10-05
 
 ### Added
 
@@ -16,12 +16,20 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
   - Tlačítko 📋 pro vložení URL ze schránky jedním kliknutím
   - Tooltip "Vložit ze schránky" při hover
   - Zvětšený emoji font (14pt) pro lepší viditelnost
-- **Ikona .exe souboru** (Tk/Tcl feather logo)
-  - Custom ikona pro .exe v Průzkumníku Windows
-  - Aplikace používá defaultní tkinter ikonu (také pírko)
+- **Ikona aplikace**
+  - Custom ikona pro .exe (feather/pírko logo)
+  - PNG formát uvnitř ICO (5 velikostí: 16, 24, 32, 48, 256px)
+  - Správné zobrazení v Průzkumníku Windows
+  - Ikona umístěna v `build/icon.ico`
 
 ### Changed
 
+- **Refaktoring struktury projektu**
+  - Přesun zdrojového kódu do `src/` složky
+  - Přesun build assets (ikona, feather.png) do `build/` složky
+  - Čistší root repozitáře (pouze config soubory a dokumentace)
+  - Aktualizace všech build skriptů pro novou strukturu
+  - Aktualizace `setup.py` pro src-based layout
 - **Vylepšení kvality kódu**
   - Robustnější error handling (40+ oprav bare exception)
   - Všechny exceptions jsou logovány s kontextem

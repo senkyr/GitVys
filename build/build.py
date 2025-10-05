@@ -14,8 +14,8 @@ def main():
     print("=" * 40)
 
     # Kontrola, že jsme ve správné složce (root projektu)
-    if not os.path.exists("main.py"):
-        print("CHYBA: main.py nenalezen. Spust script z root slozky projektu.")
+    if not os.path.exists("src/main.py"):
+        print("CHYBA: src/main.py nenalezen. Spust script z root slozky projektu.")
         sys.exit(1)
 
     # Kontrola tkinter
@@ -62,8 +62,8 @@ def main():
         if not safe_remove("dist"):
             print("VAROVANI: Nelze smazat dist/ - mozna je .exe spusteny. Pokracuji...")
 
-    if os.path.exists("build_temp"):
-        safe_remove("build_temp")
+    if os.path.exists("build/temp"):
+        safe_remove("build/temp")
 
     if os.path.exists("GitVisualizer.spec"):
         safe_remove("GitVisualizer.spec", is_file=True)
@@ -74,9 +74,9 @@ def main():
         "--onefile",                    # Jeden .exe soubor
         "--windowed",                   # Bez console okna
         "--name=GitVisualizer",         # Název výsledného .exe
-        "--icon=icon.ico",              # Ikona pro .exe (Tk feather logo)
+        "--icon=build/icon.ico",        # Ikona pro .exe (Tk feather logo)
         "--distpath=dist",              # Výstupní složka
-        "--workpath=build_temp",        # Dočasná složka
+        "--workpath=build/temp",        # Dočasná složka
         "--clean",                      # Vyčistit cache
         "--noconfirm",                  # Přepsat bez dotazu
 
@@ -107,7 +107,7 @@ def main():
         "--exclude-module=pytest",
         "--exclude-module=sphinx",
 
-        "main.py"                       # Vstupní soubor
+        "src/main.py"                   # Vstupní soubor
     ]
 
     print("\nSpoustim PyInstaller...")
@@ -148,13 +148,13 @@ def main():
 
     print("\nBuild dokoncen!")
 
-    # Cleanup build_temp
+    # Cleanup build/temp
     print("Mazani docasnych build souboru...")
-    if os.path.exists("build_temp"):
-        if safe_remove("build_temp"):
-            print("OK: build_temp/ smazan")
+    if os.path.exists("build/temp"):
+        if safe_remove("build/temp"):
+            print("OK: build/temp/ smazan")
         else:
-            print("VAROVANI: Nelze smazat build_temp/ - smazte rucne")
+            print("VAROVANI: Nelze smazat build/temp/ - smazte rucne")
 
     print(f"\nSpustitelny soubor: dist\\GitVisualizer.exe")
     print("Pro vytvoreni dalsiho buildu spust: build\\build-exe.bat")

@@ -122,7 +122,7 @@ dmypy.json
 .pyre/
 
 # GitVisualizer build artifacts
-build_temp/
+build/temp/
 *.exe
 *.log
 icon.ico.old*

@@ -41,22 +41,29 @@ Vytvořit jednoduchou desktop aplikaci pro vizualizaci Git repozitářů určeno
 
 ```
 git-visualizer/
-├── main.py              # Vstupní bod aplikace
-├── gui/
-│   ├── main_window.py   # Hlavní okno s drag & drop a URL support
-│   ├── graph_canvas.py  # Canvas pro graf s scrollbary
-│   └── drag_drop.py     # Drag & drop pro složky i URL
-├── repo/
-│   └── repository.py    # Git operace pomocí GitPython
-├── visualization/
-│   ├── graph_drawer.py  # Kreslení grafu, tagů, tooltipů, column resizing
-│   ├── layout.py        # Layout s lane recycling
-│   └── colors.py        # Barevné schéma s prefixovými větvemi
-├── utils/
-│   ├── data_structures.py # Commit, MergeBranch
-│   ├── constants.py       # Konstanty aplikace (layout, barvy, rozměry)
-│   └── logging_config.py  # Centralizované logování
-└── requirements.txt
+├── src/                 # Zdrojový kód
+│   ├── main.py          # Vstupní bod aplikace
+│   ├── gui/
+│   │   ├── main_window.py   # Hlavní okno s drag & drop a URL support
+│   │   ├── graph_canvas.py  # Canvas pro graf s scrollbary
+│   │   └── drag_drop.py     # Drag & drop pro složky i URL
+│   ├── repo/
+│   │   └── repository.py    # Git operace pomocí GitPython
+│   ├── visualization/
+│   │   ├── graph_drawer.py  # Kreslení grafu, tagů, tooltipů, column resizing
+│   │   ├── layout.py        # Layout s lane recycling
+│   │   └── colors.py        # Barevné schéma s prefixovými větvemi
+│   └── utils/
+│       ├── data_structures.py # Commit, MergeBranch
+│       ├── constants.py       # Konstanty aplikace (layout, barvy, rozměry)
+│       └── logging_config.py  # Centralizované logování
+├── build/               # Build skripty a assety
+│   ├── build.py         # Build script pro .exe
+│   ├── icon.ico         # Ikona aplikace
+│   └── feather.png      # Zdrojový asset ikony
+├── docs/                # Dokumentace
+├── requirements.txt
+└── setup.py
 ```
 
 ## 4. Datové struktury
