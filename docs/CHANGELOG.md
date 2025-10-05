@@ -16,6 +16,9 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
   - Tlačítko 📋 pro vložení URL ze schránky jedním kliknutím
   - Tooltip "Vložit ze schránky" při hover
   - Zvětšený emoji font (14pt) pro lepší viditelnost
+- **Ikona .exe souboru** (Tk/Tcl feather logo)
+  - Custom ikona pro .exe v Průzkumníku Windows
+  - Aplikace používá defaultní tkinter ikonu (také pírko)
 
 ### Changed
 
@@ -31,6 +34,9 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
     - tkinterdnd2==0.3.0
 - **Oprava URL dialogu**
   - Odstraněno systémové topmost - dialog je topmost jen v rámci aplikace
+- **Logging jen v dev módu**
+  - Produkční .exe nevytváří prázdný gitvisualizer.log
+  - Debug logging v .exe jen s `GITVIS_DEBUG=1` env proměnnou
 
 ### Security
 

@@ -20,3 +20,20 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## Third-Party Assets
+
+### Tk/Tcl Feather Logo
+
+The application icon (feather logo) is derived from the Tk/Tcl toolkit.
+
+Copyright © Regents of the University of California, Sun Microsystems, Inc.,
+Scriptics Corporation, ActiveState Corporation, Apple Inc. and other parties.
+
+Used under the Tk/Tcl license terms (BSD-style license). The Tk/Tcl license
+permits use, copy, modify, and distribute for any purpose with retention of
+copyright notices. No written agreement, license, or royalty fee is required.
+
+Full Tk/Tcl license: https://www.tcl.tk/software/tcltk/license.html

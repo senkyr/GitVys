@@ -30,7 +30,6 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
-*.spec
 
 # Installer logs
 pip-log.txt
@@ -124,8 +123,10 @@ dmypy.json
 
 # GitVisualizer build artifacts
 build_temp/
-*.spec
 *.exe
+*.log
+icon.ico.old*
+clear_icon_cache.bat
 
 # IDE and editor settings
 .vscode/

@@ -74,6 +74,7 @@ def main():
         "--onefile",                    # Jeden .exe soubor
         "--windowed",                   # Bez console okna
         "--name=GitVisualizer",         # Název výsledného .exe
+        "--icon=icon.ico",              # Ikona pro .exe (Tk feather logo)
         "--distpath=dist",              # Výstupní složka
         "--workpath=build_temp",        # Dočasná složka
         "--clean",                      # Vyčistit cache
