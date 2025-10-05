@@ -199,6 +199,66 @@ class DragDropFrame(ttk.Frame):
         if folder_path:
             self.process_folder(folder_path)
 
+    def _create_tooltip(self, widget, text):
+        """Vytvoří tooltip pro widget."""
+        tooltip = None
+
+        def show_tooltip(event):
+            nonlocal tooltip
+            if tooltip:
+                return
+
+            # Vytvořit tooltip okno
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_attributes("-topmost", True)
+
+            # Pozice tooltip okna
+            x = event.x_root + 10
+            y = event.y_root + 10
+            tooltip.wm_geometry(f"+{x}+{y}")
+
+            # Label s textem
+            label = tk.Label(
+                tooltip,
+                text=text,
+                background="#ffffe0",
+                foreground="black",
+                font=('Arial', 9),
+                relief="solid",
+                borderwidth=1,
+                padx=5,
+                pady=3
+            )
+            label.pack()
+
+        def hide_tooltip(event):
+            nonlocal tooltip
+            if tooltip:
+                tooltip.destroy()
+                tooltip = None
+
+        widget.bind('<Enter>', show_tooltip)
+        widget.bind('<Leave>', hide_tooltip)
+
+    def _paste_from_clipboard(self, entry_widget):
+        """Vloží obsah schránky do entry pole."""
+        try:
+            # Získat obsah schránky
+            clipboard_content = entry_widget.clipboard_get()
+
+            # Vymazat současný obsah a vložit ze schránky
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, clipboard_content.strip())
+
+        except tk.TclError:
+            # Schránka je prázdná nebo nedostupná
+            logger.debug("Clipboard is empty or unavailable")
+            pass
+        except Exception as e:
+            logger.warning(f"Failed to paste from clipboard: {e}")
+            pass
+
     def open_url_dialog(self):
         """Otevře dialog pro zadání URL repozitáře."""
         dialog = tk.Toplevel(self)
@@ -216,9 +276,29 @@ class DragDropFrame(ttk.Frame):
         )
         label.pack(pady=MARGIN)
 
-        # Entry - 80 znaků
-        entry = ttk.Entry(dialog, width=80)
-        entry.pack(padx=MARGIN, pady=(0, MARGIN))
+        # Frame pro Entry a Paste tlačítko
+        entry_frame = ttk.Frame(dialog)
+        entry_frame.pack(padx=MARGIN, pady=(0, MARGIN))
+
+        # Entry pro URL
+        entry = ttk.Entry(entry_frame, width=80)
+        entry.pack(side='left', padx=(0, 5))
+
+        # Paste tlačítko s clipboard emoji - ttk.Button s custom stylem pro větší font
+        style = ttk.Style()
+        style.configure('Emoji.TButton', font=('Segoe UI Emoji', 14))
+
+        paste_button = ttk.Button(
+            entry_frame,
+            text="📋",
+            width=3,
+            style='Emoji.TButton',
+            command=lambda: self._paste_from_clipboard(entry)
+        )
+        paste_button.pack(side='left')
+
+        # Tooltip pro paste tlačítko
+        self._create_tooltip(paste_button, "Vložit ze schránky")
 
         result = [None]
 
@@ -290,8 +370,8 @@ class DragDropFrame(ttk.Frame):
         cancel_button.pack(side='left', padx=5)
 
         # Nastavit soft modal dialog (bez grab_set)
+        # transient zajistí že dialog je nad parent oknem, ale ne systémově topmost
         dialog.transient(self.master)
-        dialog.attributes('-topmost', True)
 
         # Nastavit close handler na dialogu
         dialog.protocol("WM_DELETE_WINDOW", on_cancel)

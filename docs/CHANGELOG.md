@@ -12,6 +12,10 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
   - Logging do souboru `gitvisualizer.log`
   - File handler: WARNING a výše
   - Console handler: ERROR a výše
+- **Paste tlačítko v URL dialogu**
+  - Tlačítko 📋 pro vložení URL ze schránky jedním kliknutím
+  - Tooltip "Vložit ze schránky" při hover
+  - Zvětšený emoji font (14pt) pro lepší viditelnost
 
 ### Changed
 
@@ -25,6 +29,8 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
     - GitPython==3.1.40
     - Pillow==10.1.0
     - tkinterdnd2==0.3.0
+- **Oprava URL dialogu**
+  - Odstraněno systémové topmost - dialog je topmost jen v rámci aplikace
 
 ### Security
 
