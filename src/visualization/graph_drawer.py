@@ -522,8 +522,22 @@ class GraphDrawer:
         flag_width = getattr(self, 'flag_width', 80)
         required_tag_space = getattr(self, 'required_tag_space', flag_width + self.BASE_MARGIN)
 
-        # Šířka: margin + vlaječky + margin + tagy
-        auto_width = self.BASE_MARGIN + flag_width + self.BASE_MARGIN + required_tag_space
+        # Najít nejpravější commit (nejvíce vpravo vykreslená větev)
+        max_commit_x = 0
+        if hasattr(self, '_current_commits') and self._current_commits:
+            max_commit_x = max((commit.x for commit in self._current_commits), default=0)
+
+        # Šířka podle nejpravější větve: pozice + mezera na jednu větev + prostor pro tagy
+        # Mezera = BRANCH_SPACING (20px) - tak velká, aby se do ní vešla ještě jedna větev
+        # Prostor pro tagy: node_radius (konec node) + malá mezera + rozumný prostor pro tag
+        tag_reserve = self.node_radius + 15 + 50  # 8px (node) + 15px (mezera) + 50px (tag emoji+text)
+        width_based_on_branches = max_commit_x + self.BRANCH_SPACING + tag_reserve
+
+        # Minimální šířka: margin + vlaječky + margin + tagy (původní výpočet)
+        min_width = self.BASE_MARGIN + flag_width + self.BASE_MARGIN + required_tag_space
+
+        # Použít větší z obou
+        auto_width = max(width_based_on_branches, min_width)
         return auto_width
 
     def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
@@ -659,25 +673,46 @@ class GraphDrawer:
             text_x = table_start_x
 
             # Vytvořit kombinovaný text message + description
-            if commit.description_short:
-                # Určit barvu textu podle typu commitu
-                if getattr(commit, 'is_uncommitted', False):
-                    message_color = '#555555'  # Tmavě šedá pro WIP commity
-                else:
-                    message_color = 'black'  # Černá pro normální commity
+            # Určit barvu textu podle typu commitu
+            if getattr(commit, 'is_uncommitted', False):
+                message_color = '#555555'  # Tmavě šedá pro WIP commity
+            else:
+                message_color = 'black'  # Černá pro normální commity
 
-                # Message v odpovídající barvě + description v šedé
-                canvas.create_text(
+            # Nejprve zkrátit message podle dostupné šířky sloupce
+            if commit.description_short:
+                # S description - rezervovat prostor pro description
+                # Zkusit použít plný message, pokud se vejde
+                full_message_width = canvas.tk.call("font", "measure", font, commit.message)
+                min_desc_space = 100  # Minimální prostor pro description
+
+                # Dostupný prostor pro message je celá šířka sloupce - mezery - minimální prostor pro description
+                available_message_space = self.column_widths['message'] - 40 - min_desc_space
+
+                # Zkrátit message pokud je příliš dlouhý
+                message_to_display = self._truncate_text_to_width(
+                    canvas, font, commit.message, available_message_space
+                )
+
+                # Message v odpovídající barvě
+                message_item = canvas.create_text(
                     text_x, y,
-                    text=commit.message,
+                    text=message_to_display,
                     anchor='w',
                     font=font,
                     fill=message_color,
-                    tags="commit_text"
+                    tags=("commit_text", f"msg_{commit.hash}")
                 )
 
-                # Změřit šířku message pro pozici description
-                message_width = canvas.tk.call("font", "measure", font, commit.message)
+                # Přidat tooltip pokud byl zkrácen
+                if message_to_display != commit.message:
+                    canvas.tag_bind(f"msg_{commit.hash}", "<Enter>",
+                        lambda e, msg=commit.message: self._show_tooltip(e, msg))
+                    canvas.tag_bind(f"msg_{commit.hash}", "<Leave>",
+                        lambda e: self._hide_tooltip())
+
+                # Změřit šířku zobrazovaného message pro pozici description
+                message_width = canvas.tk.call("font", "measure", font, message_to_display)
                 desc_x = text_x + message_width + 20  # 20px mezera pro lepší rozlišení
 
                 # Vypočítat dostupný prostor pro description
@@ -705,21 +740,30 @@ class GraphDrawer:
                     canvas.tag_bind(f"desc_{commit.hash}", "<Leave>",
                         lambda e: self._hide_tooltip())
             else:
-                # Určit barvu textu podle typu commitu
-                if getattr(commit, 'is_uncommitted', False):
-                    message_color = '#555555'  # Tmavě šedá pro WIP commity
-                else:
-                    message_color = 'black'  # Černá pro normální commity
+                # Bez description - message může zabrat celou šířku sloupce
+                available_message_space = self.column_widths['message'] - 20  # 20px padding
 
-                # Jen message bez description
-                canvas.create_text(
+                # Zkrátit message pokud je příliš dlouhý
+                message_to_display = self._truncate_text_to_width(
+                    canvas, font, commit.message, available_message_space
+                )
+
+                # Message bez description
+                message_item = canvas.create_text(
                     text_x, y,
-                    text=commit.message,
+                    text=message_to_display,
                     anchor='w',
                     font=font,
                     fill=message_color,
-                    tags="commit_text"
+                    tags=("commit_text", f"msg_{commit.hash}")
                 )
+
+                # Přidat tooltip pokud byl zkrácen
+                if message_to_display != commit.message:
+                    canvas.tag_bind(f"msg_{commit.hash}", "<Enter>",
+                        lambda e, msg=commit.message: self._show_tooltip(e, msg))
+                    canvas.tag_bind(f"msg_{commit.hash}", "<Leave>",
+                        lambda e: self._hide_tooltip())
 
             text_x += self.column_widths['message']
 
