@@ -17,6 +17,14 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 - **Refresh (F5)** - obnovení repozitáře
 - **Jednoduché spuštění** - samostatný .exe soubor
 
+## Požadavky
+
+**Pro spuštění aplikace:**
+- [Git](https://git-scm.com/downloads) nainstalovaný v systému
+
+**Pro buildnutí ze zdrojového kódu:**
+- [Python 3.8+](https://www.python.org/downloads/)
+
 ## Rychlý start
 
 1. Stáhni a spusť `GitVisualizer.exe`
