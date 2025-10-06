@@ -10,6 +10,8 @@ from repo.repository import GitRepository
 from visualization.layout import GraphLayout
 from gui.drag_drop import DragDropFrame
 from gui.graph_canvas import GraphCanvas
+from gui.auth_dialog import GitHubAuthDialog
+from auth.token_storage import TokenStorage
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -40,6 +42,7 @@ class MainWindow:
         self.current_temp_clone = None  # Cesta k aktuálně otevřenému temp klonu
         self.display_name = None  # Reálný název repozitáře (pro klonované repo)
         self.tooltip_window = None  # Window pro tooltip s cestou k repozitáři
+        self.token_storage = TokenStorage()  # GitHub token storage
 
         # Vyčistit staré temp složky z předchozích sessions
         self._cleanup_old_temp_clones()
@@ -345,18 +348,87 @@ class MainWindow:
         """Worker thread pro klonování repozitáře."""
         try:
             from git import Repo
+            from git.exc import GitCommandError
 
-            # Klonovat repozitář
-            Repo.clone_from(url, path)
+            # Pokusit se klonovat bez autentizace
+            try:
+                Repo.clone_from(url, path)
+                # Úspěch - načíst jako běžný repo
+                self.root.after(0, self._on_clone_complete, path)
+                return
 
-            # Po úspěšném klonování načíst jako běžný repo
-            self.root.after(0, self._on_clone_complete, path)
+            except GitCommandError as clone_error:
+                # Zkontrolovat, zda je to chyba autentizace
+                error_message = str(clone_error).lower()
+                is_auth_error = any(keyword in error_message for keyword in [
+                    'authentication', 'forbidden', '403', '401',
+                    'could not read', 'repository not found'
+                ])
+
+                if not is_auth_error:
+                    # Jiná chyba než autentizace - propagovat
+                    raise
+
+                # Chyba autentizace - zkusit s tokenem
+                logger.info("Authentication required for cloning, attempting with token...")
+
+                # Načíst uložený token
+                token = self.token_storage.load_token()
+
+                # Pokud token neexistuje, zobrazit auth dialog
+                if not token:
+                    logger.info("No saved token found, showing auth dialog...")
+                    token = self.root.after(0, self._show_auth_dialog_sync)
+
+                    # Počkat na výsledek z auth dialogu (v main threadu)
+                    import time
+                    timeout = 300  # 5 minut
+                    start_time = time.time()
+                    while not hasattr(self, '_auth_dialog_result') and time.time() - start_time < timeout:
+                        time.sleep(0.1)
+
+                    if hasattr(self, '_auth_dialog_result'):
+                        token = self._auth_dialog_result
+                        delattr(self, '_auth_dialog_result')
+                    else:
+                        raise Exception("Autentizace vypršela nebo byla zrušena")
+
+                if not token:
+                    raise Exception("Autentizace se nezdařila")
+
+                # Uložit token pro příští použití
+                self.token_storage.save_token(token)
+
+                # Vytvořit autentizovanou URL
+                # Formát: https://{token}@github.com/user/repo.git
+                if url.startswith('https://'):
+                    auth_url = url.replace('https://', f'https://{token}@')
+                elif url.startswith('http://'):
+                    auth_url = url.replace('http://', f'http://{token}@')
+                else:
+                    # SSH URL nebo jiný formát - nemůžeme použít token
+                    raise Exception("Token autentizace funguje pouze s HTTPS URLs")
+
+                # Retry klonování s autentizovanou URL
+                logger.info("Retrying clone with authentication...")
+                self.root.after(0, self.update_status, "Klonuji s autentizací...")
+                Repo.clone_from(auth_url, path)
+
+                # Úspěch
+                self.root.after(0, self._on_clone_complete, path)
 
         except Exception as e:
             # Smazat temp složku při chybě klonování
             self.root.after(0, self._cleanup_single_clone, path)
             self.root.after(0, self.show_error, f"Chyba klonování:\n{str(e)}")
             self.root.after(0, self.progress.stop)
+
+    def _show_auth_dialog_sync(self):
+        """Zobrazí auth dialog v main threadu a uloží výsledek."""
+        dialog = GitHubAuthDialog(self.root)
+        token = dialog.show()
+        self._auth_dialog_result = token
+        return token
 
     def _on_clone_complete(self, path: str):
         """Callback po úspěšném klonování."""
