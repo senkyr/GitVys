@@ -39,6 +39,7 @@ class MainWindow:
         self.temp_clones = []  # Seznam temp složek ke smazání při zavření
         self.current_temp_clone = None  # Cesta k aktuálně otevřenému temp klonu
         self.display_name = None  # Reálný název repozitáře (pro klonované repo)
+        self.tooltip_window = None  # Window pro tooltip s cestou k repozitáři
 
         # Vyčistit staré temp složky z předchozích sessions
         self._cleanup_old_temp_clones()
@@ -171,6 +172,10 @@ class MainWindow:
         )
         self.repo_name_label.grid(row=0, column=0, sticky='w')
 
+        # Přidat tooltip pro zobrazení cesty k repozitáři
+        self.repo_name_label.bind('<Enter>', self._show_repo_path_tooltip)
+        self.repo_name_label.bind('<Leave>', self._hide_repo_path_tooltip)
+
         self.stats_label = ttk.Label(
             self.info_frame,
             text="",
@@ -225,6 +230,45 @@ class MainWindow:
         # Přidat F5 key binding
         self.root.bind('<F5>', lambda event: self.refresh_repository())
         self.root.focus_set()  # Zajistit focus pro key bindings
+
+    def _show_repo_path_tooltip(self, event):
+        """Zobrazí tooltip s cestou k repozitáři."""
+        if not self.git_repo or not self.git_repo.repo_path:
+            return
+
+        # Skrýt existující tooltip pokud existuje
+        self._hide_repo_path_tooltip()
+
+        # Vytvořit tooltip window
+        self.tooltip_window = tk.Toplevel(self.root)
+        self.tooltip_window.wm_overrideredirect(True)
+        self.tooltip_window.wm_attributes("-topmost", True)
+
+        # Nastavit pozici tooltip okna pod labelem
+        x = event.widget.winfo_rootx() + 10
+        y = event.widget.winfo_rooty() + event.widget.winfo_height() + 5
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+
+        # Vytvořit label s cestou
+        tooltip_text = self.git_repo.repo_path
+        label = tk.Label(
+            self.tooltip_window,
+            text=tooltip_text,
+            background="#ffffe0",
+            foreground="black",
+            font=('Arial', 9),
+            relief="solid",
+            borderwidth=1,
+            padx=8,
+            pady=4
+        )
+        label.pack()
+
+    def _hide_repo_path_tooltip(self, event=None):
+        """Skryje tooltip okno."""
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
 
     def on_repository_selected(self, repo_path: str):
         # Detekce URL vs lokální cesta
