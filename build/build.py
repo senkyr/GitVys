@@ -65,13 +65,16 @@ def main():
     if os.path.exists("build/temp"):
         safe_remove("build/temp")
 
+    # Absolutní cesta k ikoně (relativní cesta nefunguje s custom workpath)
+    icon_path = str(Path("build/icon.ico").resolve())
+
     # PyInstaller parametry
     pyinstaller_args = [
         "pyinstaller",
         "--onefile",                    # Jeden .exe soubor
         "--windowed",                   # Bez console okna
         "--name=GitVisualizer",         # Název výsledného .exe
-        "--icon=build/icon.ico",        # Ikona pro .exe (Tk feather logo)
+        f"--icon={icon_path}",          # Ikona pro .exe
         "--distpath=dist",              # Výstupní složka
         "--workpath=build/temp",        # Dočasná složka
         "--specpath=build/temp",        # Složka pro .spec soubor

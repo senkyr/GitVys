@@ -20,10 +20,29 @@ pip install -r requirements.txt
 
 ### Building Executable
 
+**Automated build (recommended):**
+
 ```bash
+build\build-exe.bat
+```
+
+This script automatically:
+- Checks Python availability
+- Installs dependencies from `requirements.txt`
+- Installs PyInstaller (build dependency)
+- Runs `build.py` to create the executable
+
+**Manual build:**
+
+```bash
+pip install -r requirements.txt
 pip install pyinstaller
 python build/build.py
-# or manually:
+```
+
+**Direct PyInstaller command:**
+
+```bash
 pyinstaller --onefile --windowed --name="GitVisualizer" --icon=build/icon.ico src/main.py
 ```
 
@@ -59,7 +78,8 @@ GitVys/
 │       ├── logging_config.py  # Centralized logging (~/.gitvys/)
 │       └── constants.py   # Application-wide constants
 ├── build/                 # Build scripts and assets
-│   ├── build.py          # Build script for creating .exe
+│   ├── build-exe.bat     # Automated build script (installs deps + builds)
+│   ├── build.py          # Python build script for creating .exe
 │   ├── icon.ico          # Application icon
 │   └── feather.png       # Icon source asset
 ├── docs/                  # Documentation
@@ -179,9 +199,12 @@ The application uses centralized logging for error tracking and debugging:
 **Dependencies**:
 
 - Pinned versions in `requirements.txt` for reproducibility:
-  - `GitPython==3.1.40`
-  - `Pillow==10.1.0`
-  - `tkinterdnd2==0.3.0`
+  - `GitPython==3.1.45`
+  - `Pillow==11.0.0`
+  - `tkinterdnd2==0.4.2`
+  - `requests==2.32.3`
+- Build dependency (not in requirements.txt):
+  - `pyinstaller` (latest version, auto-installed by `build-exe.bat`)
 
 ## Czech Language Support
 

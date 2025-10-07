@@ -36,4 +36,4 @@ Used under the Tk/Tcl license terms (BSD-style license). The Tk/Tcl license
 permits use, copy, modify, and distribute for any purpose with retention of
 copyright notices. No written agreement, license, or royalty fee is required.
 
-Full Tk/Tcl license: https://www.tcl.tk/software/tcltk/license.html
+Full Tk/Tcl license: <https://www.tcl.tk/software/tcltk/license.html>

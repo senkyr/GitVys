@@ -2,6 +2,43 @@
 
 Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená především pro studenty.
 
+## Rychlý start
+
+1. Stáhni a spusť `GitVisualizer.exe` (pozor na požadavky)
+2. Přetáhni složku Git repozitáře do aplikace
+3. Prohlížej si historii commitů graficky
+
+## Požadavky
+
+### Pro spuštění aplikace (.exe)
+
+- **[Git](https://git-scm.com/downloads)** - nutný pro práci s repozitáři
+- Python **není** potřeba (je zabalený v .exe)
+
+### Pro spuštění ze zdrojového kódu (development)
+
+- **[Python 3.8+](https://www.python.org/downloads/)**
+- **[Git](https://git-scm.com/downloads)**
+- Nainstalovat závislosti z `requirements.txt`:
+
+  ```bash
+  pip install -r requirements.txt
+  cd src
+  python main.py
+  ```
+
+### Pro buildnutí .exe souboru
+
+- **[Python 3.8+](https://www.python.org/downloads/)**
+- **PyInstaller**:
+
+  ```bash
+  pip install pyinstaller
+  ```
+
+- Build skript: `build/build-exe.bat`
+- Build příkaz: `python build/build.py`
+
 ## Funkce
 
 - **Drag & drop rozhraní** - jednoduše přetáhni složku repozitáře nebo URL
@@ -16,34 +53,6 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 - **Barevné rozlišení větví** - každá větev má svou barvu
 - **Refresh (F5)** - obnovení repozitáře
 - **Jednoduché spuštění** - samostatný .exe soubor
-
-## Požadavky
-
-### Pro spuštění aplikace (.exe)
-- **[Git](https://git-scm.com/downloads)** - nutné pro práci s repozitáři
-- Python **není** potřeba (je zabalený v .exe)
-
-### Pro spuštění ze zdrojového kódu (development)
-- **[Python 3.8+](https://www.python.org/downloads/)**
-- **[Git](https://git-scm.com/downloads)**
-- Závislosti z `requirements.txt`:
-  ```bash
-  pip install -r requirements.txt
-  ```
-
-### Pro buildnutí .exe
-- **[Python 3.8+](https://www.python.org/downloads/)**
-- **PyInstaller**:
-  ```bash
-  pip install pyinstaller
-  ```
-- Build příkaz: `python build/build.py`
-
-## Rychlý start
-
-1. Stáhni a spusť `GitVisualizer.exe`
-2. Přetáhni složku Git repozitáře do aplikace
-3. Prohlížej si historii commitů graficky
 
 ## Screenshot
 

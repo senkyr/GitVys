@@ -17,6 +17,88 @@ from utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+class CustomProgressBar(tk.Canvas):
+    """Canvas-based progress bar s podporou změny barev"""
+
+    def __init__(self, parent, **kwargs):
+        # Extrahovat custom parametry
+        self.mode = kwargs.pop('mode', 'determinate')
+        self.value = kwargs.pop('value', 0)
+
+        # Výchozí rozměry pro podobný vzhled jako ttk.Progressbar
+        if 'height' not in kwargs:
+            kwargs['height'] = 22
+        if 'highlightthickness' not in kwargs:
+            kwargs['highlightthickness'] = 1
+        if 'highlightbackground' not in kwargs:
+            kwargs['highlightbackground'] = '#aaaaaa'
+        if 'bg' not in kwargs:
+            kwargs['bg'] = '#e0e0e0'
+
+        super().__init__(parent, **kwargs)
+
+        self.color = '#4CAF50'  # Výchozí zelená
+        self.is_running = False
+        self.animation_position = 0
+        self.animation_id = None
+
+        self.bind('<Configure>', self._redraw)
+        self._redraw()
+
+    def config(self, **kwargs):
+        """Konfigurace progress baru - podporuje value a color parametry"""
+        if 'value' in kwargs:
+            self.value = kwargs.pop('value')
+        if 'color' in kwargs:
+            self.color = kwargs.pop('color')
+        if kwargs:  # Zbytek předat Canvas
+            super().config(**kwargs)
+        self._redraw()
+
+    def start(self):
+        """Spustit indeterminate mode (animace)"""
+        self.is_running = True
+        self._animate()
+
+    def stop(self):
+        """Zastavit indeterminate mode"""
+        self.is_running = False
+        if self.animation_id:
+            self.after_cancel(self.animation_id)
+            self.animation_id = None
+        self._redraw()
+
+    def _animate(self):
+        """Animační smyčka pro indeterminate mode"""
+        if not self.is_running:
+            return
+        self.animation_position = (self.animation_position + 2) % 100
+        self._redraw()
+        self.animation_id = self.after(20, self._animate)
+
+    def _redraw(self, event=None):
+        """Překreslit progress bar"""
+        self.delete('all')
+        width = self.winfo_width()
+        height = self.winfo_height()
+
+        if width <= 1:
+            width = 400  # Fallback během inicializace
+
+        if self.is_running:
+            # Indeterminate mode - pohybující se blok
+            block_width = width // 4
+            x = (self.animation_position / 100) * (width - block_width)
+            self.create_rectangle(x, 2, x + block_width, height - 2,
+                                fill=self.color, outline='')
+        else:
+            # Determinate mode - fixed progress
+            progress_width = (self.value / 100) * width
+            if progress_width > 0:
+                self.create_rectangle(2, 2, progress_width - 2, height - 2,
+                                    fill=self.color, outline='')
+
+
 class MainWindow:
     def __init__(self):
         if TkinterDnD is not None:
@@ -214,7 +296,7 @@ class MainWindow:
         self.status_label = ttk.Label(self.status_frame, text="Připraven")
         self.status_label.grid(row=0, column=0, sticky='w')
 
-        self.progress = ttk.Progressbar(
+        self.progress = CustomProgressBar(
             self.status_frame,
             mode='determinate',
             value=0
@@ -297,7 +379,7 @@ class MainWindow:
             self.is_cloned_repo = False  # Lokální repo, ne klonované
             self.display_name = None  # Resetovat display name pro lokální repo
             self.update_status("Načítám repozitář...")
-            self.progress.config(value=50)
+            self.progress.config(value=50, color='#4CAF50')
             self.progress.start()
 
             thread = threading.Thread(
@@ -335,6 +417,7 @@ class MainWindow:
         self.display_name = repo_name  # Uložit reálný název pro pozdější zobrazení
 
         self.update_status(f"Klonuji {repo_name}...")
+        self.progress.config(color='#4CAF50')
         self.progress.start()
 
         thread = threading.Thread(
@@ -563,6 +646,7 @@ class MainWindow:
         else:
             # Obnovit jen lokálně
             self.update_status("Načítám repozitář...")
+            self.progress.config(color='#4CAF50')
             self.progress.start()
 
             thread = threading.Thread(
@@ -595,6 +679,7 @@ class MainWindow:
 
         self.fetch_button.config(text="Načítám...", state="disabled")
         self.update_status("Načítám remote větve...")
+        self.progress.config(color='#4CAF50')
         self.progress.start()
 
         thread = threading.Thread(
@@ -660,7 +745,7 @@ class MainWindow:
         self.fetch_button.config(text=button_text, state="normal")
 
         self.progress.stop()
-        self.progress.config(value=100)
+        self.progress.config(value=100, color='#2196F3')
         self.update_status(f"Načteno {len(commits)} commitů (včetně remote)")
 
         # Zobrazit Refresh tlačítko (pokud už není zobrazené)
@@ -725,7 +810,7 @@ class MainWindow:
         self.root.after(50, lambda: self._resize_window_for_content(commits))
 
         self.progress.stop()
-        self.progress.config(value=100)
+        self.progress.config(value=100, color='#2196F3')
         self.update_status(f"Načteno {len(commits)} commitů")
 
         # Nastavit text fetch tlačítka podle zdroje repozitáře
@@ -777,12 +862,12 @@ class MainWindow:
         self.root.geometry(f"{self.default_width}x{self.default_height}")
         self._center_window(self.default_width, self.default_height)
 
-        self.progress.config(value=0)
+        self.progress.config(value=0, color='#4CAF50')
         self.update_status("Připraven")
 
     def show_error(self, message: str):
         self.progress.stop()
-        self.progress.config(value=0)
+        self.progress.config(value=0, color='#4CAF50')
         self.update_status("Chyba")
         messagebox.showerror("Chyba", message)
 
