@@ -1,6 +1,7 @@
 import tkinter as tk
 from typing import List, Dict, Tuple
 import math
+from collections import Counter
 from utils.data_structures import Commit
 from utils.logging_config import get_logger
 from utils.constants import (
@@ -593,7 +594,8 @@ class GraphDrawer:
                     fill=fill_color,
                     outline=outline_color,
                     width=1,
-                    stipple=stipple_pattern
+                    stipple=stipple_pattern,
+                    tags=f"node_{commit.hash}"
                 )
             elif commit.is_remote:
                 # Bledší verze branch_color (50% transparence simulace)
@@ -604,7 +606,8 @@ class GraphDrawer:
                     x + self.node_radius, y + self.node_radius,
                     fill=fill_color,
                     outline=outline_color,
-                    width=1
+                    width=1,
+                    tags=f"node_{commit.hash}"
                 )
             else:
                 # Normální commity
@@ -615,7 +618,8 @@ class GraphDrawer:
                     x + self.node_radius, y + self.node_radius,
                     fill=fill_color,
                     outline=outline_color,
-                    width=1
+                    width=1,
+                    tags=f"node_{commit.hash}"
                 )
 
             # Zobrazit vlaječku podle použitého režimu
@@ -832,6 +836,23 @@ class GraphDrawer:
                     fill='#666666',
                     tags="commit_text"
                 )
+
+        # Detekovat dominantního autora (>80% commitů)
+        author_counts = Counter(commit.author for commit in commits)
+        total_commits = len(commits)
+        dominant_author = None
+        if author_counts and total_commits > 0:
+            most_common_author, count = author_counts.most_common(1)[0]
+            if count / total_commits > 0.8:
+                dominant_author = most_common_author
+
+        # Přidat tooltips s autorem pouze pro ne-dominantní autory
+        for commit in commits:
+            if commit.author != dominant_author:
+                canvas.tag_bind(f"node_{commit.hash}", "<Enter>",
+                    lambda e, author=commit.author: self._show_tooltip(e, author))
+                canvas.tag_bind(f"node_{commit.hash}", "<Leave>",
+                    lambda e: self._hide_tooltip())
 
     def _show_tooltip(self, event, description_text: str):
         """Zobrazí tooltip s kompletním description textem."""
