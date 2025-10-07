@@ -42,11 +42,16 @@ Vytvořit jednoduchou desktop aplikaci pro vizualizaci Git repozitářů určeno
 ```
 git-visualizer/
 ├── src/                 # Zdrojový kód
-│   ├── main.py          # Vstupní bod aplikace
+│   ├── main.py          # Vstupní bod aplikace (s Git detekcí)
+│   ├── auth/            # GitHub OAuth autentizace
+│   │   ├── __init__.py
+│   │   ├── github_auth.py    # OAuth Device Flow pro GitHub
+│   │   └── token_storage.py  # Ukládání tokenu (~/.gitvys/)
 │   ├── gui/
 │   │   ├── main_window.py   # Hlavní okno s drag & drop a URL support
 │   │   ├── graph_canvas.py  # Canvas pro graf s scrollbary
-│   │   └── drag_drop.py     # Drag & drop pro složky i URL
+│   │   ├── drag_drop.py     # Drag & drop pro složky i URL
+│   │   └── auth_dialog.py   # Dialog pro OAuth autorizaci
 │   ├── repo/
 │   │   └── repository.py    # Git operace pomocí GitPython
 │   ├── visualization/
@@ -56,7 +61,7 @@ git-visualizer/
 │   └── utils/
 │       ├── data_structures.py # Commit, MergeBranch
 │       ├── constants.py       # Konstanty aplikace (layout, barvy, rozměry)
-│       └── logging_config.py  # Centralizované logování
+│       └── logging_config.py  # Centralizované logování (~/.gitvys/)
 ├── build/               # Build skripty a assety
 │   ├── build.py         # Build script pro .exe
 │   ├── icon.ico         # Ikona aplikace

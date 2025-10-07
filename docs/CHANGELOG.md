@@ -4,6 +4,69 @@ Všechny významné změny v tomto projektu.
 
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
+## [1.3.0] - 2025-10-07
+
+### Added
+
+- **OAuth Device Flow autentizace pro GitHub**
+  - Podpora pro private GitHub repozitáře
+  - Automatická autorizace přes GitHub OAuth Device Flow
+  - Uložení tokenu do `~/.gitvys/github_token`
+  - User-friendly dialog s device code a progress barem
+  - Automatické otevření GitHubu v prohlížeči
+  - Nové moduly: `auth/github_auth.py`, `auth/token_storage.py`, `gui/auth_dialog.py`
+- **Detekce chybějícího Gitu při startu**
+  - Kontrola dostupnosti Gitu při spuštění aplikace
+  - User-friendly dialog s odkazem na stažení Git
+  - Elegantní ukončení místo crashe s chybovou hláškou
+- **Tooltip s cestou k repozitáři**
+  - Zobrazení plné cesty při hover nad názvem repozitáře
+  - Funguje i pro klonované remote repozitáře (temp složka)
+
+### Changed
+
+- **Dynamické zkracování commit message**
+  - Message se zkracuje podle skutečné šířky sloupce (ne pevných 50 znaků)
+  - Tooltip zobrazí plný text při hover nad zkráceným textem
+  - Optimální využití prostoru i u složitých repozitářů s dlouhými zprávami
+- **Vylepšení šířky grafického sloupce**
+  - Automatický výpočet podle nejvíce napravo vykreslené větve
+  - Optimální mezera mezi větvemi a textem (právě na jednu větev)
+  - Eliminace zbytečně velkých prázdných mezer
+- **Centralizované umístění log souboru**
+  - Log soubor se vytváří v `~/.gitvys/gitvisualizer.log` (místo CWD)
+  - Windows: `%USERPROFILE%\.gitvys\gitvisualizer.log`
+  - Linux/Mac: `~/.gitvys/gitvisualizer.log`
+  - Konzistentní s GitHub token storage
+  - Žádné "špinění" různých složek v systému
+- **Aktualizace dependencies na nejnovější verze**
+  - GitPython 3.1.40 → 3.1.45 (oprava CVE-2024-22190)
+  - Pillow 10.1.0 → 11.0.0
+  - tkinterdnd2 0.3.0 → 0.4.2
+  - Přidán requests==2.32.3 (pro OAuth komunikaci)
+- **Vylepšení README.md**
+  - Upřesnění požadavků pro .exe vs. development vs. build
+  - Jasně uvedeno, že .exe nevyžaduje Python (je zabalený)
+  - Přímé odkazy na instalace Git a Pythonu
+
+### Fixed
+
+- **Build proces opravy**
+  - `.spec` soubor se nyní generuje do `build/temp/` (ne root)
+  - `*.spec` přidán do `.gitignore`
+  - Přidány chybějící `--hidden-import` pro OAuth moduly
+  - `--collect-all=git` a `--collect-all=gitdb` pro kompletní Git dependencies
+  - Oprava zabalení všech potřebných modulů do .exe
+- **Oprava překrývání textu**
+  - Commit message se už nepřekrývají u složitých repozitářů
+  - Správné zkracování podle dostupného prostoru
+
+### Security
+
+- **Aktualizace GitPython na 3.1.45**
+  - Oprava CVE-2024-22190 (High Severity - Untrusted search path)
+  - Bezpečnostní záplata pro Windows systémy
+
 ## [1.2.0] - 2025-10-05
 
 ### Added

@@ -100,11 +100,26 @@ Můžeš otevřít repozitář přímo z URL:
 - **F5** - Obnovit repozitář
 - **Ctrl+C** - Ukončit aplikaci (v příkazové řádce)
 
+### OAuth pro private repozitáře
+
+Aplikace podporuje přístup k soukromým GitHub repozitářům pomocí OAuth Device Flow:
+
+- Při prvním pokusu o klonování private repozitáře se zobrazí autorizační dialog
+- Klikni "Otevřít GitHub v prohlížeči" a zadej zobrazený kód
+- Token se automaticky uloží do `~/.gitvys/github_token`
+- Příští klonování private repozitářů proběhne automaticky
+
+**Umístění tokenu:**
+- Windows: `%USERPROFILE%\.gitvys\github_token`
+- Linux/Mac: `~/.gitvys/github_token`
+
 ### Logování
 
 Aplikace vytváří log soubor pro debugging:
 
-- **Umístění**: `gitvisualizer.log` v aktuálním adresáři
+- **Umístění**: `~/.gitvys/gitvisualizer.log`
+  - Windows: `%USERPROFILE%\.gitvys\gitvisualizer.log`
+  - Linux/Mac: `~/.gitvys/gitvisualizer.log`
 - **Obsah**: Warnings a errors z běhu aplikace
 - **Formát**: `YYYY-MM-DD HH:MM:SS - modul - LEVEL - zpráva`
 - **Účel**: Pomoc při řešení problémů a debugování
@@ -132,7 +147,7 @@ Pokud narazíš na problém, zkontroluj log soubor pro detaily.
 
 - Zkontroluj, že je URL správná Git URL (začíná `https://`, `http://`, nebo `git@`)
 - Zkontroluj internetové připojení
-- Některé repozitáře vyžadují autentizaci - použij lokální klon místo URL
+- Private repozitáře vyžadují OAuth autentizaci - aplikace automaticky zobrazí autorizační dialog
 
 ### "URL byla odmítnuta" / Untrusted Git host
 
@@ -160,8 +175,16 @@ Aplikace z bezpečnostních důvodů akceptuje pouze důvěryhodné hosty:
 
 ### Chyby v log souboru
 
-Pokud vidíš warnings v `gitvisualizer.log`:
+Pokud vidíš warnings v `~/.gitvys/gitvisualizer.log`:
 
 - **"Failed to..."** warnings jsou normální pro některé operace (např. remote větve u lokálního repo)
 - **ERROR** zprávy indikují skutečný problém - nahlásit jako issue
 - Log file pomáhá při reportování bugů
+
+### Git není nainstalován
+
+Pokud se při spuštění zobrazí chybová hláška o chybějícím Gitu:
+
+- Stáhni a nainstaluj Git z [git-scm.com/downloads](https://git-scm.com/downloads)
+- Restartuj aplikaci po instalaci
+- Git je vyžadován pro práci s repozitáři

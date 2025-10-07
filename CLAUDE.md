@@ -39,10 +39,15 @@ This is a Python desktop application that visualizes Git repository history usin
 GitVys/
 ├── src/                    # Source code
 │   ├── main.py            # Entry point - initializes the GUI
+│   ├── auth/              # GitHub OAuth authentication
+│   │   ├── __init__.py    # Auth module exports
+│   │   ├── github_auth.py # OAuth Device Flow for GitHub
+│   │   └── token_storage.py # Token persistence (~/.gitvys/)
 │   ├── gui/               # UI components
 │   │   ├── main_window.py # Main application window with drag & drop
 │   │   ├── graph_canvas.py # Canvas component for rendering commit graph
-│   │   └── drag_drop.py   # Drag & drop operations for repository folders
+│   │   ├── drag_drop.py   # Drag & drop operations for repository folders
+│   │   └── auth_dialog.py # OAuth authorization dialog
 │   ├── repo/              # Git operations
 │   │   └── repository.py  # GitRepository class (uses GitPython)
 │   ├── visualization/     # Graph rendering logic
@@ -51,7 +56,7 @@ GitVys/
 │   │   └── colors.py      # Branch color schemes
 │   └── utils/             # Utilities
 │       ├── data_structures.py # Commit and Branch data classes
-│       ├── logging_config.py  # Centralized logging
+│       ├── logging_config.py  # Centralized logging (~/.gitvys/)
 │       └── constants.py   # Application-wide constants
 ├── build/                 # Build scripts and assets
 │   ├── build.py          # Build script for creating .exe
@@ -64,12 +69,13 @@ GitVys/
 
 ### Core Components
 
-- **Main Entry Point**: `src/main.py` - Simple launcher that initializes the GUI
-- **GUI Layer**: `src/gui/` directory contains all UI components
+- **Main Entry Point**: `src/main.py` - Simple launcher that initializes the GUI and checks Git availability
+- **Auth Layer**: `src/auth/` directory contains GitHub OAuth authentication (Device Flow)
+- **GUI Layer**: `src/gui/` directory contains all UI components including OAuth dialog
 - **Git Operations**: `src/repo/repository.py` - GitRepository class handles all Git operations using GitPython
 - **Visualization**: `src/visualization/` directory contains graph rendering logic
 - **Data Structures**: `src/utils/data_structures.py` - Defines Commit and Branch data classes
-- **Utilities**: `src/utils/` directory contains helper modules
+- **Utilities**: `src/utils/` directory contains helper modules (logging, constants)
 
 ### Key Technologies
 
@@ -77,6 +83,7 @@ GitVys/
 - **GitPython** for Git repository operations
 - **Pillow** for image processing
 - **tkinterdnd2** for drag & drop functionality
+- **requests** for OAuth HTTP communication with GitHub API
 
 ### Application Flow
 
@@ -94,9 +101,11 @@ GitVys/
 ### Features
 
 - **URL Support**: Clone remote repositories (GitHub, GitLab, Bitbucket) to temp directory
+- **Private Repository Support**: OAuth Device Flow authentication for private GitHub repositories
 - **Temp Clone Management**: Automatic cleanup of cloned repositories with proper Windows file handle management
 - **Tags**: Display Git tags with emoji icons (🏷️ normal, 📌 release, 🚀 version) and tooltips for annotated tags
 - **Remote Branches**: Load remote branches via "Načíst remote/větve" button
+- **Git Detection**: Startup check for Git availability with user-friendly error dialog
 - **Interactive Columns**: Resize column widths by dragging separators
 - **Smooth Scrolling**: Momentum-based scrolling with acceleration
 - **Tooltips**: Hover tooltips for truncated text (commits, authors, branch names, tags)
