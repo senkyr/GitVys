@@ -19,11 +19,25 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 
 ## Požadavky
 
-**Pro spuštění aplikace:**
-- [Git](https://git-scm.com/downloads) nainstalovaný v systému
+### Pro spuštění aplikace (.exe)
+- **[Git](https://git-scm.com/downloads)** - nutné pro práci s repozitáři
+- Python **není** potřeba (je zabalený v .exe)
 
-**Pro buildnutí ze zdrojového kódu:**
-- [Python 3.8+](https://www.python.org/downloads/)
+### Pro spuštění ze zdrojového kódu (development)
+- **[Python 3.8+](https://www.python.org/downloads/)**
+- **[Git](https://git-scm.com/downloads)**
+- Závislosti z `requirements.txt`:
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+### Pro buildnutí .exe
+- **[Python 3.8+](https://www.python.org/downloads/)**
+- **PyInstaller**:
+  ```bash
+  pip install pyinstaller
+  ```
+- Build příkaz: `python build/build.py`
 
 ## Rychlý start
 

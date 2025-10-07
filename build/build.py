@@ -65,9 +65,6 @@ def main():
     if os.path.exists("build/temp"):
         safe_remove("build/temp")
 
-    if os.path.exists("GitVisualizer.spec"):
-        safe_remove("GitVisualizer.spec", is_file=True)
-
     # PyInstaller parametry
     pyinstaller_args = [
         "pyinstaller",
@@ -77,6 +74,7 @@ def main():
         "--icon=build/icon.ico",        # Ikona pro .exe (Tk feather logo)
         "--distpath=dist",              # Výstupní složka
         "--workpath=build/temp",        # Dočasná složka
+        "--specpath=build/temp",        # Složka pro .spec soubor
         "--clean",                      # Vyčistit cache
         "--noconfirm",                  # Přepsat bez dotazu
 
@@ -92,10 +90,19 @@ def main():
         "--hidden-import=_tkinter",
         "--hidden-import=tkinterdnd2",
         "--hidden-import=git",
+        "--hidden-import=git.exc",
         "--hidden-import=gitdb",
         "--hidden-import=PIL",
         "--hidden-import=PIL.Image",
         "--hidden-import=PIL.ImageTk",
+        "--hidden-import=requests",
+        "--hidden-import=auth",
+        "--hidden-import=auth.github_auth",
+        "--hidden-import=auth.token_storage",
+
+        # Zabalit všechny git dependencies
+        "--collect-all=git",
+        "--collect-all=gitdb",
 
         # Exclude nepotřebné moduly pro menší velikost
         "--exclude-module=matplotlib",
