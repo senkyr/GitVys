@@ -4,6 +4,7 @@ import math
 from collections import Counter
 from utils.data_structures import Commit
 from utils.logging_config import get_logger
+from utils.translations import t
 from utils.constants import (
     NODE_RADIUS, LINE_WIDTH, FONT_SIZE, SEPARATOR_HEIGHT,
     MIN_COLUMN_WIDTH_TEXT, MIN_COLUMN_WIDTH_GRAPH,
@@ -1543,12 +1544,12 @@ class GraphDrawer:
 
         current_x = table_start_x
 
-        # Názvy sloupců
+        # Názvy sloupců (s překladem)
         column_names = {
-            'message': 'Message / Description',
-            'author': 'Author',
-            'email': 'Email',
-            'date': 'Date'
+            'message': t('header_message'),
+            'author': t('header_author'),
+            'email': 'Email',  # Email není lokalizován
+            'date': t('header_date')
         }
 
         columns = ['message', 'author', 'email', 'date']
@@ -1670,7 +1671,7 @@ class GraphDrawer:
         graph_header_x = table_start_x // 2
         graph_header_text = canvas.create_text(
             graph_header_x, separator_y + 12,
-            text="Branch / Commit / Tag",
+            text=t('header_branch'),
             anchor='center',
             font=('Arial', 8, 'bold'),
             fill='#333333',

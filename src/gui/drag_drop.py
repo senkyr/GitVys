@@ -7,6 +7,7 @@ except ImportError:
     TkinterDnD = None
     DND_FILES = None
 from utils.logging_config import get_logger
+from utils.translations import t
 
 logger = get_logger(__name__)
 
@@ -36,7 +37,7 @@ class DragDropFrame(ttk.Frame):
         # Vytvořit label a button
         self.drop_label = ttk.Label(
             self.drop_canvas,
-            text="Přetáhni sem složku nebo URL repozitáře",
+            text=t('drag_drop_text'),
             font=('Arial', 11),
             background='#F0F8FF',  # Alice blue - shodná s plochou
             justify='center'
@@ -44,14 +45,14 @@ class DragDropFrame(ttk.Frame):
 
         self.browse_button = ttk.Button(
             self.drop_canvas,
-            text="Otevřít složku",
+            text=t('open_folder'),
             command=self.browse_folder,
             width=15
         )
 
         self.url_button = ttk.Button(
             self.drop_canvas,
-            text="Otevřít URL",
+            text=t('open_url'),
             command=self.open_url_dialog,
             width=15
         )
@@ -192,9 +193,15 @@ class DragDropFrame(ttk.Frame):
             logger.warning(f"Failed to parse URL: {e}")
             return False
 
+    def update_language(self):
+        """Update all UI texts when language changes."""
+        self.drop_label.config(text=t('drag_drop_text'))
+        self.browse_button.config(text=t('open_folder'))
+        self.url_button.config(text=t('open_url'))
+
     def browse_folder(self):
         folder_path = filedialog.askdirectory(
-            title="Vyber složku Git repozitáře"
+            title=t('select_folder')
         )
         if folder_path:
             self.process_folder(folder_path)
@@ -262,7 +269,7 @@ class DragDropFrame(ttk.Frame):
     def open_url_dialog(self):
         """Otevře dialog pro zadání URL repozitáře."""
         dialog = tk.Toplevel(self)
-        dialog.title("Otevřít online repozitář")
+        dialog.title(t('enter_url_title'))
         dialog.resizable(False, False)
 
         # Konzistentní margin pro celý dialog
@@ -271,7 +278,7 @@ class DragDropFrame(ttk.Frame):
         # Label
         label = ttk.Label(
             dialog,
-            text="Zadej URL Git repozitáře:\n(např. https://github.com/user/repo.git)",
+            text=t('enter_url_text'),
             justify='center'
         )
         label.pack(pady=MARGIN)
@@ -298,7 +305,7 @@ class DragDropFrame(ttk.Frame):
         paste_button.pack(side='left')
 
         # Tooltip pro paste tlačítko
-        self._create_tooltip(paste_button, "Vložit ze schránky")
+        self._create_tooltip(paste_button, t('paste_tooltip'))
 
         result = [None]
 
@@ -363,10 +370,10 @@ class DragDropFrame(ttk.Frame):
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=(0, MARGIN))
 
-        ok_button = ttk.Button(button_frame, text="OK", command=on_ok, width=10)
+        ok_button = ttk.Button(button_frame, text=t('ok'), command=on_ok, width=10)
         ok_button.pack(side='left', padx=5)
 
-        cancel_button = ttk.Button(button_frame, text="Zrušit", command=on_cancel, width=10)
+        cancel_button = ttk.Button(button_frame, text=t('cancel'), command=on_cancel, width=10)
         cancel_button.pack(side='left', padx=5)
 
         # Nastavit soft modal dialog (bez grab_set)
@@ -403,7 +410,7 @@ class DragDropFrame(ttk.Frame):
     def process_url(self, url: str):
         """Zpracuje URL repozitáře - klonuje do temp složky."""
         if not self._is_git_url(url):
-            messagebox.showerror("Chyba", "Zadaná URL není platná Git URL")
+            messagebox.showerror(t('error'), t('invalid_url'))
             return
 
         if self.on_drop_callback:
@@ -412,12 +419,12 @@ class DragDropFrame(ttk.Frame):
 
     def process_folder(self, folder_path):
         if not os.path.isdir(folder_path):
-            messagebox.showerror("Chyba", "Vybraná cesta není platná složka")
+            messagebox.showerror(t('error'), t('invalid_folder'))
             return
 
         git_folder = os.path.join(folder_path, '.git')
         if not os.path.exists(git_folder):
-            messagebox.showerror("Chyba", "Vybraná složka neobsahuje Git repozitář")
+            messagebox.showerror(t('error'), t('not_git_repo'))
             return
 
         if self.on_drop_callback:

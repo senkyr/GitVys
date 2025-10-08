@@ -13,6 +13,7 @@ from gui.graph_canvas import GraphCanvas
 from gui.auth_dialog import GitHubAuthDialog
 from auth.token_storage import TokenStorage
 from utils.logging_config import get_logger
+from utils.translations import get_translation_manager, t
 
 logger = get_logger(__name__)
 
@@ -106,8 +107,12 @@ class MainWindow:
         else:
             self.root = tk.Tk()
 
+        # Translation manager
+        self.tm = get_translation_manager()
+        self.tm.register_callback(self._on_language_changed)
+
         # Defaultní hodnoty pro obnovení
-        self.default_title = "Git Visualizer v1.3.0"
+        self.default_title = t('app_title')
         self.default_width = 600
         self.default_height = 400
 
@@ -134,6 +139,60 @@ class MainWindow:
         # Cleanup handler pro temp složky
         import atexit
         atexit.register(self._cleanup_temp_clones)
+
+    def _create_czech_flag(self, parent, width=30, height=20):
+        """Vytvoří Canvas s českou vlajkou."""
+        canvas = tk.Canvas(parent, width=width, height=height, highlightthickness=0, cursor='hand2')
+
+        # Horní polovina - bílá
+        canvas.create_rectangle(0, 0, width, height//2, fill='#FFFFFF', outline='')
+
+        # Dolní polovina - červená
+        canvas.create_rectangle(0, height//2, width, height, fill='#D7141A', outline='')
+
+        # Levý modrý trojúhelník
+        canvas.create_polygon(
+            0, 0,           # levý horní roh
+            width//2, height//2,  # střed pravého okraje
+            0, height,      # levý dolní roh
+            fill='#11457E',
+            outline=''
+        )
+
+        # Černý rámeček
+        canvas.create_rectangle(0, 0, width-1, height-1, outline='#000000', width=1)
+
+        return canvas
+
+    def _create_uk_flag(self, parent, width=30, height=20):
+        """Vytvoří Canvas s britskou vlajkou."""
+        canvas = tk.Canvas(parent, width=width, height=height, highlightthickness=0, cursor='hand2')
+
+        # Pozadí - modré
+        canvas.create_rectangle(0, 0, width, height, fill='#012169', outline='')
+
+        # Bílé diagonály (St. Andrew)
+        # Levá horní -> pravá dolní
+        canvas.create_line(0, 0, width, height, fill='#FFFFFF', width=6)
+        # Pravá horní -> levá dolní
+        canvas.create_line(width, 0, 0, height, fill='#FFFFFF', width=6)
+
+        # Červené diagonály (St. Patrick) - užší
+        canvas.create_line(0, 0, width, height, fill='#C8102E', width=3)
+        canvas.create_line(width, 0, 0, height, fill='#C8102E', width=3)
+
+        # Bílý kříž (St. George) - horizontální a vertikální
+        canvas.create_rectangle(0, height//2-3, width, height//2+3, fill='#FFFFFF', outline='')
+        canvas.create_rectangle(width//2-3, 0, width//2+3, height, fill='#FFFFFF', outline='')
+
+        # Červený kříž (St. George) - užší
+        canvas.create_rectangle(0, height//2-2, width, height//2+2, fill='#C8102E', outline='')
+        canvas.create_rectangle(width//2-2, 0, width//2+2, height, fill='#C8102E', outline='')
+
+        # Černý rámeček
+        canvas.create_rectangle(0, 0, width-1, height-1, outline='#000000', width=1)
+
+        return canvas
 
     def _center_window(self, width: int, height: int):
         screen_width = self.root.winfo_screenwidth()
@@ -231,15 +290,35 @@ class MainWindow:
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
         self.main_frame.columnconfigure(0, weight=1)
-        self.main_frame.rowconfigure(1, weight=1)
+        self.main_frame.rowconfigure(2, weight=1)  # Content frame má váhu
+
+        # Language switcher frame (vlevo nahoře, viditelný pouze v úvodním okně)
+        # Parent je root aby byl nezávislý na main_frame grid layoutu
+        self.language_frame = ttk.Frame(self.root)
+        self.language_frame.place(x=15, y=15)  # 10px main_frame padding + 5px offset
+
+        # Vlajky jako přepínač jazyka - vytvořit Canvas widgety
+        self.flag_cs = self._create_czech_flag(self.language_frame, width=30, height=20)
+        self.flag_cs.pack(side='left', padx=2)
+        self.flag_cs.bind('<Button-1>', lambda e: self._switch_to_language('cs'))
+
+        self.flag_en = self._create_uk_flag(self.language_frame, width=30, height=20)
+        self.flag_en.pack(side='left', padx=2)
+        self.flag_en.bind('<Button-1>', lambda e: self._switch_to_language('en'))
+
+        # Nastavit počáteční stav vlajek
+        self._update_flag_appearance()
+
+        # Zvýšit z-index aby byly vlaječky viditelné nad ostatními widgety
+        self.language_frame.tkraise()
 
         self.header_frame = ttk.Frame(self.main_frame)
-        # Header frame se nezobrazuje v úvodním stavu
+        # Header frame bude na row=1, zobrazí se až po načtení repozitáře
 
         # Fetch remote tlačítko (vlevo)
         self.fetch_button = ttk.Button(
             self.header_frame,
-            text="Načíst remote",
+            text=t('fetch_remote'),
             command=self.fetch_remote_data,
             width=15
         )
@@ -270,14 +349,14 @@ class MainWindow:
 
         self.close_button = ttk.Button(
             self.header_frame,
-            text="Zavřít repo",
+            text=t('close_repo'),
             command=self.show_repository_selection,
             width=15
         )
         self.close_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
 
         self.content_frame = ttk.Frame(self.main_frame)
-        self.content_frame.grid(row=1, column=0, sticky='nsew')
+        self.content_frame.grid(row=2, column=0, sticky='nsew')
         self.content_frame.columnconfigure(0, weight=1)
         self.content_frame.rowconfigure(0, weight=1)
 
@@ -290,10 +369,10 @@ class MainWindow:
         self.graph_canvas = GraphCanvas(self.content_frame, on_drop_callback=self.on_repository_selected)
 
         self.status_frame = ttk.Frame(self.main_frame)
-        self.status_frame.grid(row=2, column=0, sticky='ew', pady=(10, 0))
+        self.status_frame.grid(row=3, column=0, sticky='ew', pady=(10, 0))
         self.status_frame.columnconfigure(1, weight=1)
 
-        self.status_label = ttk.Label(self.status_frame, text="Připraven")
+        self.status_label = ttk.Label(self.status_frame, text=t('ready'))
         self.status_label.grid(row=0, column=0, sticky='w')
 
         self.progress = CustomProgressBar(
@@ -306,7 +385,7 @@ class MainWindow:
         # Refresh tlačítko (vpravo dolů)
         self.refresh_button = ttk.Button(
             self.status_frame,
-            text="Refresh",
+            text=t('refresh'),
             command=self.refresh_repository,
             width=15
         )
@@ -315,6 +394,98 @@ class MainWindow:
         # Přidat F5 key binding
         self.root.bind('<F5>', lambda event: self.refresh_repository())
         self.root.focus_set()  # Zajistit focus pro key bindings
+
+    def _switch_to_language(self, language: str):
+        """Switch to selected language when flag is clicked."""
+        if language != self.tm.get_current_language():
+            self.tm.set_language(language)
+
+    def _update_flag_appearance(self):
+        """Update flag appearance based on current language (highlight active, dim inactive)."""
+        current_lang = self.tm.get_current_language()
+
+        # Odstranit overlay z obou vlajek
+        self.flag_cs.delete('overlay')
+        self.flag_en.delete('overlay')
+
+        # Přidat šedý semi-transparentní overlay na neaktivní vlajku
+        if current_lang == 'cs':
+            # Česká vlajka aktivní, anglická ztmavená
+            width = self.flag_en.winfo_reqwidth()
+            height = self.flag_en.winfo_reqheight()
+            self.flag_en.create_rectangle(
+                0, 0, width, height,
+                fill='#888888',
+                stipple='gray50',  # 50% průhlednost
+                tags='overlay'
+            )
+        else:
+            # Anglická vlajka aktivní, česká ztmavená
+            width = self.flag_cs.winfo_reqwidth()
+            height = self.flag_cs.winfo_reqheight()
+            self.flag_cs.create_rectangle(
+                0, 0, width, height,
+                fill='#888888',
+                stipple='gray50',
+                tags='overlay'
+            )
+
+    def _on_language_changed(self, language: str):
+        """Called when language is changed - updates all UI texts."""
+        # Update flag appearance
+        self._update_flag_appearance()
+
+        # Update window title
+        self.default_title = t('app_title')
+        self.root.title(self.default_title)
+
+        # Update buttons
+        if self.is_cloned_repo:
+            self.fetch_button.config(text=t('fetch_branches'))
+        else:
+            self.fetch_button.config(text=t('fetch_remote'))
+        self.close_button.config(text=t('close_repo'))
+        self.refresh_button.config(text=t('refresh'))
+
+        # Update status
+        if not self.git_repo:
+            self.status_label.config(text=t('ready'))
+
+        # Update statistics if repo is loaded
+        if self.git_repo:
+            self._update_stats_display()
+
+        # Update drag/drop frame
+        self.drag_drop_frame.update_language()
+
+        # Redraw graph canvas if visible (to update column headers)
+        if self.graph_canvas.winfo_viewable() and hasattr(self.graph_canvas, 'graph_drawer'):
+            commits = getattr(self.graph_canvas.graph_drawer, '_current_commits', None)
+            if commits:
+                self.graph_canvas.update_graph(commits)
+
+    def _update_stats_display(self):
+        """Update repository statistics display with current language."""
+        if not self.git_repo:
+            return
+
+        stats = self.git_repo.get_repository_stats()
+
+        authors_text = f"{stats['authors']} {self.tm.get_plural(stats['authors'], 'author')}"
+        branches_text = f"{stats['branches']} {self.tm.get_plural(stats['branches'], 'branch')}"
+        commits_text = f"{stats['commits']} {self.tm.get_plural(stats['commits'], 'commit')}"
+
+        # Zobrazit tagy jen pokud nějaké existují
+        if stats['tags'] > 0:
+            if stats['remote_tags'] > 0:
+                tags_text = t('tags_format', stats['local_tags'], stats['remote_tags'])
+            else:
+                tags_text = f"{stats['tags']} {self.tm.get_plural(stats['tags'], 'tag')}"
+            stats_text = f"{authors_text}, {branches_text}, {tags_text}, {commits_text}"
+        else:
+            stats_text = f"{authors_text}, {branches_text}, {commits_text}"
+
+        self.stats_label.config(text=stats_text)
 
     def _show_repo_path_tooltip(self, event):
         """Zobrazí tooltip s cestou k repozitáři."""
@@ -378,7 +549,7 @@ class MainWindow:
 
             self.is_cloned_repo = False  # Lokální repo, ne klonované
             self.display_name = None  # Resetovat display name pro lokální repo
-            self.update_status("Načítám repozitář...")
+            self.update_status(t('loading_repo'))
             self.progress.config(value=50, color='#4CAF50')
             self.progress.start()
 
@@ -416,7 +587,7 @@ class MainWindow:
         repo_name = url.rstrip('/').split('/')[-1].replace('.git', '')
         self.display_name = repo_name  # Uložit reálný název pro pozdější zobrazení
 
-        self.update_status(f"Klonuji {repo_name}...")
+        self.update_status(t('cloning', repo_name))
         self.progress.config(color='#4CAF50')
         self.progress.start()
 
@@ -474,10 +645,10 @@ class MainWindow:
                         token = self._auth_dialog_result
                         delattr(self, '_auth_dialog_result')
                     else:
-                        raise Exception("Autentizace vypršela nebo byla zrušena")
+                        raise Exception(t('auth_expired'))
 
                 if not token:
-                    raise Exception("Autentizace se nezdařila")
+                    raise Exception(t('auth_failed'))
 
                 # Uložit token pro příští použití
                 self.token_storage.save_token(token)
@@ -490,11 +661,11 @@ class MainWindow:
                     auth_url = url.replace('http://', f'http://{token}@')
                 else:
                     # SSH URL nebo jiný formát - nemůžeme použít token
-                    raise Exception("Token autentizace funguje pouze s HTTPS URLs")
+                    raise Exception(t('auth_https_only'))
 
                 # Retry klonování s autentizovanou URL
                 logger.info("Retrying clone with authentication...")
-                self.root.after(0, self.update_status, "Klonuji s autentizací...")
+                self.root.after(0, self.update_status, t('cloning_with_auth'))
                 Repo.clone_from(auth_url, path)
 
                 # Úspěch
@@ -503,7 +674,7 @@ class MainWindow:
         except Exception as e:
             # Smazat temp složku při chybě klonování
             self.root.after(0, self._cleanup_single_clone, path)
-            self.root.after(0, self.show_error, f"Chyba klonování:\n{str(e)}")
+            self.root.after(0, self.show_error, t('error_cloning', str(e)))
             self.root.after(0, self.progress.stop)
 
     def _show_auth_dialog_sync(self):
@@ -517,7 +688,7 @@ class MainWindow:
         """Callback po úspěšném klonování."""
         self.is_cloned_repo = True  # Označit že repo bylo klonováno z URL
         self.current_temp_clone = path  # Uložit cestu k aktuálnímu temp klonu
-        self.update_status("Načítám naklonovaný repozitář...")
+        self.update_status(t('loading_cloned'))
 
         thread = threading.Thread(
             target=self.load_repository,
@@ -617,13 +788,13 @@ class MainWindow:
             self.git_repo = GitRepository(repo_path)
 
             if not self.git_repo.load_repository():
-                self.root.after(0, self.show_error, "Nepodařilo se načíst Git repozitář")
+                self.root.after(0, self.show_error, t('failed_load_repo'))
                 return
 
             commits = self.git_repo.parse_commits()
 
             if not commits:
-                self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
+                self.root.after(0, self.show_error, t('no_commits'))
                 return
 
             merge_branches = self.git_repo.get_merge_branches()
@@ -633,7 +804,7 @@ class MainWindow:
             self.root.after(0, self.show_graph, positioned_commits)
 
         except Exception as e:
-            self.root.after(0, self.show_error, f"Chyba při načítání repozitáře: {str(e)}")
+            self.root.after(0, self.show_error, t('error_loading_repo', str(e)))
 
     def refresh_repository(self):
         """Obnoví repozitář podle aktuálního stavu (lokální vs remote)."""
@@ -645,7 +816,7 @@ class MainWindow:
             self.fetch_remote_data()
         else:
             # Obnovit jen lokálně
-            self.update_status("Načítám repozitář...")
+            self.update_status(t('loading_repo'))
             self.progress.config(color='#4CAF50')
             self.progress.start()
 
@@ -661,7 +832,7 @@ class MainWindow:
             commits = self.git_repo.parse_commits()
 
             if not commits:
-                self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
+                self.root.after(0, self.show_error, t('no_commits'))
                 return
 
             merge_branches = self.git_repo.get_merge_branches()
@@ -671,14 +842,14 @@ class MainWindow:
             self.root.after(0, self.show_graph, positioned_commits)
 
         except Exception as e:
-            self.root.after(0, self.show_error, f"Chyba při obnovování: {str(e)}")
+            self.root.after(0, self.show_error, t('error_loading_repo', str(e)))
 
     def fetch_remote_data(self):
         if not self.git_repo:
             return
 
-        self.fetch_button.config(text="Načítám...", state="disabled")
-        self.update_status("Načítám remote větve...")
+        self.fetch_button.config(text=t('loading'), state="disabled")
+        self.update_status(t('loading_remote_branches'))
         self.progress.config(color='#4CAF50')
         self.progress.start()
 
@@ -693,7 +864,7 @@ class MainWindow:
             commits = self.git_repo.parse_commits_with_remote()
 
             if not commits:
-                self.root.after(0, self.show_error, "Repozitář neobsahuje žádné commity")
+                self.root.after(0, self.show_error, t('no_commits'))
                 return
 
             merge_branches = self.git_repo.get_merge_branches()
@@ -703,50 +874,25 @@ class MainWindow:
             self.root.after(0, self.update_graph_with_remote, positioned_commits)
 
         except Exception as e:
-            self.root.after(0, self.show_error, f"Chyba při načítání remote větví: {str(e)}")
+            self.root.after(0, self.show_error, t('error_loading_remote', str(e)))
 
     def update_graph_with_remote(self, commits):
         self.is_remote_loaded = True  # Označit že jsou načtená remote data
         self.graph_canvas.update_graph(commits)
 
-        # Aktualizovat statistiky
-        stats = self.git_repo.get_repository_stats()
-
-        def get_czech_plural(count, singular, plural2_4, plural5):
-            if count == 1:
-                return singular
-            elif count in [2, 3, 4]:
-                return plural2_4
-            else:
-                return plural5
-
-        authors_text = f"{stats['authors']} {get_czech_plural(stats['authors'], 'autor', 'autoři', 'autorů')}"
-        branches_text = f"{stats['branches']} {get_czech_plural(stats['branches'], 'větev', 'větve', 'větví')}"
-        commits_text = f"{stats['commits']} {get_czech_plural(stats['commits'], 'commit', 'commity', 'commitů')}"
-
-        # Zobrazit tagy jen pokud nějaké existují (včetně remote)
-        if stats['tags'] > 0:
-            if stats['remote_tags'] > 0:
-                # Rozlišit lokální a remote tagy
-                tags_text = f"{stats['local_tags']}+{stats['remote_tags']} tagů"
-            else:
-                # Jen lokální tagy
-                tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
-            stats_text = f"{authors_text}, {branches_text}, {tags_text}, {commits_text}"
-        else:
-            stats_text = f"{authors_text}, {branches_text}, {commits_text}"
-        self.stats_label.config(text=stats_text)
+        # Aktualizovat statistiky pomocí centralizované metody
+        self._update_stats_display()
 
         # Po načtení remote dat vrátit původní text tlačítka
         if self.is_cloned_repo:
-            button_text = "Načíst větve"
+            button_text = t('fetch_branches')
         else:
-            button_text = "Načíst remote"
+            button_text = t('fetch_remote')
         self.fetch_button.config(text=button_text, state="normal")
 
         self.progress.stop()
         self.progress.config(value=100, color='#2196F3')
-        self.update_status(f"Načteno {len(commits)} commitů (včetně remote)")
+        self.update_status(t('loaded_commits_remote', len(commits)))
 
         # Zobrazit Refresh tlačítko (pokud už není zobrazené)
         self.refresh_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
@@ -755,6 +901,9 @@ class MainWindow:
         self.root.after(50, lambda: self._resize_window_for_content(commits))
 
     def show_graph(self, commits):
+        # Skrýt přepínač jazyka
+        self.language_frame.place_forget()
+
         self.drag_drop_frame.grid_remove()
         self.graph_canvas.grid(row=0, column=0, sticky='nsew')
         self.graph_canvas.update_graph(commits)
@@ -767,33 +916,7 @@ class MainWindow:
             self.root.title(self.default_title)
 
         # Zobrazit header frame a nastavit padding
-        self.header_frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
-        stats = self.git_repo.get_repository_stats()
-
-        # Czech pluralization
-        def get_czech_plural(count, singular, plural2_4, plural5):
-            if count == 1:
-                return singular
-            elif count in [2, 3, 4]:
-                return plural2_4
-            else:
-                return plural5
-
-        authors_text = f"{stats['authors']} {get_czech_plural(stats['authors'], 'autor', 'autoři', 'autorů')}"
-        branches_text = f"{stats['branches']} {get_czech_plural(stats['branches'], 'větev', 'větve', 'větví')}"
-        commits_text = f"{stats['commits']} {get_czech_plural(stats['commits'], 'commit', 'commity', 'commitů')}"
-
-        # Zobrazit tagy jen pokud nějaké existují
-        if stats['tags'] > 0:
-            if stats['remote_tags'] > 0:
-                # Rozlišit lokální a remote tagy
-                tags_text = f"{stats['local_tags']}+{stats['remote_tags']} tagů"
-            else:
-                # Jen lokální tagy
-                tags_text = f"{stats['tags']} {get_czech_plural(stats['tags'], 'tag', 'tagy', 'tagů')}"
-            stats_text = f"{authors_text}, {branches_text}, {tags_text}, {commits_text}"
-        else:
-            stats_text = f"{authors_text}, {branches_text}, {commits_text}"
+        self.header_frame.grid(row=1, column=0, sticky='ew', pady=(0, 10))
 
         # Nastavit název repozitáře (tučně) a statistiky (normálně) vedle sebe
         if self.git_repo and self.git_repo.repo_path:
@@ -801,23 +924,23 @@ class MainWindow:
             # Pro klonované repo použít reálný název, jinak název složky
             repo_name = self.display_name if self.display_name else os.path.basename(self.git_repo.repo_path)
             self.repo_name_label.config(text=repo_name)
-            self.stats_label.config(text=stats_text)
+            self._update_stats_display()
         else:
             self.repo_name_label.config(text="")
-            self.stats_label.config(text=stats_text)
+            self._update_stats_display()
 
         # Kratší delay pro rychlejší response, ale stále zajistit že je obsah vykreslen
         self.root.after(50, lambda: self._resize_window_for_content(commits))
 
         self.progress.stop()
         self.progress.config(value=100, color='#2196F3')
-        self.update_status(f"Načteno {len(commits)} commitů")
+        self.update_status(t('loaded_commits', len(commits)))
 
         # Nastavit text fetch tlačítka podle zdroje repozitáře
         if self.is_cloned_repo:
-            self.fetch_button.config(text="Načíst větve")
+            self.fetch_button.config(text=t('fetch_branches'))
         else:
-            self.fetch_button.config(text="Načíst remote")
+            self.fetch_button.config(text=t('fetch_remote'))
 
         # Zobrazit Refresh tlačítko
         self.refresh_button.grid(row=0, column=2, sticky='e', padx=(10, 0))
@@ -841,6 +964,10 @@ class MainWindow:
             self._cleanup_single_clone(self.current_temp_clone)
             self.current_temp_clone = None
 
+        # Zobrazit přepínač jazyka zpět
+        self.language_frame.place(x=15, y=15)  # 10px main_frame padding + 5px offset
+        self.language_frame.tkraise()  # Zajistit že jsou vlaječky viditelné nad drag&drop
+
         self.graph_canvas.grid_remove()
         self.drag_drop_frame.grid(row=0, column=0, sticky='nsew')
 
@@ -863,13 +990,13 @@ class MainWindow:
         self._center_window(self.default_width, self.default_height)
 
         self.progress.config(value=0, color='#4CAF50')
-        self.update_status("Připraven")
+        self.update_status(t('ready'))
 
     def show_error(self, message: str):
         self.progress.stop()
         self.progress.config(value=0, color='#4CAF50')
-        self.update_status("Chyba")
-        messagebox.showerror("Chyba", message)
+        self.update_status(t('error'))
+        messagebox.showerror(t('error'), message)
 
     def update_status(self, message: str):
         self.status_label.config(text=message)

@@ -8,6 +8,7 @@ import threading
 import webbrowser
 from auth.github_auth import GitHubAuth
 from utils.logging_config import get_logger
+from utils.translations import t
 
 logger = get_logger(__name__)
 
@@ -23,7 +24,7 @@ class GitHubAuthDialog:
 
         # Vytvořit dialog window
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Autorizace GitHub účtu")
+        self.dialog.title(t('auth_title'))
         self.dialog.geometry("500x350")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
@@ -56,19 +57,15 @@ class GitHubAuthDialog:
         # Nadpis
         title_label = ttk.Label(
             main_frame,
-            text="Autorizace GitHub účtu",
+            text=t('auth_title'),
             font=('Arial', 14, 'bold')
         )
         title_label.pack(pady=(0, 15))
 
         # Instrukce
-        instruction_text = (
-            "Pro přístup k soukromým repozitářům\n"
-            "autorizujte aplikaci na GitHubu."
-        )
         instruction_label = ttk.Label(
             main_frame,
-            text=instruction_text,
+            text=t('auth_instruction'),
             justify=tk.CENTER,
             font=('Arial', 10)
         )
@@ -77,7 +74,7 @@ class GitHubAuthDialog:
         # Kroky
         steps_label = ttk.Label(
             main_frame,
-            text="1. Klikněte na tlačítko níže\n2. Zadejte tento kód:",
+            text=t('auth_steps'),
             justify=tk.CENTER,
             font=('Arial', 9)
         )
@@ -99,7 +96,7 @@ class GitHubAuthDialog:
         # Tlačítko pro kopírování kódu
         self.copy_button = ttk.Button(
             code_frame,
-            text="📋 Kopírovat",
+            text=t('copy_code'),
             command=self._copy_code,
             width=12
         )
@@ -108,7 +105,7 @@ class GitHubAuthDialog:
         # Tlačítko pro otevření GitHubu
         self.open_button = ttk.Button(
             main_frame,
-            text="🌐 Otevřít GitHub v prohlížeči",
+            text=t('open_github'),
             command=self._open_github,
             width=30
         )
@@ -117,7 +114,7 @@ class GitHubAuthDialog:
         # Status label
         self.status_label = ttk.Label(
             main_frame,
-            text="Připravuji autentizaci...",
+            text=t('auth_preparing'),
             font=('Arial', 9),
             foreground='#666666'
         )
@@ -135,7 +132,7 @@ class GitHubAuthDialog:
         # Tlačítko Zrušit
         cancel_button = ttk.Button(
             main_frame,
-            text="Zrušit",
+            text=t('cancel'),
             command=self._cancel,
             width=15
         )
@@ -154,12 +151,12 @@ class GitHubAuthDialog:
         """Worker thread pro OAuth flow."""
         try:
             # 1. Request device code
-            self.dialog.after(0, self._update_status, "Žádám GitHub o kód...")
+            self.dialog.after(0, self._update_status, t('auth_requesting'))
 
             device_data = self.github_auth.request_device_code()
 
             if not device_data:
-                self.dialog.after(0, self._show_error, "Nepodařilo se získat autorizační kód.")
+                self.dialog.after(0, self._show_error, t('auth_error_code'))
                 return
 
             self.device_code = device_data['device_code']
@@ -169,7 +166,7 @@ class GitHubAuthDialog:
 
             # 2. Zobrazit user code
             self.dialog.after(0, self._update_user_code, user_code)
-            self.dialog.after(0, self._update_status, "Čekám na autorizaci...")
+            self.dialog.after(0, self._update_status, t('auth_waiting'))
 
             # 3. Poll pro access token
             token, status = self.github_auth.poll_for_token(self.device_code, interval)
@@ -179,15 +176,15 @@ class GitHubAuthDialog:
                 self.result_token = token
                 self.dialog.after(0, self._on_success)
             elif status == "timeout":
-                self.dialog.after(0, self._show_error, "Autorizace vypršela. Zkuste to znovu.")
+                self.dialog.after(0, self._show_error, t('auth_error_timeout'))
             elif status == "cancelled":
-                self.dialog.after(0, self._show_error, "Autorizace byla zamítnuta.")
+                self.dialog.after(0, self._show_error, t('auth_error_cancelled'))
             else:
-                self.dialog.after(0, self._show_error, "Chyba při autentizaci.")
+                self.dialog.after(0, self._show_error, t('auth_error_general'))
 
         except Exception as e:
             logger.warning(f"Auth worker error: {e}")
-            self.dialog.after(0, self._show_error, f"Chyba: {str(e)}")
+            self.dialog.after(0, self._show_error, t('error') + f": {str(e)}")
 
     def _update_user_code(self, code: str):
         """Aktualizuje zobrazený user code."""
@@ -205,29 +202,29 @@ class GitHubAuthDialog:
         if code and code != "------":
             self.dialog.clipboard_clear()
             self.dialog.clipboard_append(code)
-            self.status_label.config(text="Kód zkopírován do schránky!")
+            self.status_label.config(text=t('code_copied'))
 
     def _open_github(self):
         """Otevře GitHub verification URL v prohlížeči."""
         if self.verification_uri:
             try:
                 webbrowser.open(self.verification_uri)
-                self.status_label.config(text="Prohlížeč otevřen. Pokračujte na GitHubu...")
+                self.status_label.config(text=t('browser_opened'))
             except Exception as e:
                 logger.warning(f"Failed to open browser: {e}")
-                self.status_label.config(text=f"Otevřete ručně: {self.verification_uri}")
+                self.status_label.config(text=t('open_manually', self.verification_uri))
 
     def _on_success(self):
         """Callback po úspěšné autentizaci."""
         self.progress.stop()
-        self.status_label.config(text="✓ Autorizace úspěšná!", foreground='#1a7f37')
+        self.status_label.config(text=t('auth_success'), foreground='#1a7f37')
         self.dialog.after(1000, self.dialog.destroy)
 
     def _show_error(self, message: str):
         """Zobrazí chybovou zprávu a zavře dialog."""
         self.progress.stop()
-        self.status_label.config(text="✗ Chyba", foreground='#cf222e')
-        messagebox.showerror("Chyba autentizace", message, parent=self.dialog)
+        self.status_label.config(text="✗ " + t('error'), foreground='#cf222e')
+        messagebox.showerror(t('auth_error_title'), message, parent=self.dialog)
         self.dialog.destroy()
 
     def _cancel(self):
