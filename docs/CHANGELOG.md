@@ -4,6 +4,32 @@ Všechny významné změny v tomto projektu.
 
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
+## [1.4.0] - 2025-10-08
+
+### Added
+
+- **Dvojjazyčné rozhraní (čeština/angličtina)**
+  - Přepínač jazyka pomocí vykreslených vlajek (🇨🇿 česká a 🇬🇧 britská) v levém horním rohu
+  - Automatické ukládání volby jazyka do `~/.gitvys/settings.json`
+  - Defaultní jazyk: čeština
+  - Kompletní překlad všech UI prvků: tlačítka, statusy, dialogy, záhlaví sloupců
+  - Nový modul: `utils/translations.py` pro správu překladů
+- **Tooltip s autorem commitu**
+  - Zobrazení plného jména autora při najetí myší na zkrácené jméno v tabulce
+
+### Changed
+
+- **Vylepšená dokumentace**
+  - Aktualizace README.md s jasnějšími instrukcemi
+  - Rozšíření CLAUDE.md o development informace
+  - Vylepšené build skripty (`build-exe.bat`)
+
+### Fixed
+
+- **Oprava rozšiřování okna při refreshi**
+  - Okno se již nerozšiřuje nechtěně při obnovení repozitáře
+  - Lepší handling změny velikosti okna
+
 ## [1.3.0] - 2025-10-07
 
 ### Added
