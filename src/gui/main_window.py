@@ -199,7 +199,7 @@ class MainWindow:
         # Nejprve zkusit získat skutečné rozměry z canvas
         try:
             canvas.update_idletasks()  # Zajistit že je vše vykresleno
-            bbox = canvas.bbox('all')
+            bbox = self.graph_canvas._get_content_bbox_without_header()
             if bbox and bbox[2] > bbox[0]:
                 actual_width = bbox[2] - bbox[0]
                 # Přidat rozumný buffer pro UI elementy
