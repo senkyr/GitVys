@@ -213,6 +213,9 @@ class DragDropFrame(ttk.Frame):
         bg_color = style.lookup('TFrame', 'background')
         self.drop_canvas.config(bg=bg_color)
 
+        # Update label background color
+        self.drop_label.config(background=tm.get_color('drop_area_bg'))
+
         # Update drop area colors and redraw
         self._center_widgets()
 
@@ -232,6 +235,8 @@ class DragDropFrame(ttk.Frame):
             if tooltip:
                 return
 
+            tm = get_theme_manager()
+
             # Vytvořit tooltip okno
             tooltip = tk.Toplevel()
             tooltip.wm_overrideredirect(True)
@@ -246,8 +251,8 @@ class DragDropFrame(ttk.Frame):
             label = tk.Label(
                 tooltip,
                 text=text,
-                background="#ffffe0",
-                foreground="black",
+                background=tm.get_color('tooltip_bg'),
+                foreground=tm.get_color('tooltip_fg'),
                 font=('Arial', 9),
                 relief="solid",
                 borderwidth=1,
@@ -288,6 +293,10 @@ class DragDropFrame(ttk.Frame):
         dialog = tk.Toplevel(self)
         dialog.title(t('enter_url_title'))
         dialog.resizable(False, False)
+
+        # Nastavit pozadí podle tématu
+        tm = get_theme_manager()
+        dialog.configure(bg=tm.get_color('window_bg'))
 
         # Konzistentní margin pro celý dialog
         MARGIN = 20

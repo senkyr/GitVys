@@ -5,6 +5,7 @@ from collections import Counter
 from utils.data_structures import Commit
 from utils.logging_config import get_logger
 from utils.translations import t
+from utils.theme_manager import get_theme_manager
 from utils.constants import (
     NODE_RADIUS, LINE_WIDTH, FONT_SIZE, SEPARATOR_HEIGHT,
     MIN_COLUMN_WIDTH_TEXT, MIN_COLUMN_WIDTH_GRAPH,
@@ -578,6 +579,8 @@ class GraphDrawer:
                 elif commit.date > last_commits_by_branch[commit.branch].date:
                     last_commits_by_branch[commit.branch] = commit
 
+        tm = get_theme_manager()
+
         for commit in commits:
             x, y = commit.x, commit.y
 
@@ -585,7 +588,7 @@ class GraphDrawer:
             if getattr(commit, 'is_uncommitted', False):
                 # WIP commity - šrafovaný polygon v barvě větve s černým obrysem
                 fill_color = commit.branch_color
-                outline_color = 'black'
+                outline_color = tm.get_color('commit_node_outline')
                 stipple_pattern = 'gray50'  # 50% šrafování pro indikaci nehotovosti
 
                 # Vytvořit kruhový polygon místo ovals (stipple nefunguje s ovals na Windows)
@@ -601,7 +604,7 @@ class GraphDrawer:
             elif commit.is_remote:
                 # Bledší verze branch_color (50% transparence simulace)
                 fill_color = self._make_color_pale(commit.branch_color)
-                outline_color = 'black'  # Jednotné černé rámování
+                outline_color = tm.get_color('commit_node_outline')
                 canvas.create_oval(
                     x - self.node_radius, y - self.node_radius,
                     x + self.node_radius, y + self.node_radius,
@@ -613,7 +616,7 @@ class GraphDrawer:
             else:
                 # Normální commity
                 fill_color = commit.branch_color
-                outline_color = 'black'  # Jednotné černé rámování
+                outline_color = tm.get_color('commit_node_outline')
                 canvas.create_oval(
                     x - self.node_radius, y - self.node_radius,
                     x + self.node_radius, y + self.node_radius,
@@ -680,9 +683,9 @@ class GraphDrawer:
             # Vytvořit kombinovaný text message + description
             # Určit barvu textu podle typu commitu
             if getattr(commit, 'is_uncommitted', False):
-                message_color = '#555555'  # Tmavě šedá pro WIP commity
+                message_color = tm.get_color('commit_text_wip')  # Tmavě šedá pro WIP commity
             else:
-                message_color = 'black'  # Černá pro normální commity
+                message_color = tm.get_color('commit_text')  # Černá pro normální commity
 
             # Nejprve zkrátit message podle dostupné šířky sloupce
             if commit.description_short:
@@ -734,7 +737,7 @@ class GraphDrawer:
                     text=description_to_display,
                     anchor='w',
                     font=font,
-                    fill='#666666',
+                    fill=tm.get_color('description_text'),
                     tags=("commit_text", f"desc_{commit.hash}")
                 )
 
@@ -787,7 +790,7 @@ class GraphDrawer:
                     text=author_to_display,
                     anchor='center',
                     font=font,
-                    fill='#333333',
+                    fill=tm.get_color('author_text'),
                     tags=("commit_text", f"author_{commit.hash}")
                 )
 
@@ -814,7 +817,7 @@ class GraphDrawer:
                     text=email_to_display,
                     anchor='center',
                     font=font,
-                    fill='#666666',
+                    fill=tm.get_color('email_text'),
                     tags=("commit_text", f"email_{commit.hash}")
                 )
 
@@ -834,7 +837,7 @@ class GraphDrawer:
                     text=commit.date_short,
                     anchor='center',
                     font=font,
-                    fill='#666666',
+                    fill=tm.get_color('date_text'),
                     tags="commit_text"
                 )
 
@@ -862,6 +865,8 @@ class GraphDrawer:
 
         self._hide_tooltip()
 
+        tm = get_theme_manager()
+
         # Vytvořit tooltip okno
         self.tooltip = tk.Toplevel()
         self.tooltip.wm_overrideredirect(True)
@@ -876,8 +881,8 @@ class GraphDrawer:
         label = tk.Label(
             self.tooltip,
             text=description_text,
-            background="#ffffe0",
-            foreground="black",
+            background=tm.get_color('tooltip_bg'),
+            foreground=tm.get_color('tooltip_fg'),
             font=('Arial', 9),
             wraplength=400,
             justify="left",
@@ -935,28 +940,39 @@ class GraphDrawer:
         local_fallback = "PC"
         remote_fallback = "☁"
 
+        tm = get_theme_manager()
         emoji_font = ('Segoe UI Emoji', 10)  # Správný font pro emoji
         text_font = ('Arial', 8, 'bold')     # Font pro text
-        text_color = '#E0E0E0' if is_remote else 'white'
 
-        # Vždy vykreslit název větve na středu s černým obrysem
-        # Nejdříve černý obrys - vykreslí text posunutý o 1px ve všech směrech
+        # Vypočítat kontrastní barvu textu podle barvy větve (ne podle remote)
+        # Tím zajistíme čitelnost na jakékoliv barvě větve
+        text_color = tm.get_contrasting_text_color(
+            branch_color,
+            dark_color='#000000',
+            light_color='#ffffff'
+        )
+
+        # Obrys musí být opačné barvy než text pro maximální kontrast
+        outline_color = '#ffffff' if text_color == '#000000' else '#000000'
+
+        # Vždy vykreslit název větve na středu s kontrastním obrysem
+        # Nejdříve obrys - vykreslí text posunutý o 1px ve všech směrech
         for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
             canvas.create_text(
                 flag_x + dx, flag_y + dy,
                 text=display_name,
                 anchor='center',
                 font=text_font,
-                fill='black'
+                fill=outline_color
             )
 
-        # Pak bílý text na vrch
+        # Pak text na vrch v kontrastní barvě
         text_item = canvas.create_text(
             flag_x, flag_y,
             text=display_name,
             anchor='center',
             font=text_font,
-            fill='white'
+            fill=text_color
         )
 
         # Přidat tooltip pokud byl text zkrácen
@@ -964,25 +980,26 @@ class GraphDrawer:
             self._add_tooltip_to_flag(canvas, text_item, flag_x, flag_y, flag_width, flag_height, full_name)
 
         # Vykreslit remote symbol vlevo, pokud větev existuje remotely
+        # Symboly používají stejné kontrastní barvy jako text
         if has_remote:
             remote_x = flag_x - flag_width // 2 + 12  # 12px od levého okraje vlaječky (zvětšený padding)
             try:
-                # Nejdříve černý obrys pro cloud symbol
+                # Nejdříve obrys pro cloud symbol (opačná barva než text)
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
                         remote_x + dx, flag_y - 1 + dy,
                         text=remote_symbol,
                         anchor='center',
                         font=emoji_font,
-                        fill='black'
+                        fill=outline_color
                     )
-                # Pak bílý symbol na vrch
+                # Pak symbol na vrch v kontrastní barvě
                 canvas.create_text(
                     remote_x, flag_y - 1,
                     text=remote_symbol,
                     anchor='center',
                     font=emoji_font,
-                    fill='white'
+                    fill=text_color
                 )
             except Exception as e:
                 logger.debug(f"Failed to render remote symbol with emoji font: {e}")
@@ -993,36 +1010,37 @@ class GraphDrawer:
                         text=remote_fallback,
                         anchor='center',
                         font=text_font,
-                        fill='black'
+                        fill=outline_color
                     )
                 canvas.create_text(
                     remote_x, flag_y - 1,
                     text=remote_fallback,
                     anchor='center',
                     font=text_font,
-                    fill='white'
+                    fill=text_color
                 )
 
         # Vykreslit local symbol vpravo, pokud větev existuje lokálně
+        # Symboly používají stejné kontrastní barvy jako text
         if has_local:
             local_x = flag_x + flag_width // 2 - 12  # 12px od pravého okraje vlaječky (zvětšený padding)
             try:
-                # Nejdříve černý obrys pro laptop symbol
+                # Nejdříve obrys pro laptop symbol (opačná barva než text)
                 for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                     canvas.create_text(
                         local_x + dx, flag_y - 1 + dy,
                         text=local_symbol,
                         anchor='center',
                         font=emoji_font,
-                        fill='black'
+                        fill=outline_color
                     )
-                # Pak bílý symbol na vrch
+                # Pak symbol na vrch v kontrastní barvě
                 canvas.create_text(
                     local_x, flag_y - 1,
                     text=local_symbol,
                     anchor='center',
                     font=emoji_font,
-                    fill='white'
+                    fill=text_color
                 )
             except Exception as e:
                 logger.debug(f"Failed to render local symbol with emoji font: {e}")
@@ -1033,14 +1051,14 @@ class GraphDrawer:
                         text=local_fallback,
                         anchor='center',
                         font=text_font,
-                        fill='black'
+                        fill=outline_color
                     )
                 canvas.create_text(
                     local_x, flag_y - 1,
                     text=local_fallback,
                     anchor='center',
                     font=text_font,
-                    fill='white'
+                    fill=text_color
                 )
 
     def _calculate_horizontal_line_extent(self, commit: Commit, commits: List[Commit]) -> int:
@@ -1143,12 +1161,13 @@ class GraphDrawer:
         # Tag emoji
         tag_emoji = "🏷️"
 
+        tm = get_theme_manager()
         # Barevné rozlišení - pro remote tagy použít šedší barvu
         if is_remote:
             # Pro remote použít světlejší/menší emoji nebo jiný approach
-            text_color = '#888888'  # Šedší barva
+            text_color = tm.get_color('tag_emoji_remote')
         else:
-            text_color = 'black'    # Normální barva
+            text_color = tm.get_color('tag_emoji_local')
 
         canvas.create_text(
             x, y - 1,
@@ -1172,8 +1191,9 @@ class GraphDrawer:
                 display_name = self._truncate_text_to_width(canvas, font, tag_name, available_width)
                 needs_tooltip = True
 
+        tm = get_theme_manager()
         # Barvy textu - konzistentnější s emoji
-        text_color = '#666666' if is_remote else '#333333'  # Šedší pro remote, tmavší pro lokální
+        text_color = tm.get_color('tag_text_remote') if is_remote else tm.get_color('tag_text_local')
 
         text_item = canvas.create_text(
             x, y,
@@ -1460,11 +1480,13 @@ class GraphDrawer:
             # Vypočítat centrum pro text
             tooltip_center_x = (tooltip_left_x + tooltip_right_x) // 2
 
+            tm = get_theme_manager()
+
             # Vytvořit tooltip okno s tagem
             canvas.create_rectangle(
                 tooltip_left_x, tooltip_top_y,
                 tooltip_right_x, tooltip_bottom_y,
-                fill='#FFFFCC', outline='black', width=1,
+                fill=tm.get_color('tag_tooltip_bg'), outline=tm.get_color('commit_node_outline'), width=1,
                 tags=tooltip_tag
             )
 
@@ -1473,7 +1495,7 @@ class GraphDrawer:
                 text=full_name,
                 anchor='center',
                 font=('Arial', 8),
-                fill='black',
+                fill=tm.get_color('tooltip_fg'),
                 tags=tooltip_tag
             )
 
@@ -1531,6 +1553,7 @@ class GraphDrawer:
 
     def _draw_column_separators(self, canvas: tk.Canvas):
         """Vykreslí interaktivní separátory sloupců na horním okraji."""
+        tm = get_theme_manager()
         table_start_x = self._get_table_start_position()
 
         # Záhlaví musí být vždy na vrchu viditelné oblasti (bez mezery)
@@ -1562,7 +1585,7 @@ class GraphDrawer:
             graph_separator_x - 5, separator_y,
             graph_separator_x + 5, separator_y + self.HEADER_HEIGHT,
             outline='',
-            fill='#888888',
+            fill=tm.get_color('separator_bg'),
             tags=("column_separator", "sep_graph_bg")
         )
 
@@ -1571,9 +1594,9 @@ class GraphDrawer:
             graph_separator_x, separator_y,
             graph_separator_x, separator_y + self.HEADER_HEIGHT,
             width=3,
-            fill='#333333',
+            fill=tm.get_color('separator'),
             tags=("column_separator", "sep_graph"),
-            activefill='#000000'
+            activefill=tm.get_color('separator_active')
         )
 
         # Uložit pozici separátoru pro grafický sloupec
@@ -1609,7 +1632,7 @@ class GraphDrawer:
                     temp_current_x - 5, separator_y,
                     temp_current_x + 5, separator_y + self.separator_height,
                     outline='',
-                    fill='#888888',  # Tmavě šedá
+                    fill=tm.get_color('separator_bg'),
                     tags=("column_separator", f"sep_{column}_bg")
                 )
 
@@ -1618,9 +1641,9 @@ class GraphDrawer:
                     temp_current_x, separator_y,
                     temp_current_x, separator_y + self.separator_height,
                     width=3,
-                    fill='#333333',  # Tmavě šedá
+                    fill=tm.get_color('separator'),
                     tags=("column_separator", f"sep_{column}"),
-                    activefill='#000000'  # Černá při hover
+                    activefill=tm.get_color('separator_active')
                 )
 
                 # Uložit pozici separátoru
@@ -1663,7 +1686,7 @@ class GraphDrawer:
             0, separator_y,
             table_start_x - 5, separator_y + 25,  # -5 pro výřez separátoru
             outline='',
-            fill='#f0f0f0',
+            fill=tm.get_color('header_bg'),
             tags=("column_header", "graph_header_bg")
         )
 
@@ -1674,7 +1697,7 @@ class GraphDrawer:
             text=t('header_branch'),
             anchor='center',
             font=('Arial', 8, 'bold'),
-            fill='#333333',
+            fill=tm.get_color('header_text'),
             tags=("column_header", "graph_header_text")
         )
 
@@ -1688,7 +1711,7 @@ class GraphDrawer:
                     current_x, separator_y,
                     current_x + self.column_widths[column] - 5, separator_y + 25,  # -5 pro mezeru
                     outline='',
-                    fill='#f0f0f0',
+                    fill=tm.get_color('header_bg'),
                     tags=("column_header", f"column_bg_{column}")
                 )
             else:
@@ -1697,7 +1720,7 @@ class GraphDrawer:
                     current_x, separator_y,
                     current_x + self.column_widths[column], separator_y + 25,
                     outline='',
-                    fill='#f0f0f0',
+                    fill=tm.get_color('header_bg'),
                     tags=("column_header", f"column_bg_{column}")
                 )
 
@@ -1708,7 +1731,7 @@ class GraphDrawer:
                 text=column_names[column],
                 anchor='center',
                 font=('Arial', 8, 'bold'),
-                fill='#333333',
+                fill=tm.get_color('header_text'),
                 tags=("column_header", f"header_text_{column}")
             )
 
@@ -1732,7 +1755,7 @@ class GraphDrawer:
                     current_x, separator_y,
                     right_edge, separator_y + 25,
                     outline='',
-                    fill='#f0f0f0',
+                    fill=tm.get_color('header_bg'),
                     tags=("column_header", "header_fill")
                 )
 

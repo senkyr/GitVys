@@ -9,6 +9,7 @@ import webbrowser
 from auth.github_auth import GitHubAuth
 from utils.logging_config import get_logger
 from utils.translations import t
+from utils.theme_manager import get_theme_manager
 
 logger = get_logger(__name__)
 
@@ -84,12 +85,14 @@ class GitHubAuthDialog:
         code_frame = ttk.Frame(main_frame)
         code_frame.pack(pady=(0, 15))
 
+        tm = get_theme_manager()
+
         # User code (velký, výrazný)
         self.user_code_label = ttk.Label(
             code_frame,
             text="------",
             font=('Courier New', 18, 'bold'),
-            foreground='#0969da'
+            foreground=tm.get_color('auth_code_text')
         )
         self.user_code_label.pack(side=tk.LEFT, padx=(0, 10))
 
@@ -116,7 +119,7 @@ class GitHubAuthDialog:
             main_frame,
             text=t('auth_preparing'),
             font=('Arial', 9),
-            foreground='#666666'
+            foreground=tm.get_color('auth_status_text')
         )
         self.status_label.pack(pady=(0, 10))
 
@@ -216,14 +219,16 @@ class GitHubAuthDialog:
 
     def _on_success(self):
         """Callback po úspěšné autentizaci."""
+        tm = get_theme_manager()
         self.progress.stop()
-        self.status_label.config(text=t('auth_success'), foreground='#1a7f37')
+        self.status_label.config(text=t('auth_success'), foreground=tm.get_color('auth_success_text'))
         self.dialog.after(1000, self.dialog.destroy)
 
     def _show_error(self, message: str):
         """Zobrazí chybovou zprávu a zavře dialog."""
+        tm = get_theme_manager()
         self.progress.stop()
-        self.status_label.config(text="✗ " + t('error'), foreground='#cf222e')
+        self.status_label.config(text="✗ " + t('error'), foreground=tm.get_color('auth_error_text'))
         messagebox.showerror(t('auth_error_title'), message, parent=self.dialog)
         self.dialog.destroy()
 

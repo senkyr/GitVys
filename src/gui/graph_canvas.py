@@ -59,6 +59,10 @@ class GraphCanvas(ttk.Frame):
         self.h_scrollbar.grid(row=1, column=0, sticky='ew')
         self.canvas.configure(xscrollcommand=self.h_scrollbar.set)
 
+        # Hide scrollbars initially (will be shown when needed)
+        self.v_scrollbar.grid_remove()
+        self.h_scrollbar.grid_remove()
+
         self.canvas.bind('<MouseWheel>', self.on_mousewheel)
         self.canvas.bind('<Button-4>', self.on_mousewheel)
         self.canvas.bind('<Button-5>', self.on_mousewheel)
@@ -71,6 +75,9 @@ class GraphCanvas(ttk.Frame):
             else:
                 self.canvas.drop_target_register(DND_FILES)
             self.canvas.dnd_bind('<<Drop>>', self.on_drop)
+
+        # Schedule initial scrollbar visibility check
+        self.after(100, self._update_scrollbars_visibility)
 
     def _can_scroll_vertically(self) -> bool:
         """Check if vertical scrolling is needed"""
@@ -87,7 +94,8 @@ class GraphCanvas(ttk.Frame):
 
             content_height = coords[3] - coords[1]
             canvas_height = self.canvas.winfo_height()
-            return content_height > canvas_height
+            # Přidat threshold 10px - scrollbar se zobrazí jen když je rozdíl výrazný
+            return content_height > canvas_height + 10
         except (ValueError, IndexError):
             # Fallback na bbox pokud parsing selže
             bbox = self.canvas.bbox('all')
@@ -95,7 +103,8 @@ class GraphCanvas(ttk.Frame):
                 return False
             content_height = bbox[3] - bbox[1]
             canvas_height = self.canvas.winfo_height()
-            return content_height > canvas_height
+            # Přidat threshold 10px - scrollbar se zobrazí jen když je rozdíl výrazný
+            return content_height > canvas_height + 10
 
     def _can_scroll_horizontally(self) -> bool:
         """Check if horizontal scrolling is needed"""
@@ -112,7 +121,8 @@ class GraphCanvas(ttk.Frame):
 
             content_width = coords[2] - coords[0]
             canvas_width = self.canvas.winfo_width()
-            return content_width > canvas_width
+            # Přidat threshold 10px - scrollbar se zobrazí jen když je rozdíl výrazný
+            return content_width > canvas_width + 10
         except (ValueError, IndexError):
             # Fallback na bbox pokud parsing selže
             bbox = self.canvas.bbox('all')
@@ -120,7 +130,8 @@ class GraphCanvas(ttk.Frame):
                 return False
             content_width = bbox[2] - bbox[0]
             canvas_width = self.canvas.winfo_width()
-            return content_width > canvas_width
+            # Přidat threshold 10px - scrollbar se zobrazí jen když je rozdíl výrazný
+            return content_width > canvas_width + 10
 
     def _update_scrollbars_visibility(self):
         """Show/hide scrollbars based on content size"""
@@ -216,7 +227,7 @@ class GraphCanvas(ttk.Frame):
         bbox = self._get_content_bbox_without_header()
         if bbox:
             # Přidat malý buffer okolo obsahu
-            buffer = 50
+            buffer = 20
             scroll_x1 = max(0, bbox[0] - buffer)
             scroll_y1 = max(0, bbox[1] - buffer)
             scroll_x2 = bbox[2] + buffer
@@ -280,7 +291,7 @@ class GraphCanvas(ttk.Frame):
         # (záhlaví je floating element a nemá ovlivňovat scrollregion)
         bbox = self._get_content_bbox_without_header()
         if bbox:
-            buffer = 50
+            buffer = 20
             scroll_x1 = max(0, bbox[0] - buffer)
             scroll_y1 = max(0, bbox[1] - buffer)
             scroll_x2 = bbox[2] + buffer
@@ -387,9 +398,11 @@ class GraphCanvas(ttk.Frame):
         self.scroll_animation_id = self.after(16, self._perform_momentum_step)
 
     def on_canvas_resize(self, event):
-        """Handler pro změnu velikosti canvasu - aktualizuje záhlaví."""
+        """Handler pro změnu velikosti canvasu - aktualizuje záhlaví a scrollbary."""
         # Překreslit záhlaví při změně šířky okna
         self._update_column_separators()
+        # Aktualizovat scrollbary při změně velikosti
+        self._update_scrollbars_visibility()
 
     def apply_theme(self):
         """Apply current theme colors to canvas."""

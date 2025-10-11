@@ -27,19 +27,22 @@ class CustomProgressBar(tk.Canvas):
         self.mode = kwargs.pop('mode', 'determinate')
         self.value = kwargs.pop('value', 0)
 
+        # Get theme manager for colors
+        tm = get_theme_manager()
+
         # Výchozí rozměry pro podobný vzhled jako ttk.Progressbar
         if 'height' not in kwargs:
             kwargs['height'] = 22
         if 'highlightthickness' not in kwargs:
             kwargs['highlightthickness'] = 1
         if 'highlightbackground' not in kwargs:
-            kwargs['highlightbackground'] = '#aaaaaa'
+            kwargs['highlightbackground'] = tm.get_color('progress_border')
         if 'bg' not in kwargs:
-            kwargs['bg'] = '#e0e0e0'
+            kwargs['bg'] = tm.get_color('progress_bg')
 
         super().__init__(parent, **kwargs)
 
-        self.color = '#4CAF50'  # Výchozí zelená
+        self.color = tm.get_color('progress_color_success')  # Výchozí zelená
         self.is_running = False
         self.animation_position = 0
         self.animation_id = None
@@ -114,7 +117,11 @@ class MainWindow:
 
         # Theme manager
         self.theme_manager = get_theme_manager()
+        self.theme_manager.set_root(self.root)  # Set root for TTK styling
         self.theme_manager.register_callback(self._on_theme_changed)
+
+        # Nastavit root window background podle tématu
+        self.root.configure(bg=self.theme_manager.get_color('window_bg'))
 
         # Defaultní hodnoty pro obnovení
         self.default_title = t('app_title')
@@ -529,19 +536,21 @@ class MainWindow:
     def _update_flag_appearance(self):
         """Update flag appearance based on current language (highlight active, dim inactive)."""
         current_lang = self.tm.get_current_language()
+        tm = self.theme_manager
 
         # Odstranit overlay z obou vlajek
         self.flag_cs.delete('overlay')
         self.flag_en.delete('overlay')
 
         # Přidat šedý semi-transparentní overlay na neaktivní vlajku
+        overlay_color = tm.get_color('overlay_inactive')
         if current_lang == 'cs':
             # Česká vlajka aktivní, anglická ztmavená
             width = self.flag_en.winfo_reqwidth()
             height = self.flag_en.winfo_reqheight()
             self.flag_en.create_rectangle(
                 0, 0, width, height,
-                fill='#888888',
+                fill=overlay_color,
                 stipple='gray50',  # 50% průhlednost
                 tags='overlay'
             )
@@ -551,7 +560,7 @@ class MainWindow:
             height = self.flag_cs.winfo_reqheight()
             self.flag_cs.create_rectangle(
                 0, 0, width, height,
-                fill='#888888',
+                fill=overlay_color,
                 stipple='gray50',
                 tags='overlay'
             )
@@ -564,6 +573,8 @@ class MainWindow:
     def _update_theme_icon_appearance(self):
         """Update theme icon appearance based on current theme (highlight active, dim inactive)."""
         current_theme = self.theme_manager.get_current_theme()
+        tm = self.theme_manager
+        overlay_color = tm.get_color('overlay_inactive')
 
         # Odstranit overlay z obou ikon
         self.icon_sun.delete('overlay')
@@ -576,7 +587,7 @@ class MainWindow:
             height = self.icon_moon.winfo_reqheight()
             self.icon_moon.create_rectangle(
                 0, 0, width, height,
-                fill='#808080',  # Tmavě šedá, plná barva
+                fill=overlay_color,
                 stipple='gray75',  # Lehčí průhlednost pro jemnější ztmavení
                 tags='overlay'
             )
@@ -586,7 +597,7 @@ class MainWindow:
             height = self.icon_sun.winfo_reqheight()
             self.icon_sun.create_rectangle(
                 0, 0, width, height,
-                fill='#808080',  # Tmavě šedá, plná barva
+                fill=overlay_color,
                 stipple='gray75',  # Lehčí průhlednost pro jemnější ztmavení
                 tags='overlay'
             )
@@ -599,8 +610,8 @@ class MainWindow:
         # Apply theme colors
         tm = self.theme_manager
 
-        # Update root background
-        # (ttk widgety nebudou fungovat dobře, ale zkusíme progress bar)
+        # Update root window background
+        self.root.configure(bg=tm.get_color('window_bg'))
 
         # Update CustomProgressBar colors
         if hasattr(self, 'progress'):
@@ -684,6 +695,8 @@ class MainWindow:
         # Skrýt existující tooltip pokud existuje
         self._hide_repo_path_tooltip()
 
+        tm = self.theme_manager
+
         # Vytvořit tooltip window
         self.tooltip_window = tk.Toplevel(self.root)
         self.tooltip_window.wm_overrideredirect(True)
@@ -699,8 +712,8 @@ class MainWindow:
         label = tk.Label(
             self.tooltip_window,
             text=tooltip_text,
-            background="#ffffe0",
-            foreground="black",
+            background=tm.get_color('tooltip_bg'),
+            foreground=tm.get_color('tooltip_fg'),
             font=('Arial', 9),
             relief="solid",
             borderwidth=1,
@@ -739,7 +752,8 @@ class MainWindow:
             self.is_cloned_repo = False  # Lokální repo, ne klonované
             self.display_name = None  # Resetovat display name pro lokální repo
             self.update_status(t('loading_repo'))
-            self.progress.config(value=50, color='#4CAF50')
+            tm = self.theme_manager
+            self.progress.config(value=50, color=tm.get_color('progress_color_success'))
             self.progress.start()
 
             thread = threading.Thread(
@@ -777,7 +791,8 @@ class MainWindow:
         self.display_name = repo_name  # Uložit reálný název pro pozdější zobrazení
 
         self.update_status(t('cloning', repo_name))
-        self.progress.config(color='#4CAF50')
+        tm = self.theme_manager
+        self.progress.config(color=tm.get_color('progress_color_success'))
         self.progress.start()
 
         thread = threading.Thread(
@@ -1006,7 +1021,8 @@ class MainWindow:
         else:
             # Obnovit jen lokálně
             self.update_status(t('loading_repo'))
-            self.progress.config(color='#4CAF50')
+            tm = self.theme_manager
+            self.progress.config(color=tm.get_color('progress_color_success'))
             self.progress.start()
 
             thread = threading.Thread(
@@ -1039,7 +1055,8 @@ class MainWindow:
 
         self.fetch_button.config(text=t('loading'), state="disabled")
         self.update_status(t('loading_remote_branches'))
-        self.progress.config(color='#4CAF50')
+        tm = self.theme_manager
+        self.progress.config(color=tm.get_color('progress_color_success'))
         self.progress.start()
 
         thread = threading.Thread(
@@ -1080,7 +1097,8 @@ class MainWindow:
         self.fetch_button.config(text=button_text, state="normal")
 
         self.progress.stop()
-        self.progress.config(value=100, color='#2196F3')
+        tm = self.theme_manager
+        self.progress.config(value=100, color=tm.get_color('progress_color_info'))
         self.update_status(t('loaded_commits_remote', len(commits)))
 
         # Zobrazit Refresh tlačítko (pokud už není zobrazené)
@@ -1123,7 +1141,8 @@ class MainWindow:
         self.root.after(50, lambda: self._resize_window_for_content(commits))
 
         self.progress.stop()
-        self.progress.config(value=100, color='#2196F3')
+        tm = self.theme_manager
+        self.progress.config(value=100, color=tm.get_color('progress_color_info'))
         self.update_status(t('loaded_commits', len(commits)))
 
         # Nastavit text fetch tlačítka podle zdroje repozitáře
@@ -1188,12 +1207,14 @@ class MainWindow:
         self.theme_frame.place(x=theme_x, y=15)
         self.theme_frame.tkraise()  # Zajistit že jsou ikony viditelné nad drag&drop
 
-        self.progress.config(value=0, color='#4CAF50')
+        tm = self.theme_manager
+        self.progress.config(value=0, color=tm.get_color('progress_color_success'))
         self.update_status(t('ready'))
 
     def show_error(self, message: str):
         self.progress.stop()
-        self.progress.config(value=0, color='#4CAF50')
+        tm = self.theme_manager
+        self.progress.config(value=0, color=tm.get_color('progress_color_success'))
         self.update_status(t('error'))
         messagebox.showerror(t('error'), message)
 
