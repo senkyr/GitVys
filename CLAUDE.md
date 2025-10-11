@@ -27,6 +27,7 @@ build\build-exe.bat
 ```
 
 This script automatically:
+
 - Checks Python availability
 - Installs dependencies from `requirements.txt`
 - Installs PyInstaller (build dependency)
@@ -76,6 +77,8 @@ GitVys/
 │   └── utils/             # Utilities
 │       ├── data_structures.py # Commit and Branch data classes
 │       ├── logging_config.py  # Centralized logging (~/.gitvys/)
+│       ├── theme_manager.py   # Theme management (light/dark mode)
+│       ├── translations.py    # Translation management (CS/EN)
 │       └── constants.py   # Application-wide constants
 ├── build/                 # Build scripts and assets
 │   ├── build-exe.bat     # Automated build script (installs deps + builds)
@@ -123,6 +126,8 @@ GitVys/
 - **URL Support**: Clone remote repositories (GitHub, GitLab, Bitbucket) to temp directory
 - **Private Repository Support**: OAuth Device Flow authentication for private GitHub repositories
 - **Temp Clone Management**: Automatic cleanup of cloned repositories with proper Windows file handle management
+- **Theme Support**: Light/dark mode with automatic persistence to settings
+- **Multi-language**: Czech/English UI with language switcher
 - **Tags**: Display Git tags with emoji icons (🏷️ normal, 📌 release, 🚀 version) and tooltips for annotated tags
 - **Remote Branches**: Load remote branches via "Načíst remote/větve" button
 - **Git Detection**: Startup check for Git availability with user-friendly error dialog
@@ -206,9 +211,33 @@ The application uses centralized logging for error tracking and debugging:
 - Build dependency (not in requirements.txt):
   - `pyinstaller` (latest version, auto-installed by `build-exe.bat`)
 
-## Czech Language Support
+## Multi-language Support (v1.4.0)
 
-The application uses Czech language for UI text and date formatting. User-facing messages and labels are in Czech.
+The application supports Czech and English languages:
+
+- Language switcher with flag icons (🇨🇿 Czech, 🇬🇧 English)
+- Automatic persistence to `~/.gitvys/settings.json`
+- Default language: Czech
+- Translation management via `utils/translations.py`
+- All UI texts, button labels, status messages, and error dialogs are translated
+- Plural forms handled correctly for both languages
+
+## Theme Management (v1.5.0)
+
+The application supports light and dark themes:
+
+- Theme switcher with icons (☀️ light, 🌙 dark)
+- Automatic persistence to `~/.gitvys/settings.json`
+- Default theme: light mode
+- Theme management via `utils/theme_manager.py`
+- Full TTK widget styling for consistent appearance
+- Dynamic color updates for all UI components:
+  - Canvas background and text colors
+  - Button, label, frame, entry field styling
+  - Progress bar colors
+  - Tooltip colors
+  - Column headers and separators
+- Contrasting text colors calculated automatically for readability
 
 ## Versioning & Changelog
 
@@ -245,6 +274,6 @@ This project uses Git tags for versioning.
 3. **Categorize commits** into appropriate sections (Added/Changed/Fixed/Documentation/etc.)
 
 4. **Update version in code:**
-   - `setup.py` - version field
-   - `src/gui/main_window.py` - default_title with version number
-   - **IMPORTANT:** Version number in code MUST match the version in CHANGELOG.md (e.g., if CHANGELOG shows v1.2.0, src/gui/main_window.py must also show v1.2.0)
+   - `setup.py` - version field (line 5)
+   - `src/utils/translations.py` - app_title in BOTH language dictionaries ('cs' and 'en')
+   - **IMPORTANT:** Version number in code MUST match the version in CHANGELOG.md (e.g., if CHANGELOG shows v1.5.0, translations.py must also show v1.5.0)

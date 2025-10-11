@@ -4,6 +4,33 @@ Všechny významné změny v tomto projektu.
 
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
+## [1.5.0] - 2025-01-12
+
+### Added
+
+- **Podpora světlého/tmavého tématu**
+  - Přepínač témat pomocí ikon slunce ☀️ a měsíce 🌙 v pravém horním rohu
+  - Automatické ukládání volby tématu do `~/.gitvys/settings.json`
+  - Defaultní téma: light mode
+  - Nový modul: `utils/theme_manager.py` pro správu barevných schémat
+  - Kompletní TTK widget styling (Button, Label, Frame, Entry, Progressbar)
+  - Dynamické barvy pro všechny UI komponenty (záhlaví, separátory, tooltipy, canvas)
+
+### Changed
+
+- **Vylepšený URL dialog**
+  - Pozadí dialogu se přizpůsobuje aktuálnímu tématu
+  - Entry pole pro URL má správné barvy v dark módu (#3a3a3a pozadí, #e0e0e0 text)
+  - Konzistentní styling napříč celou aplikací
+
+### Fixed
+
+- **Inteligentní skrývání scrollbarů**
+  - Scrollbary se správně skrývají když se obsah vejde do viewportu
+  - Zmenšen buffer v scrollregion z 50px na 20px (60px úspora celkem)
+  - Přidán threshold 10px pro zobrazení scrollbarů (eliminuje zbytečné zobrazování)
+  - Scrollbary se aktualizují při změně velikosti okna
+
 ## [1.4.0] - 2025-10-08
 
 ### Added

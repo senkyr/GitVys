@@ -28,27 +28,15 @@ python3 src/main.py
 
 ## Vytvoření spustitelného souboru (.exe)
 
-Pro vytvoření standalone .exe souboru:
+Pro vytvoření standalone .exe souboru viz detailní návod v **[BUILD-INSTRUCTIONS.md](BUILD-INSTRUCTIONS.md)**.
 
-1. Nainstaluj PyInstaller:
+**Rychlý způsob:**
 
 ```bash
-pip install pyinstaller
+build\build-exe.bat
 ```
 
-2. Vytvoř .exe soubor:
-
-**Doporučeno - použij build script:**
-```bash
-python build/build.py
-```
-
-**Nebo manuálně:**
-```bash
-pyinstaller --onefile --windowed --name="GitVisualizer" --icon=build/icon.ico src/main.py
-```
-
-3. Spustitelný soubor najdeš ve složce `dist/`
+Spustitelný soubor najdeš ve složce `dist/`.
 
 ## Použití
 
@@ -110,6 +98,7 @@ Aplikace podporuje přístup k soukromým GitHub repozitářům pomocí OAuth De
 - Příští klonování private repozitářů proběhne automaticky
 
 **Umístění tokenu:**
+
 - Windows: `%USERPROFILE%\.gitvys\github_token`
 - Linux/Mac: `~/.gitvys/github_token`
 

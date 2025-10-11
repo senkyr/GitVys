@@ -43,6 +43,7 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 
 - **Drag & drop rozhraní** - jednoduše přetáhni složku repozitáře nebo URL
 - **URL support** - otevření remote repozitářů (GitHub, GitLab, Bitbucket)
+- **Světlý/tmavý režim** - přepínání témat pro pohodlné používání
 - **Vizualizace podobná GitKrakenu** - přehledný graf větví a commitů
 - **Tag podpora** - zobrazení Git tagů s emoji ikonami
 - **Remote větve** - načítání remote větví tlačítkem
@@ -79,10 +80,15 @@ Viz [docs/INSTALLATION.md](docs/INSTALLATION.md) pro instrukce k instalaci a spu
 git-visualizer/
 ├── src/                 # Zdrojový kód
 │   ├── main.py          # Vstupní bod aplikace
+│   ├── auth/            # GitHub OAuth autentizace
+│   │   ├── __init__.py
+│   │   ├── github_auth.py    # OAuth Device Flow pro GitHub
+│   │   └── token_storage.py  # Ukládání tokenu (~/.gitvys/)
 │   ├── gui/             # GUI komponenty
 │   │   ├── main_window.py   # Hlavní okno
 │   │   ├── graph_canvas.py  # Graf komponenta
-│   │   └── drag_drop.py     # Drag & drop funkcionalita
+│   │   ├── drag_drop.py     # Drag & drop funkcionalita
+│   │   └── auth_dialog.py   # OAuth autorizační dialog
 │   ├── repo/            # Git operace
 │   │   └── repository.py    # Práce s Git repozitářem
 │   ├── visualization/   # Vizualizace
@@ -92,8 +98,11 @@ git-visualizer/
 │   └── utils/           # Pomocné utility
 │       ├── data_structures.py # Datové struktury
 │       ├── constants.py       # Konstanty aplikace
-│       └── logging_config.py  # Centralizované logování
+│       ├── logging_config.py  # Centralizované logování
+│       ├── theme_manager.py   # Správa témat (světlý/tmavý režim)
+│       └── translations.py    # Správa překladů (CS/EN)
 ├── build/               # Build skripty a assety
+│   ├── build-exe.bat    # Automatizovaný build skript
 │   ├── build.py         # Build skript pro .exe
 │   ├── icon.ico         # Ikona aplikace
 │   └── feather.png      # Zdrojový asset ikony

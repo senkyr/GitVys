@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 TRANSLATIONS = {
     'cs': {
         # Main window
-        'app_title': 'Git Visualizer v1.4.0',
+        'app_title': 'Git Visualizer v1.5.0',
         'fetch_remote': 'Načíst remote',
         'fetch_branches': 'Načíst větve',
         'close_repo': 'Zavřít repo',
@@ -98,7 +98,7 @@ TRANSLATIONS = {
     },
     'en': {
         # Main window
-        'app_title': 'Git Visualizer v1.4.0',
+        'app_title': 'Git Visualizer v1.5.0',
         'fetch_remote': 'Fetch remote',
         'fetch_branches': 'Fetch branches',
         'close_repo': 'Close repo',

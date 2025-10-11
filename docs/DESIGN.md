@@ -61,8 +61,11 @@ git-visualizer/
 │   └── utils/
 │       ├── data_structures.py # Commit, MergeBranch
 │       ├── constants.py       # Konstanty aplikace (layout, barvy, rozměry)
-│       └── logging_config.py  # Centralizované logování (~/.gitvys/)
+│       ├── logging_config.py  # Centralizované logování (~/.gitvys/)
+│       ├── theme_manager.py   # Správa témat (světlý/tmavý režim)
+│       └── translations.py    # Správa překladů (CS/EN)
 ├── build/               # Build skripty a assety
+│   ├── build-exe.bat    # Automatizovaný build skript
 │   ├── build.py         # Build script pro .exe
 │   ├── icon.ico         # Ikona aplikace
 │   └── feather.png      # Zdrojový asset ikony
@@ -385,6 +388,50 @@ except Exception as e:
 - Magic numbers nahrazeny konstantami (`utils/constants.py`)
 - Pinnuté verze závislostí (reproducible builds)
 - Lepší type hints a dokumentace
+
+## 7.6. Theme Management (v1.5.0)
+
+### Theme systém
+
+**Implementace** (`utils/theme_manager.py`):
+
+- Singleton pattern pro globální správu tématu
+- Podpora light/dark módu
+- Persistence preference do `~/.gitvys/settings.json`
+- Callback systém pro notifikaci o změně tématu
+
+**Barevné schéma:**
+
+Light mode:
+
+- Window background: `#f0f0f0`
+- Canvas: `#ffffff`
+- Text: `#000000`
+- Buttons: `#e0e0e0`
+- Entry fields: `#ffffff`
+
+Dark mode:
+
+- Window background: `#2b2b2b`
+- Canvas: `#1e1e1e`
+- Text: `#e0e0e0`
+- Buttons: `#3a3a3a`
+- Entry fields: `#3a3a3a`
+
+**TTK Widget Styling:**
+
+Automatická konfigurace všech TTK widgetů:
+
+- TFrame, TLabel, TButton
+- TEntry (field background, text, selection colors)
+- TProgressbar
+- Kontrastní barvy pro čitelnost
+
+**UI Komponenty:**
+
+- Přepínač pomocí ikon (☀️ světlý / 🌙 tmavý)
+- Vizuální indikace aktivního tématu (overlay na neaktivní ikoně)
+- Dynamické aktualizace všech komponent při změně
 
 ## 11. Rozšíření do budoucna
 
