@@ -8,6 +8,7 @@ except ImportError:
     DND_TEXT = None
 from utils.data_structures import Commit
 from visualization.graph_drawer import GraphDrawer
+from utils.theme_manager import get_theme_manager
 
 
 class GraphCanvas(ttk.Frame):
@@ -34,9 +35,10 @@ class GraphCanvas(ttk.Frame):
         self.canvas_frame.columnconfigure(0, weight=1)
         self.canvas_frame.rowconfigure(0, weight=1)
 
+        tm = get_theme_manager()
         self.canvas = tk.Canvas(
             self.canvas_frame,
-            bg='white',
+            bg=tm.get_color('canvas_bg'),
             scrollregion=(0, 0, 1000, 1000)
         )
         self.canvas.grid(row=0, column=0, sticky='nsew')
@@ -388,6 +390,15 @@ class GraphCanvas(ttk.Frame):
         """Handler pro změnu velikosti canvasu - aktualizuje záhlaví."""
         # Překreslit záhlaví při změně šířky okna
         self._update_column_separators()
+
+    def apply_theme(self):
+        """Apply current theme colors to canvas."""
+        tm = get_theme_manager()
+        self.canvas.config(bg=tm.get_color('canvas_bg'))
+
+        # Redraw graph if loaded
+        if hasattr(self.graph_drawer, '_current_commits') and self.graph_drawer._current_commits:
+            self.update_graph(self.graph_drawer._current_commits)
 
     def _update_column_separators(self):
         """Aktualizuje pozici separátorů sloupců po scrollování."""

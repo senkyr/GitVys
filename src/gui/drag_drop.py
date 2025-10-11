@@ -8,6 +8,7 @@ except ImportError:
     DND_FILES = None
 from utils.logging_config import get_logger
 from utils.translations import t
+from utils.theme_manager import get_theme_manager
 
 logger = get_logger(__name__)
 
@@ -32,14 +33,15 @@ class DragDropFrame(ttk.Frame):
             bg=bg_color,  # Systémová šedá barva
             highlightthickness=0
         )
-        self.drop_canvas.grid(row=0, column=0, padx=40, pady=40, sticky='nsew')
+        self.drop_canvas.grid(row=0, column=0, padx=30, pady=(40, 5), sticky='nsew')
 
         # Vytvořit label a button
+        tm = get_theme_manager()
         self.drop_label = ttk.Label(
             self.drop_canvas,
             text=t('drag_drop_text'),
             font=('Arial', 11),
-            background='#F0F8FF',  # Alice blue - shodná s plochou
+            background=tm.get_color('drop_area_bg'),
             justify='center'
         )
 
@@ -76,12 +78,15 @@ class DragDropFrame(ttk.Frame):
         # Modrá varianta - interaktivní accent
         padding = 5
 
+        # Get theme colors
+        tm = get_theme_manager()
+
         # Světle modrá plocha s čárkovaným modrým rámečkem
         self.drop_canvas.create_rectangle(
             padding, padding,
             canvas_width - padding, canvas_height - padding,
-            fill='#F0F8FF',  # Alice blue - velmi světle modrá
-            outline='#4A90E2',  # Modrá - interaktivní barva
+            fill=tm.get_color('drop_area_bg'),
+            outline=tm.get_color('drop_area_outline'),
             width=2,
             dash=(5, 3)  # Čárkovaná čára (5px čárka, 3px mezera)
         )
@@ -198,6 +203,18 @@ class DragDropFrame(ttk.Frame):
         self.drop_label.config(text=t('drag_drop_text'))
         self.browse_button.config(text=t('open_folder'))
         self.url_button.config(text=t('open_url'))
+
+    def apply_theme(self):
+        """Apply current theme colors to widgets."""
+        tm = get_theme_manager()
+
+        # Update canvas background
+        style = ttk.Style()
+        bg_color = style.lookup('TFrame', 'background')
+        self.drop_canvas.config(bg=bg_color)
+
+        # Update drop area colors and redraw
+        self._center_widgets()
 
     def browse_folder(self):
         folder_path = filedialog.askdirectory(

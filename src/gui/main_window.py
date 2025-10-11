@@ -14,6 +14,7 @@ from gui.auth_dialog import GitHubAuthDialog
 from auth.token_storage import TokenStorage
 from utils.logging_config import get_logger
 from utils.translations import get_translation_manager, t
+from utils.theme_manager import get_theme_manager
 
 logger = get_logger(__name__)
 
@@ -111,6 +112,10 @@ class MainWindow:
         self.tm = get_translation_manager()
         self.tm.register_callback(self._on_language_changed)
 
+        # Theme manager
+        self.theme_manager = get_theme_manager()
+        self.theme_manager.register_callback(self._on_theme_changed)
+
         # Defaultní hodnoty pro obnovení
         self.default_title = t('app_title')
         self.default_width = 600
@@ -188,6 +193,101 @@ class MainWindow:
         # Červený kříž (St. George) - užší
         canvas.create_rectangle(0, height//2-2, width, height//2+2, fill='#C8102E', outline='')
         canvas.create_rectangle(width//2-2, 0, width//2+2, height, fill='#C8102E', outline='')
+
+        # Černý rámeček
+        canvas.create_rectangle(0, 0, width-1, height-1, outline='#000000', width=1)
+
+        return canvas
+
+    def _create_sun_icon(self, parent, width=30, height=20):
+        """Vytvoří Canvas se sluníčkem (light mode ikona)."""
+        canvas = tk.Canvas(parent, width=width, height=height, highlightthickness=0, cursor='hand2')
+
+        # Pozadí - světle modré (obloha)
+        canvas.create_rectangle(0, 0, width, height, fill='#87CEEB', outline='')
+
+        # Střed ikony
+        center_x = width // 2
+        center_y = height // 2
+
+        # Menší sluníčko uprostřed - žlutá výplň s černým okrajem
+        sun_radius = 4
+        canvas.create_oval(
+            center_x - sun_radius, center_y - sun_radius,
+            center_x + sun_radius, center_y + sun_radius,
+            fill='#FFD700',  # Jasně žlutá
+            outline='#000000',  # Černý okraj
+            width=1
+        )
+
+        # 8 paprsků kolem slunce
+        import math
+        ray_length = 4
+        ray_distance = sun_radius + 2  # Vzdálenost od středu slunce
+
+        for i in range(8):
+            angle = i * (2 * math.pi / 8)
+            start_x = center_x + ray_distance * math.cos(angle)
+            start_y = center_y + ray_distance * math.sin(angle)
+            end_x = center_x + (ray_distance + ray_length) * math.cos(angle)
+            end_y = center_y + (ray_distance + ray_length) * math.sin(angle)
+
+            canvas.create_line(
+                start_x, start_y, end_x, end_y,
+                fill='#FFD700',  # Jasně žlutá
+                width=2
+            )
+
+        # Černý rámeček
+        canvas.create_rectangle(0, 0, width-1, height-1, outline='#000000', width=1)
+
+        return canvas
+
+    def _create_moon_icon(self, parent, width=30, height=20):
+        """Vytvoří Canvas s měsíčkem (dark mode ikona)."""
+        canvas = tk.Canvas(parent, width=width, height=height, highlightthickness=0, cursor='hand2')
+
+        # Pozadí - černé (noční obloha)
+        canvas.create_rectangle(0, 0, width, height, fill='#000000', outline='')
+
+        # Střed ikony
+        center_x = width // 2
+        center_y = height // 2
+
+        # Půlměsíc - vytvořen pomocí dvou kruhů
+        moon_radius = 5
+
+        # Velký bílý kruh (celý měsíc)
+        canvas.create_oval(
+            center_x - moon_radius - 2, center_y - moon_radius,
+            center_x + moon_radius - 2, center_y + moon_radius,
+            fill='#FFFFFF',  # Bílá
+            outline=''
+        )
+
+        # Menší černý kruh (vytvoří výřez pro půlměsíc)
+        canvas.create_oval(
+            center_x - moon_radius + 2, center_y - moon_radius,
+            center_x + moon_radius + 2, center_y + moon_radius,
+            fill='#000000',  # Černá - stejná jako pozadí
+            outline=''
+        )
+
+        # Přidat bílé hvězdy (malé body) - méně hvězd, dál od měsíce
+        stars = [
+            (4, 4),    # levý horní roh
+            (25, 6),   # pravý horní roh
+            (22, 16),  # pravý dolní roh
+        ]
+
+        for star_x, star_y in stars:
+            # Malý kroužek jako hvězda
+            canvas.create_oval(
+                star_x - 1, star_y - 1,
+                star_x + 1, star_y + 1,
+                fill='#FFFFFF',
+                outline=''
+            )
 
         # Černý rámeček
         canvas.create_rectangle(0, 0, width-1, height-1, outline='#000000', width=1)
@@ -312,6 +412,32 @@ class MainWindow:
         # Zvýšit z-index aby byly vlaječky viditelné nad ostatními widgety
         self.language_frame.tkraise()
 
+        # Theme switcher frame (vpravo nahoře, viditelný pouze v úvodním okně)
+        # Parent je root aby byl nezávislý na main_frame grid layoutu
+        self.theme_frame = ttk.Frame(self.root)
+        # Pozice bude nastavena dynamicky po inicializaci okna
+        self.root.update_idletasks()
+        window_width = self.root.winfo_width()
+        if window_width <= 1:
+            window_width = self.default_width
+        theme_x = window_width - 85  # 10px main_frame padding + 75px pro ikony
+        self.theme_frame.place(x=theme_x, y=15)
+
+        # Ikony slunce a měsíce jako přepínač tématu - vytvořit Canvas widgety
+        self.icon_sun = self._create_sun_icon(self.theme_frame, width=30, height=20)
+        self.icon_sun.pack(side='left', padx=2)
+        self.icon_sun.bind('<Button-1>', lambda e: self._switch_to_theme('light'))
+
+        self.icon_moon = self._create_moon_icon(self.theme_frame, width=30, height=20)
+        self.icon_moon.pack(side='left', padx=2)
+        self.icon_moon.bind('<Button-1>', lambda e: self._switch_to_theme('dark'))
+
+        # Nastavit počáteční stav ikon
+        self._update_theme_icon_appearance()
+
+        # Zvýšit z-index aby byly ikony viditelné nad ostatními widgety
+        self.theme_frame.tkraise()
+
         self.header_frame = ttk.Frame(self.main_frame)
         # Header frame bude na row=1, zobrazí se až po načtení repozitáře
 
@@ -369,7 +495,7 @@ class MainWindow:
         self.graph_canvas = GraphCanvas(self.content_frame, on_drop_callback=self.on_repository_selected)
 
         self.status_frame = ttk.Frame(self.main_frame)
-        self.status_frame.grid(row=3, column=0, sticky='ew', pady=(10, 0))
+        self.status_frame.grid(row=3, column=0, sticky='ew', pady=(25, 0))
         self.status_frame.columnconfigure(1, weight=1)
 
         self.status_label = ttk.Label(self.status_frame, text=t('ready'))
@@ -429,6 +555,69 @@ class MainWindow:
                 stipple='gray50',
                 tags='overlay'
             )
+
+    def _switch_to_theme(self, theme: str):
+        """Switch to selected theme when icon is clicked."""
+        if theme != self.theme_manager.get_current_theme():
+            self.theme_manager.set_theme(theme)
+
+    def _update_theme_icon_appearance(self):
+        """Update theme icon appearance based on current theme (highlight active, dim inactive)."""
+        current_theme = self.theme_manager.get_current_theme()
+
+        # Odstranit overlay z obou ikon
+        self.icon_sun.delete('overlay')
+        self.icon_moon.delete('overlay')
+
+        # Přidat šedý overlay na neaktivní ikonu (bez 3D efektu)
+        if current_theme == 'light':
+            # Sluníčko aktivní, měsíček ztmavený
+            width = self.icon_moon.winfo_reqwidth()
+            height = self.icon_moon.winfo_reqheight()
+            self.icon_moon.create_rectangle(
+                0, 0, width, height,
+                fill='#808080',  # Tmavě šedá, plná barva
+                stipple='gray75',  # Lehčí průhlednost pro jemnější ztmavení
+                tags='overlay'
+            )
+        else:
+            # Měsíček aktivní, sluníčko ztmavené
+            width = self.icon_sun.winfo_reqwidth()
+            height = self.icon_sun.winfo_reqheight()
+            self.icon_sun.create_rectangle(
+                0, 0, width, height,
+                fill='#808080',  # Tmavě šedá, plná barva
+                stipple='gray75',  # Lehčí průhlednost pro jemnější ztmavení
+                tags='overlay'
+            )
+
+    def _on_theme_changed(self, theme: str):
+        """Called when theme is changed - updates all UI colors."""
+        # Update theme icon appearance
+        self._update_theme_icon_appearance()
+
+        # Apply theme colors
+        tm = self.theme_manager
+
+        # Update root background
+        # (ttk widgety nebudou fungovat dobře, ale zkusíme progress bar)
+
+        # Update CustomProgressBar colors
+        if hasattr(self, 'progress'):
+            self.progress.config(
+                bg=tm.get_color('progress_bg'),
+                highlightbackground=tm.get_color('progress_border')
+            )
+
+        # Update drag-drop frame if exists
+        if hasattr(self, 'drag_drop_frame'):
+            self.drag_drop_frame.apply_theme()
+
+        # Update graph canvas if exists
+        if hasattr(self, 'graph_canvas'):
+            self.graph_canvas.apply_theme()
+
+        logger.info(f"Theme changed to: {theme}")
 
     def _on_language_changed(self, language: str):
         """Called when language is changed - updates all UI texts."""
@@ -901,8 +1090,9 @@ class MainWindow:
         self.root.after(50, lambda: self._resize_window_for_content(commits))
 
     def show_graph(self, commits):
-        # Skrýt přepínač jazyka
+        # Skrýt přepínač jazyka a přepínač tématu
         self.language_frame.place_forget()
+        self.theme_frame.place_forget()
 
         self.drag_drop_frame.grid_remove()
         self.graph_canvas.grid(row=0, column=0, sticky='nsew')
@@ -988,6 +1178,15 @@ class MainWindow:
         self.root.title(self.default_title)
         self.root.geometry(f"{self.default_width}x{self.default_height}")
         self._center_window(self.default_width, self.default_height)
+
+        # Přepočítat a nastavit pozici theme frame PO změně velikosti okna
+        self.root.update_idletasks()
+        window_width = self.root.winfo_width()
+        if window_width <= 1:
+            window_width = self.default_width
+        theme_x = window_width - 85  # 10px main_frame padding + 75px pro ikony
+        self.theme_frame.place(x=theme_x, y=15)
+        self.theme_frame.tkraise()  # Zajistit že jsou ikony viditelné nad drag&drop
 
         self.progress.config(value=0, color='#4CAF50')
         self.update_status(t('ready'))
