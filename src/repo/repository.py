@@ -185,7 +185,46 @@ class GitRepository:
                 'remote': div_info.get('remote_head')
             }
 
-        for commit in self.repo.iter_commits(all=True):
+        # Bezpečně iterovat přes všechny commity (lokální + remote, bez poškozených refs)
+        seen_commits = set()
+        all_commits_to_process = []
+
+        # 1. Nejprve lokální větve
+        try:
+            for head in self.repo.heads:
+                try:
+                    for commit in self.repo.iter_commits(head):
+                        if commit.hexsha not in seen_commits:
+                            seen_commits.add(commit.hexsha)
+                            all_commits_to_process.append(commit)
+                except Exception as e:
+                    logger.warning(f"Failed to iterate commits for local branch {head.name}: {e}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Failed to access local branches: {e}")
+
+        # 2. Poté remote větve (kromě /HEAD)
+        try:
+            if hasattr(self.repo, 'remotes') and self.repo.remotes:
+                remote_refs = list(self.repo.remote().refs)
+                for remote_ref in remote_refs:
+                    # Přeskočit HEAD reference
+                    if remote_ref.name.endswith('/HEAD'):
+                        continue
+
+                    try:
+                        for commit in self.repo.iter_commits(remote_ref):
+                            if commit.hexsha not in seen_commits:
+                                seen_commits.add(commit.hexsha)
+                                all_commits_to_process.append(commit)
+                    except Exception as e:
+                        logger.warning(f"Failed to iterate commits for remote ref {remote_ref.name}: {e}")
+                        continue
+        except Exception as e:
+            logger.debug(f"Failed to access remote refs: {e}")
+
+        # 3. Zpracovat všechny nalezené commity
+        for commit in all_commits_to_process:
             # Prioritně lokální větev
             if commit.hexsha in local_commit_map:
                 branch_name = local_commit_map[commit.hexsha]
@@ -657,9 +696,44 @@ class GitRepository:
         full_hash_map = {}
         if self.repo:
             try:
-                for commit in self.repo.iter_commits(all=True):
-                    short_hash = commit.hexsha[:8]
-                    full_hash_map[short_hash] = commit.hexsha
+                seen_commits = set()
+
+                # 1. Nejprve lokální větve
+                try:
+                    for head in self.repo.heads:
+                        try:
+                            for commit in self.repo.iter_commits(head):
+                                if commit.hexsha not in seen_commits:
+                                    seen_commits.add(commit.hexsha)
+                                    short_hash = commit.hexsha[:8]
+                                    full_hash_map[short_hash] = commit.hexsha
+                        except Exception as e:
+                            logger.warning(f"Failed to iterate commits for local branch {head.name}: {e}")
+                            continue
+                except Exception as e:
+                    logger.warning(f"Failed to access local branches: {e}")
+
+                # 2. Poté remote větve (kromě /HEAD)
+                try:
+                    if hasattr(self.repo, 'remotes') and self.repo.remotes:
+                        remote_refs = list(self.repo.remote().refs)
+                        for remote_ref in remote_refs:
+                            # Přeskočit HEAD reference
+                            if remote_ref.name.endswith('/HEAD'):
+                                continue
+
+                            try:
+                                for commit in self.repo.iter_commits(remote_ref):
+                                    if commit.hexsha not in seen_commits:
+                                        seen_commits.add(commit.hexsha)
+                                        short_hash = commit.hexsha[:8]
+                                        full_hash_map[short_hash] = commit.hexsha
+                            except Exception as e:
+                                logger.warning(f"Failed to iterate commits for remote ref {remote_ref.name}: {e}")
+                                continue
+                except Exception as e:
+                    logger.debug(f"Failed to access remote refs: {e}")
+
             except Exception as e:
                 logger.warning(f"Failed to build full hash map: {e}")
         return full_hash_map
