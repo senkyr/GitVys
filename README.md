@@ -84,11 +84,16 @@ git-visualizer/
 │   │   ├── __init__.py
 │   │   ├── github_auth.py    # OAuth Device Flow pro GitHub
 │   │   └── token_storage.py  # Ukládání tokenu (~/.gitvys/)
-│   ├── gui/             # GUI komponenty
-│   │   ├── main_window.py   # Hlavní okno
+│   ├── gui/             # GUI komponenty (refaktorováno v1.5.0)
+│   │   ├── main_window.py   # Layout manager (500 ř.)
+│   │   ├── repo_manager.py  # Repository operations (451 ř.)
 │   │   ├── graph_canvas.py  # Graf komponenta
 │   │   ├── drag_drop.py     # Drag & drop funkcionalita
-│   │   └── auth_dialog.py   # OAuth autorizační dialog
+│   │   ├── auth_dialog.py   # OAuth autorizační dialog
+│   │   └── ui_components/   # UI komponenty
+│   │       ├── language_switcher.py  # Přepínání jazyka
+│   │       ├── theme_switcher.py     # Přepínání tématu
+│   │       └── stats_display.py      # Zobrazení statistik
 │   ├── repo/            # Git operace (refaktorováno v1.5.0)
 │   │   ├── repository.py    # GitRepository facade (281 ř.)
 │   │   ├── parsers/         # Parsing komponenty

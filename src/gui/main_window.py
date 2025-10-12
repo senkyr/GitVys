@@ -144,6 +144,25 @@ class MainWindow:
 
         self.setup_ui()
 
+        # Zobrazit přepínače jazyka a tématu až PO inicializaci okna
+        # (zajistí správnou velikost okna pro výpočet pozice)
+        self.root.update_idletasks()
+        if self.language_switcher:
+            self.language_switcher.show()
+        if self.theme_switcher:
+            self.theme_switcher.show()
+
+        # Přidat window resize binding pro automatické přepočítání pozice přepínačů
+        self.root.bind('<Configure>', self._on_window_resize)
+
+    def _on_window_resize(self, event):
+        """Called when window is resized - updates positions of switchers."""
+        # Aktualizovat pouze pokud je resize na root window (ne na child widgetech)
+        if event.widget == self.root:
+            # Aktualizovat pozici theme switcher pokud je viditelný
+            if self.theme_switcher and self.theme_switcher.theme_frame and self.theme_switcher.theme_frame.winfo_ismapped():
+                self.theme_switcher.update_position()
+
     def _center_window(self, width: int, height: int):
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -245,12 +264,12 @@ class MainWindow:
         # Language switcher (vlevo nahoře, viditelný pouze v úvodním okně)
         self.language_switcher = LanguageSwitcher(self)
         self.language_switcher.create_switcher_ui()
-        self.language_switcher.show()
+        # show() bude voláno po inicializaci okna v __init__()
 
         # Theme switcher (vpravo nahoře, viditelný pouze v úvodním okně)
         self.theme_switcher = ThemeSwitcher(self)
         self.theme_switcher.create_switcher_ui()
-        self.theme_switcher.show()
+        # show() bude voláno po inicializaci okna v __init__()
 
         self.header_frame = ttk.Frame(self.main_frame)
         # Header frame bude na row=1, zobrazí se až po načtení repozitáře

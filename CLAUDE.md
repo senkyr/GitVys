@@ -63,11 +63,16 @@ GitVys/
 │   │   ├── __init__.py    # Auth module exports
 │   │   ├── github_auth.py # OAuth Device Flow for GitHub
 │   │   └── token_storage.py # Token persistence (~/.gitvys/)
-│   ├── gui/               # UI components
-│   │   ├── main_window.py # Main application window with drag & drop
+│   ├── gui/               # UI components (refactored v1.5.0)
+│   │   ├── main_window.py # Layout manager and window orchestrator (500 lines)
+│   │   ├── repo_manager.py # Repository operations manager (451 lines)
 │   │   ├── graph_canvas.py # Canvas component for rendering commit graph
 │   │   ├── drag_drop.py   # Drag & drop operations for repository folders
-│   │   └── auth_dialog.py # OAuth authorization dialog
+│   │   ├── auth_dialog.py # OAuth authorization dialog
+│   │   └── ui_components/ # UI component modules
+│   │       ├── language_switcher.py  # Language switching with flags
+│   │       ├── theme_switcher.py     # Theme switching with icons
+│   │       └── stats_display.py      # Repository statistics display
 │   ├── repo/              # Git operations (refactored v1.5.0)
 │   │   ├── repository.py  # GitRepository facade (281 lines)
 │   │   ├── parsers/       # Parsing components
@@ -109,7 +114,10 @@ GitVys/
 
 - **Main Entry Point**: `src/main.py` - Simple launcher that initializes the GUI and checks Git availability
 - **Auth Layer**: `src/auth/` directory contains GitHub OAuth authentication (Device Flow)
-- **GUI Layer**: `src/gui/` directory contains all UI components including OAuth dialog
+- **GUI Layer**: `src/gui/` directory contains all UI components (refactored into 4 specialized components in v1.5.0)
+  - **MainWindow** (500 lines) - Layout manager that orchestrates UI components
+  - **RepositoryManager** (451 lines) - Handles all repository operations (loading, cloning, OAuth, cleanup)
+  - **UI Components** (3 modules) - Language switcher, theme switcher, stats display
 - **Git Operations**: `src/repo/` directory contains Git repository operations (refactored into 5 specialized components in v1.5.0)
 - **Visualization**: `src/visualization/` directory contains graph rendering logic (refactored into 8 specialized components in v1.5.0)
 - **Data Structures**: `src/utils/data_structures.py` - Defines Commit and Branch data classes
@@ -354,6 +362,85 @@ The monolithic file was split into **5 specialized components**:
 3. **Better maintainability** - changes to parsing don't affect analysis
 4. **Cleaner code** - GitRepository is now a simple facade
 5. **Faster development** - work on specific features without loading entire file
+
+## GUI Architecture Refactoring (v1.5.0)
+
+### Motivation
+
+The original `main_window.py` had **1225 lines** with multiple responsibilities:
+
+- Window management and layout
+- Repository operations (loading, cloning, OAuth)
+- Language switching UI
+- Theme switching UI
+- Statistics display
+- Drag & drop handling
+
+This made it difficult to maintain and understand the UI layer structure.
+
+### Solution: Component Pattern with Clear Separation
+
+The monolithic file was split into **5 specialized components**:
+
+#### UI Component Modules (`gui/ui_components/`)
+
+1. **LanguageSwitcher** (154 lines) - Language switching functionality
+   - Creates Czech and UK flag icons in Canvas
+   - Handles language switching (CS ⇄ EN)
+   - Updates flag appearance (active/inactive overlay)
+   - Show/hide functionality for initial screen
+
+2. **ThemeSwitcher** (204 lines) - Theme switching functionality
+   - Creates sun icon (☀️) for light mode
+   - Creates moon icon (🌙) for dark mode
+   - Handles theme switching
+   - Updates icon appearance (active/inactive overlay)
+   - Dynamic repositioning on window resize
+   - Show/hide functionality for initial screen
+
+3. **StatsDisplay** (136 lines) - Repository statistics display
+   - Creates UI for repository name and statistics
+   - Updates stats with current language pluralization
+   - Shows repository path tooltip on hover
+   - Formats author/branch/tag/commit counts
+
+#### Repository Manager
+
+4. **RepositoryManager** (451 lines) - All repository operations
+   - Repository selection (URL vs local path detection)
+   - Repository cloning (with OAuth support)
+   - GitHub authentication (OAuth Device Flow)
+   - Temporary clone management and cleanup
+   - Repository loading (local and remote)
+   - Repository refresh operations
+   - Remote branch fetching
+   - Proper file handle management for Windows
+
+#### Layout Manager
+
+5. **MainWindow** (500 lines) - Coordinates all UI components
+   - Window management (centering, resizing)
+   - UI layout with component orchestration
+   - Callback coordination (_on_language_changed, _on_theme_changed)
+   - Graph display management
+   - Status updates and progress bar
+
+### Results
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Largest file | 1225 lines | 500 lines | **-59%** |
+| Main window | 1225 lines | 500 lines | **-59%** |
+| Average size | 1225 lines | 289 lines | **-76%** |
+| Context window | 49.1 KB | ~20-25 KB | **-55-60%** |
+
+### Benefits
+
+1. **Component reusability** - UI components can be used independently
+2. **Clear responsibilities** - each component has one specific purpose
+3. **Easier testing** - components can be mocked and tested in isolation
+4. **Better maintainability** - repository logic separated from UI logic
+5. **Faster development** - work on UI without loading repository code
 
 ## Theme Management (v1.5.0)
 

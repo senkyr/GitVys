@@ -47,11 +47,17 @@ git-visualizer/
 │   │   ├── __init__.py
 │   │   ├── github_auth.py    # OAuth Device Flow pro GitHub
 │   │   └── token_storage.py  # Ukládání tokenu (~/.gitvys/)
-│   ├── gui/
-│   │   ├── main_window.py   # Hlavní okno s drag & drop a URL support
+│   ├── gui/                  # GUI komponenty (refaktorováno v1.5.0)
+│   │   ├── main_window.py   # Layout manager a orchestrátor (500 řádků)
+│   │   ├── repo_manager.py  # Repository operations manager (451 řádků)
 │   │   ├── graph_canvas.py  # Canvas pro graf s scrollbary
 │   │   ├── drag_drop.py     # Drag & drop pro složky i URL
-│   │   └── auth_dialog.py   # Dialog pro OAuth autorizaci
+│   │   ├── auth_dialog.py   # Dialog pro OAuth autorizaci
+│   │   └── ui_components/   # UI komponenty
+│   │       ├── __init__.py
+│   │       ├── language_switcher.py  # Language switching s vlajkami
+│   │       ├── theme_switcher.py     # Theme switching s ikonami
+│   │       └── stats_display.py      # Repository statistiky
 │   ├── repo/                # Git operace (refaktorováno v1.5.0)
 │   │   ├── repository.py    # GitRepository facade (281 řádků)
 │   │   ├── parsers/         # Parsing komponenty
@@ -564,7 +570,167 @@ Rozdělení monolitického souboru na **5 specializovaných komponent**:
 4. **Čistší kód** - GitRepository je nyní jednoduchý facade
 5. **Rychlejší vývoj** - práce na konkrétních funkcích bez načítání celého souboru
 
-## 7.8. Theme Management (v1.5.0)
+## 7.8. GUI Architecture Refactoring (v1.5.0)
+
+### Motivace
+
+Původní `main_window.py` měl **1225 řádků** s mnoha odpovědnostmi:
+
+- Window management a layout orchestrace
+- Repository operace (loading, cloning, OAuth autentizace)
+- Language switching UI
+- Theme switching UI
+- Statistics display
+- Drag & drop handling
+
+To způsobovalo obtížnou údržbu, testování a rychlé zaplnění kontextového okna při vývoji.
+
+### Řešení: Component Pattern se jasným rozdělením odpovědností
+
+Rozdělení monolitického souboru na **5 specializovaných komponent**:
+
+#### UI komponenty (`gui/ui_components/`)
+
+1. **LanguageSwitcher** (154 řádků)
+   - Language switching functionality
+   - Czech (🇨🇿) a UK (🇬🇧) flag ikony v Canvasu
+   - Handling přepínání jazyků (CS ⇄ EN)
+   - Visual feedback (active/inactive overlay)
+   - Show/hide pro initial screen
+
+2. **ThemeSwitcher** (204 řádků)
+   - Theme switching functionality
+   - Sun icon (☀️) pro light mode
+   - Moon icon (🌙) pro dark mode
+   - Handling přepínání tématu
+   - Visual feedback (active/inactive overlay)
+   - Dynamic repositioning při window resize
+   - Show/hide pro initial screen
+
+3. **StatsDisplay** (136 řádků)
+   - Repository statistics display
+   - UI pro název repozitáře a statistiky
+   - Update stats s aktuální language pluralization
+   - Repository path tooltip on hover
+   - Formátování počtu autorů/větví/tagů/commitů
+
+#### Repository Manager
+
+4. **RepositoryManager** (451 řádků)
+   - Veškeré operace s repozitáři
+   - Repository selection (URL vs local path detection)
+   - Repository cloning (s OAuth supportem)
+   - GitHub autentizace (OAuth Device Flow)
+   - Temporary clone management a cleanup
+   - Repository loading (local a remote)
+   - Repository refresh operations
+   - Remote branch fetching
+   - Správná file handle management pro Windows
+   - Token storage integration
+
+**Klíčové metody:**
+
+- `on_repository_selected(repo_path)` - Entry point pro loading (URL nebo local)
+- `_is_git_url(text)` - Detekce URL vs local path
+- `clone_repository(url)` - Klonování remote repozitářů do temp složky
+- `_clone_worker(url, path)` - Background thread pro klonování s OAuth retry
+- `load_repository(repo_path)` - Načtení repozitáře a parsing commitů
+- `refresh_repository()` - Obnovení podle stavu (local/remote)
+- `fetch_remote_data()` - Načtení remote větví
+- `close_repository()` - Zavření a cleanup temp souborů
+- `_cleanup_temp_clones()` - Automatické mazání temp složek (atexit handler)
+
+#### Layout Manager
+
+5. **MainWindow** (500 řádků)
+   - Koordinace všech UI komponent
+   - Window management (centrování, resizing)
+   - UI layout s component orchestration
+   - Callback coordination:
+     - `_on_language_changed()` - propagace změny jazyka
+     - `_on_theme_changed()` - propagace změny tématu
+     - `_on_repository_path_changed()` - validace repozitáře
+   - Graph display management
+   - Status updates a progress bar
+   - Error dialogs a uživatelská zpětná vazba
+
+**Data Flow:**
+
+```
+MainWindow (orchestrator)
+    ↓
+    ├─→ RepositoryManager (repository operations)
+    │       ├─→ GitRepository.load_repository()
+    │       ├─→ GitRepository.parse_commits()
+    │       └─→ GraphLayout.calculate_positions()
+    │
+    ├─→ LanguageSwitcher (UI component)
+    │       └─→ callback → MainWindow._on_language_changed()
+    │
+    ├─→ ThemeSwitcher (UI component)
+    │       └─→ callback → MainWindow._on_theme_changed()
+    │
+    └─→ StatsDisplay (UI component)
+            └─→ update_stats(repo_path, counts, lang)
+```
+
+### Výsledky refaktoringu
+
+| Metrika | Před | Po | Zlepšení |
+|---------|------|-----|----------|
+| Největší soubor | 1225 ř. | 500 ř. | **-59%** |
+| Main window | 1225 ř. | 500 ř. | **-59%** |
+| Průměrná velikost | 1225 ř. | 289 ř. | **-76%** |
+| Počet souborů | 1 | 5 | +400% (lepší modularita) |
+| Kontextové okno | 49.1 KB | ~20-25 KB | **-55-60%** |
+
+### Benefity
+
+1. **Modulární architektura** - každá komponenta má jednu jasnou odpovědnost
+2. **Lepší testovatelnost** - komponenty lze testovat izolovaně
+3. **Repository operace odděleny** - RepositoryManager jako facade pro veškeré Git operace
+4. **Čistější MainWindow** - pouze orchestrace a layout, bez implementačních detailů
+5. **Reusable komponenty** - LanguageSwitcher, ThemeSwitcher lze použít v jiných projektech
+6. **Rychlejší vývoj s AI** - menší soubory → rychlejší načítání kontextu
+
+### Component Pattern
+
+**Společné rozhraní všech UI komponent:**
+
+```python
+class UIComponent:
+    def __init__(self, parent_window):
+        self.parent = parent_window
+        self.root = parent_window.root
+        # ... component-specific initialization
+
+    def show(self):
+        """Show the component"""
+        pass
+
+    def hide(self):
+        """Hide the component"""
+        pass
+
+    def update(self, *args):
+        """Update component state"""
+        pass
+```
+
+**Callback Pattern:**
+
+Komponenty neznají detaily parent window - komunikují jen přes callbacks:
+
+```python
+# In LanguageSwitcher:
+if self.callback:
+    self.callback(new_language)  # Notify parent
+
+# In MainWindow:
+self.lang_switcher = LanguageSwitcher(self, callback=self._on_language_changed)
+```
+
+## 7.9. Theme Management (v1.5.0)
 
 ### Theme systém
 

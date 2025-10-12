@@ -184,14 +184,30 @@ class ThemeSwitcher:
     def show(self):
         """Show the theme switcher at the correct position."""
         if self.theme_frame:
-            # Dynamický výpočet pozice (vpravo nahoře)
-            self.root.update_idletasks()
-            window_width = self.root.winfo_width()
-            if window_width <= 1:
-                window_width = 600  # Default width
-            theme_x = window_width - 85  # 10px main_frame padding + 75px pro ikony
-            self.theme_frame.place(x=theme_x, y=15)
-            self.theme_frame.tkraise()  # Zajistit že jsou ikony viditelné
+            # Robustnější výpočet pozice s retry logikou
+            self._update_position_with_retry()
+
+    def _update_position_with_retry(self, retry_count=0):
+        """Update position with retry logic for proper window initialization."""
+        if not self.theme_frame:
+            return
+
+        # Dynamický výpočet pozice (vpravo nahoře)
+        self.root.update_idletasks()
+        window_width = self.root.winfo_width()
+
+        # Pokud okno ještě nemá správnou šířku a jsme pod max retry, zkusit znovu
+        if window_width <= 1 and retry_count < 10:
+            self.root.after(50, lambda: self._update_position_with_retry(retry_count + 1))
+            return
+
+        # Použít aktuální šířku okna, nebo fallback pokud stále není dostupná
+        if window_width <= 1:
+            window_width = 600  # Fallback width
+
+        theme_x = window_width - 85  # 10px main_frame padding + 75px pro ikony
+        self.theme_frame.place(x=theme_x, y=15)
+        self.theme_frame.tkraise()  # Zajistit že jsou ikony viditelné
 
     def hide(self):
         """Hide the theme switcher."""
@@ -201,4 +217,10 @@ class ThemeSwitcher:
     def update_position(self):
         """Update position after window resize."""
         if self.theme_frame and self.theme_frame.winfo_ismapped():
-            self.show()  # Re-calculate and update position
+            # Okamžitá aktualizace pozice (bez retry, protože okno už je inicializované)
+            self.root.update_idletasks()
+            window_width = self.root.winfo_width()
+            if window_width > 1:  # Pouze pokud máme validní šířku
+                theme_x = window_width - 85  # 10px main_frame padding + 75px pro ikony
+                self.theme_frame.place(x=theme_x, y=15)
+                self.theme_frame.tkraise()
