@@ -480,11 +480,11 @@ class GraphDrawer:
   - [x] Spustit aplikaci a otestovat všechny features
   - [x] Commit: "Finalize GraphDrawer refactoring - now orchestrator only"
 
-- [x] **Krok 10: Dokumentace**
-  - [x] Aktualizovat `docs/DESIGN.md` s novou strukturou
-  - [x] Aktualizovat `README.md` strukturu
-  - [x] Aktualizovat `CLAUDE.md` strukturu
-  - [x] Commit: "Update documentation for GraphDrawer refactoring"
+- [x] **Krok 10: Dokumentace** ✅ HOTOVO
+  - [x] Aktualizovat `docs/DESIGN.md` s novou strukturou ✅
+  - [x] Aktualizovat `README.md` strukturu ✅
+  - [x] Aktualizovat `CLAUDE.md` strukturu ✅
+  - [ ] Commit: "Update documentation for GraphDrawer refactoring" (zatím bez commitů)
 
 ---
 

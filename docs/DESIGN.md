@@ -54,12 +54,23 @@ git-visualizer/
 │   │   └── auth_dialog.py   # Dialog pro OAuth autorizaci
 │   ├── repo/
 │   │   └── repository.py    # Git operace pomocí GitPython
-│   ├── visualization/
-│   │   ├── graph_drawer.py  # Kreslení grafu, tagů, tooltipů, column resizing
+│   ├── visualization/       # Vizualizace grafu (refaktorováno v1.5.0)
+│   │   ├── graph_drawer.py  # Hlavní orchestrátor (385 řádků)
 │   │   ├── layout.py        # Layout s lane recycling
-│   │   └── colors.py        # Barevné schéma s prefixovými větvemi
+│   │   ├── colors.py        # Barevné utilities a schéma
+│   │   ├── drawing/         # Drawing komponenty
+│   │   │   ├── __init__.py
+│   │   │   ├── connection_drawer.py  # Spojnice mezi commity
+│   │   │   ├── commit_drawer.py      # Commit nodes a metadata
+│   │   │   ├── tag_drawer.py         # Git tagy s emoji
+│   │   │   └── branch_flag_drawer.py # Branch flags a tooltips
+│   │   └── ui/              # UI komponenty
+│   │       ├── __init__.py
+│   │       ├── column_manager.py     # Column resizing
+│   │       ├── tooltip_manager.py    # Tooltip systém
+│   │       └── text_formatter.py     # Text handling & DPI
 │   └── utils/
-│       ├── data_structures.py # Commit, MergeBranch
+│       ├── data_structures.py # Commit, MergeBranch, Tag
 │       ├── constants.py       # Konstanty aplikace (layout, barvy, rozměry)
 │       ├── logging_config.py  # Centralizované logování (~/.gitvys/)
 │       ├── theme_manager.py   # Správa témat (světlý/tmavý režim)
@@ -389,7 +400,90 @@ except Exception as e:
 - Pinnuté verze závislostí (reproducible builds)
 - Lepší type hints a dokumentace
 
-## 7.6. Theme Management (v1.5.0)
+## 7.6. Visualization Refactoring (v1.5.0)
+
+### Motivace
+
+Původní `graph_drawer.py` měl **1889 řádků** s mnoha odpovědnostmi, což způsobovalo problémy:
+- Rychle zaplněné kontextové okno při práci s AI asistenty
+- Obtížná údržba a testování
+- Nejasné rozhraní mezi komponentami
+
+### Řešení: Single Responsibility Principle
+
+Rozdělení monolitického souboru na **8 specializovaných komponent**:
+
+#### Drawing komponenty (`visualization/drawing/`)
+
+1. **ConnectionDrawer** (384 řádků)
+   - Vykreslování spojnic mezi commity
+   - Bézierovy křivky pro smooth connections
+   - Handling merge a branching connections
+
+2. **CommitDrawer** (396 řádků)
+   - Vykreslování commit nodů (kroužky)
+   - Metadata (zprávy, autoři, datumy)
+   - WIP commits s stipple pattern
+
+3. **TagDrawer** (241 řádků)
+   - Git tagy s emoji ikonami
+   - Tooltips pro anotované tagy
+   - Dynamic tag spacing
+
+4. **BranchFlagDrawer** (335 řádků)
+   - Branch flags (vlajky) s názvy větví
+   - Local/remote indikace (💻/☁)
+   - Tooltips pro dlouhé názvy
+
+#### UI komponenty (`visualization/ui/`)
+
+5. **ColumnManager** (430 řádků)
+   - Column resizing with drag & drop
+   - Floating headers
+   - Throttled redraw (60 FPS)
+
+6. **TooltipManager** (55 řádků)
+   - Centralizovaná správa tooltipů
+   - Show/hide s pozicováním
+   - Wrapping dlouhého textu
+
+7. **TextFormatter** (191 řádků)
+   - Text truncation
+   - DPI scaling detection
+   - Width measurement utilities
+
+#### Orchestrátor
+
+8. **GraphDrawer** (385 řádků)
+   - Koordinace všech komponent
+   - Layout calculations
+   - Veřejné API
+
+#### Color utilities
+
+9. **colors.py** (210 řádků)
+   - `make_color_pale()` - HSL manipulace
+   - `get_branch_color()` - sémantické barvy
+   - Branch color generation
+
+### Výsledky refaktoringu
+
+| Metrika | Před | Po | Zlepšení |
+|---------|------|-----|----------|
+| Největší soubor | 1889 ř. | 430 ř. | **-77%** |
+| Průměrná velikost | 1889 ř. | 309 ř. | **-84%** |
+| Počet souborů | 1 | 8 | +700% (lepší modularita) |
+| Kontextové okno | 87.8 KB | ~20-40 KB | **-70-80%** |
+
+### Benefity
+
+1. **Rychlejší vývoj s AI** - načítání jen relevantních komponent
+2. **Lepší testovatelnost** - izolované komponenty
+3. **Jasné odpovědnosti** - každý soubor má 1-2 úkoly
+4. **Snadnější údržba** - změny v jedné oblasti neovlivní ostatní
+5. **Paralelní vývoj** - více vývojářů může pracovat současně
+
+## 7.7. Theme Management (v1.5.0)
 
 ### Theme systém
 

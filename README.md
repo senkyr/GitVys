@@ -91,10 +91,19 @@ git-visualizer/
 │   │   └── auth_dialog.py   # OAuth autorizační dialog
 │   ├── repo/            # Git operace
 │   │   └── repository.py    # Práce s Git repozitářem
-│   ├── visualization/   # Vizualizace
-│   │   ├── graph_drawer.py  # Kreslení grafu
+│   ├── visualization/   # Vizualizace (refaktorováno v1.5.0)
+│   │   ├── graph_drawer.py  # Hlavní orchestrátor (385 ř.)
 │   │   ├── layout.py        # Rozmístění uzlů
-│   │   └── colors.py        # Barevné schéma
+│   │   ├── colors.py        # Barevné schéma a utilities
+│   │   ├── drawing/         # Drawing komponenty
+│   │   │   ├── connection_drawer.py  # Spojnice mezi commity
+│   │   │   ├── commit_drawer.py      # Commit nodes
+│   │   │   ├── tag_drawer.py         # Git tagy
+│   │   │   └── branch_flag_drawer.py # Branch flags
+│   │   └── ui/              # UI komponenty
+│   │       ├── column_manager.py     # Column resizing
+│   │       ├── tooltip_manager.py    # Tooltips
+│   │       └── text_formatter.py     # Text handling
 │   └── utils/           # Pomocné utility
 │       ├── data_structures.py # Datové struktury
 │       ├── constants.py       # Konstanty aplikace

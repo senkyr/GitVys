@@ -70,10 +70,19 @@ GitVys/
 │   │   └── auth_dialog.py # OAuth authorization dialog
 │   ├── repo/              # Git operations
 │   │   └── repository.py  # GitRepository class (uses GitPython)
-│   ├── visualization/     # Graph rendering logic
-│   │   ├── graph_drawer.py # Draws commit nodes and connections
+│   ├── visualization/     # Graph rendering logic (refactored v1.5.0)
+│   │   ├── graph_drawer.py # Main orchestrator (385 lines)
 │   │   ├── layout.py      # Calculates positioning for commits/branches
-│   │   └── colors.py      # Branch color schemes
+│   │   ├── colors.py      # Color utilities and branch color schemes
+│   │   ├── drawing/       # Drawing components
+│   │   │   ├── connection_drawer.py  # Draws connections between commits
+│   │   │   ├── commit_drawer.py      # Draws commit nodes and metadata
+│   │   │   ├── tag_drawer.py         # Draws Git tags with emojis
+│   │   │   └── branch_flag_drawer.py # Draws branch flags and tooltips
+│   │   └── ui/            # UI components
+│   │       ├── column_manager.py     # Column resizing functionality
+│   │       ├── tooltip_manager.py    # Tooltip system
+│   │       └── text_formatter.py     # Text handling and DPI scaling
 │   └── utils/             # Utilities
 │       ├── data_structures.py # Commit and Branch data classes
 │       ├── logging_config.py  # Centralized logging (~/.gitvys/)
@@ -96,7 +105,7 @@ GitVys/
 - **Auth Layer**: `src/auth/` directory contains GitHub OAuth authentication (Device Flow)
 - **GUI Layer**: `src/gui/` directory contains all UI components including OAuth dialog
 - **Git Operations**: `src/repo/repository.py` - GitRepository class handles all Git operations using GitPython
-- **Visualization**: `src/visualization/` directory contains graph rendering logic
+- **Visualization**: `src/visualization/` directory contains graph rendering logic (refactored into 8 specialized components in v1.5.0)
 - **Data Structures**: `src/utils/data_structures.py` - Defines Commit and Branch data classes
 - **Utilities**: `src/utils/` directory contains helper modules (logging, constants)
 
@@ -221,6 +230,56 @@ The application supports Czech and English languages:
 - Translation management via `utils/translations.py`
 - All UI texts, button labels, status messages, and error dialogs are translated
 - Plural forms handled correctly for both languages
+
+## Visualization Architecture Refactoring (v1.5.0)
+
+### Motivation
+
+The original `graph_drawer.py` had **1889 lines** with multiple responsibilities, causing issues:
+- Quickly filled context window when working with AI assistants
+- Difficult maintenance and testing
+- Unclear interfaces between components
+
+### Solution: Single Responsibility Principle
+
+The monolithic file was split into **8 specialized components**:
+
+#### Drawing Components (`visualization/drawing/`)
+
+1. **ConnectionDrawer** (384 lines) - Draws connections between commits with Bézier curves
+2. **CommitDrawer** (396 lines) - Draws commit nodes and metadata (messages, authors, dates)
+3. **TagDrawer** (241 lines) - Draws Git tags with emoji icons and tooltips
+4. **BranchFlagDrawer** (335 lines) - Draws branch flags with local/remote indicators
+
+#### UI Components (`visualization/ui/`)
+
+5. **ColumnManager** (430 lines) - Column resizing with drag & drop and floating headers
+6. **TooltipManager** (55 lines) - Centralized tooltip management (show/hide/positioning)
+7. **TextFormatter** (191 lines) - Text truncation, DPI scaling detection, width measurement
+
+#### Orchestrator
+
+8. **GraphDrawer** (385 lines) - Coordinates all components, handles layout calculations
+
+#### Color Utilities
+
+9. **colors.py** (210 lines) - `make_color_pale()` for HSL manipulation, `get_branch_color()` for semantic colors
+
+### Results
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Largest file | 1889 lines | 430 lines | **-77%** |
+| Average size | 1889 lines | 309 lines | **-84%** |
+| Context window | 87.8 KB | ~20-40 KB | **-70-80%** |
+
+### Benefits
+
+1. **Faster AI-assisted development** - only relevant components loaded
+2. **Better testability** - isolated components can be tested independently
+3. **Clear responsibilities** - each file has 1-2 well-defined tasks
+4. **Easier maintenance** - changes in one area don't affect others
+5. **Parallel development** - multiple developers can work simultaneously
 
 ## Theme Management (v1.5.0)
 

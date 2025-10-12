@@ -383,3 +383,15 @@ class GraphDrawer:
         """
         if self.column_manager:
             self.column_manager.move_separators_to_scroll_position(new_y)
+
+    def _draw_column_separators(self, canvas: tk.Canvas):
+        """Legacy wrapper for backward compatibility with graph_canvas.py.
+
+        This method maintains the old API while delegating to the new ColumnManager component.
+
+        Args:
+            canvas: Canvas (not used, kept for API compatibility)
+        """
+        # Move separators to current scroll position
+        scroll_y = canvas.canvasy(0)  # Get current scroll Y position
+        self.move_separators_to_scroll_position(canvas, scroll_y)
