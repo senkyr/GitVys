@@ -8,18 +8,27 @@ import sys
 from pathlib import Path
 import pytest
 
+
+def pytest_configure(config):
+    """Configure pytest - called before test collection.
+
+    Re-import setup_tcl to ensure TCL/TK is initialized before any module imports.
+    """
+    import tests.setup_tcl  # Ensure TCL/TK env vars are set
+
 # Add src directory to path for imports
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-# Now safe to import tkinter (after TCL/TK setup in setup_tcl)
-import tkinter as tk
+# Import data structures (no tkinter dependency)
 from utils.data_structures import Commit, Tag
 
 
 @pytest.fixture
 def root():
     """Create a tkinter root window for tests."""
+    # Import tkinter INSIDE fixture to ensure TCL/TK is initialized first
+    import tkinter as tk
     root = tk.Tk()
     root.withdraw()  # Don't show window during tests
     yield root
@@ -32,6 +41,8 @@ def root():
 @pytest.fixture
 def canvas(root):
     """Create a test canvas."""
+    # Import tkinter INSIDE fixture to ensure TCL/TK is initialized first
+    import tkinter as tk
     canvas = tk.Canvas(root, width=800, height=600)
     yield canvas
 

@@ -1,5 +1,8 @@
 """Unit tests for gui.repo_manager module."""
 
+# MUST BE FIRST - initialize TCL/TK before any other imports
+import tests.setup_tcl  # noqa: F401
+
 import pytest
 import os
 import tempfile

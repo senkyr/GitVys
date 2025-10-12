@@ -1,5 +1,8 @@
 """Integration tests for GraphDrawer orchestration."""
 
+# MUST BE FIRST - initialize TCL/TK before any other imports
+import tests.setup_tcl  # noqa: F401
+
 import pytest
 from visualization.graph_drawer import GraphDrawer
 

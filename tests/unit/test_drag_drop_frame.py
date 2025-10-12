@@ -19,7 +19,8 @@ from gui.drag_drop import DragDropFrame
 @pytest.fixture(autouse=True)
 def mock_bind_drop_events():
     """Mock bind_drop_events to avoid tkinterdnd2 issues in tests."""
-    with patch.object(DragDropFrame, 'bind_drop_events'):
+    # Import inside fixture to avoid early import before TCL/TK setup
+    with patch('gui.drag_drop.DragDropFrame.bind_drop_events'):
         yield
 
 
