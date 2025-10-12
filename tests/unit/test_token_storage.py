@@ -187,50 +187,40 @@ class TestLoadToken:
         # Verify whitespace stripped
         assert loaded_token == token
 
-    def test_load_token_file_not_exists(self, temp_token_storage):
-        """Test loading token when file doesn't exist."""
+    @pytest.mark.parametrize("scenario,setup_action,description", [
+        ("file_not_exists", lambda s: (
+            s.token_file.unlink() if s.token_file.exists() else None
+        ), "file doesn't exist"),
+        ("empty_file", lambda s: (
+            s.config_dir.mkdir(parents=True, exist_ok=True),
+            s.token_file.write_text('', encoding='utf-8')
+        ), "empty file"),
+        ("whitespace_only", lambda s: (
+            s.config_dir.mkdir(parents=True, exist_ok=True),
+            s.token_file.write_text('   \n\n  ', encoding='utf-8')
+        ), "file with only whitespace"),
+    ])
+    def test_load_token_returns_none_scenarios(self, temp_token_storage, scenario, setup_action, description):
+        """Test that load_token returns None for various failure scenarios.
+
+        Verifies graceful handling when:
+        - File doesn't exist
+        - File is empty
+        - File contains only whitespace
+        """
         storage = temp_token_storage
 
-        # Ensure file doesn't exist
-        if storage.token_file.exists():
-            storage.token_file.unlink()
+        # Setup scenario
+        setup_action(storage)
 
         # Load token
         loaded_token = storage.load_token()
 
         # Should return None
-        assert loaded_token is None
-
-    def test_load_token_empty_file(self, temp_token_storage):
-        """Test loading token from empty file."""
-        storage = temp_token_storage
-
-        # Create empty token file
-        storage.config_dir.mkdir(parents=True, exist_ok=True)
-        storage.token_file.write_text('', encoding='utf-8')
-
-        # Load token
-        loaded_token = storage.load_token()
-
-        # Should return None for empty file
-        assert loaded_token is None
-
-    def test_load_token_whitespace_only_file(self, temp_token_storage):
-        """Test loading token from file with only whitespace."""
-        storage = temp_token_storage
-
-        # Create token file with only whitespace
-        storage.config_dir.mkdir(parents=True, exist_ok=True)
-        storage.token_file.write_text('   \n\n  ', encoding='utf-8')
-
-        # Load token
-        loaded_token = storage.load_token()
-
-        # Should return None (whitespace stripped = empty)
-        assert loaded_token is None
+        assert loaded_token is None, f"Failed for: {description}"
 
     def test_load_token_read_error(self, temp_token_storage):
-        """Test loading token with read error."""
+        """Test loading token with read permission error."""
         storage = temp_token_storage
 
         # Mock read_text to raise exception
@@ -303,27 +293,29 @@ class TestTokenExists:
         # Check existence
         assert storage.token_exists() is True
 
-    def test_token_exists_false_not_exists(self, temp_token_storage):
-        """Test token_exists returns False when file doesn't exist."""
+    @pytest.mark.parametrize("scenario,setup_action,description", [
+        ("not_exists", lambda s: (
+            s.token_file.unlink() if s.token_file.exists() else None
+        ), "file doesn't exist"),
+        ("empty_file", lambda s: (
+            s.config_dir.mkdir(parents=True, exist_ok=True),
+            s.token_file.write_text('', encoding='utf-8')
+        ), "empty file exists"),
+    ])
+    def test_token_exists_returns_false(self, temp_token_storage, scenario, setup_action, description):
+        """Test that token_exists returns False for invalid token scenarios.
+
+        Token is considered non-existent when:
+        - File doesn't exist
+        - File exists but is empty
+        """
         storage = temp_token_storage
 
-        # Ensure file doesn't exist
-        if storage.token_file.exists():
-            storage.token_file.unlink()
+        # Setup scenario
+        setup_action(storage)
 
         # Check existence
-        assert storage.token_exists() is False
-
-    def test_token_exists_false_empty_file(self, temp_token_storage):
-        """Test token_exists returns False for empty file."""
-        storage = temp_token_storage
-
-        # Create empty token file
-        storage.config_dir.mkdir(parents=True, exist_ok=True)
-        storage.token_file.write_text('', encoding='utf-8')
-
-        # Check existence (should be False for empty file)
-        assert storage.token_exists() is False
+        assert storage.token_exists() is False, f"Failed for: {description}"
 
 
 class TestTokenStorageIntegration:

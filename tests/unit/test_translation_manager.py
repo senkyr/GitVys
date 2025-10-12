@@ -265,63 +265,55 @@ class TestTranslationRetrieval:
 class TestPluralForms:
     """Tests for Czech and English pluralization."""
 
-    def test_czech_plural_form_1(self, reset_translation_manager):
-        """Test Czech plural form for count = 1."""
+    @pytest.mark.parametrize("count,expected_form,expected_value,description", [
+        (1, 'author_1', 'autor', "Czech: count=1 → singular"),
+        (2, 'author_2_4', 'autoři', "Czech: count=2 → special plural (2-4)"),
+        (3, 'author_2_4', 'autoři', "Czech: count=3 → special plural (2-4)"),
+        (4, 'author_2_4', 'autoři', "Czech: count=4 → special plural (2-4)"),
+        (0, 'author_5', 'autorů', "Czech: count=0 → genitive plural"),
+        (5, 'author_5', 'autorů', "Czech: count=5 → genitive plural"),
+        (10, 'author_5', 'autorů', "Czech: count=10 → genitive plural"),
+        (100, 'author_5', 'autorů', "Czech: count=100 → genitive plural"),
+    ])
+    def test_czech_plural_forms(self, count, expected_form, expected_value, description, reset_translation_manager):
+        """Test Czech plural forms (3 forms: 1, 2-4, 0/5+).
+
+        Czech has complex pluralization:
+        - 1: singular (autor)
+        - 2-4: special plural (autoři)
+        - 0, 5+: genitive plural (autorů)
+        """
         with patch.object(TranslationManager, '_load_language_preference'):
             manager = TranslationManager()
             manager._current_language = 'cs'
 
-            plural = manager.get_plural(1, 'author')
+            plural = manager.get_plural(count, 'author')
 
-            assert plural == TRANSLATIONS['cs']['author_1']
-            assert plural == 'autor'
+            assert plural == TRANSLATIONS['cs'][expected_form], f"Failed for {description}"
+            assert plural == expected_value, f"Failed for {description}"
 
-    def test_czech_plural_form_2_4(self, reset_translation_manager):
-        """Test Czech plural form for count in [2, 3, 4]."""
-        with patch.object(TranslationManager, '_load_language_preference'):
-            manager = TranslationManager()
-            manager._current_language = 'cs'
+    @pytest.mark.parametrize("count,expected_form,expected_value,description", [
+        (1, 'branch_1', 'branch', "English: count=1 → singular"),
+        (0, 'branch_5', 'branches', "English: count=0 → plural"),
+        (2, 'branch_5', 'branches', "English: count=2 → plural"),
+        (3, 'branch_5', 'branches', "English: count=3 → plural"),
+        (10, 'branch_5', 'branches', "English: count=10 → plural"),
+    ])
+    def test_english_plural_forms(self, count, expected_form, expected_value, description, reset_translation_manager):
+        """Test English plural forms (2 forms: 1, other).
 
-            for count in [2, 3, 4]:
-                plural = manager.get_plural(count, 'author')
-
-                assert plural == TRANSLATIONS['cs']['author_2_4']
-                assert plural == 'autoři'
-
-    def test_czech_plural_form_5_plus(self, reset_translation_manager):
-        """Test Czech plural form for count >= 5."""
-        with patch.object(TranslationManager, '_load_language_preference'):
-            manager = TranslationManager()
-            manager._current_language = 'cs'
-
-            for count in [0, 5, 10, 100]:
-                plural = manager.get_plural(count, 'author')
-
-                assert plural == TRANSLATIONS['cs']['author_5']
-                assert plural == 'autorů'
-
-    def test_english_plural_form_singular(self, reset_translation_manager):
-        """Test English plural form for count = 1."""
+        English has simple pluralization:
+        - 1: singular (branch)
+        - 0, 2+: plural (branches)
+        """
         with patch.object(TranslationManager, '_load_language_preference'):
             manager = TranslationManager()
             manager._current_language = 'en'
 
-            plural = manager.get_plural(1, 'branch')
+            plural = manager.get_plural(count, 'branch')
 
-            assert plural == TRANSLATIONS['en']['branch_1']
-            assert plural == 'branch'
-
-    def test_english_plural_form_plural(self, reset_translation_manager):
-        """Test English plural form for count != 1."""
-        with patch.object(TranslationManager, '_load_language_preference'):
-            manager = TranslationManager()
-            manager._current_language = 'en'
-
-            for count in [0, 2, 3, 10]:
-                plural = manager.get_plural(count, 'branch')
-
-                assert plural == TRANSLATIONS['en']['branch_5']
-                assert plural == 'branches'
+            assert plural == TRANSLATIONS['en'][expected_form], f"Failed for {description}"
+            assert plural == expected_value, f"Failed for {description}"
 
     def test_plural_forms_for_all_bases(self, reset_translation_manager):
         """Test that plural forms work for all base keys."""

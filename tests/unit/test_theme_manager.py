@@ -374,24 +374,19 @@ class TestTTKStyling:
 class TestLuminanceCalculation:
     """Tests for luminance and contrast calculation."""
 
-    def test_calculate_luminance_for_black(self):
-        """Test luminance calculation for black color."""
-        luminance = ThemeManager.calculate_luminance('#000000')
+    @pytest.mark.parametrize("hex_color,expected_min,expected_max,description", [
+        ('#000000', 0.0, 0.01, "black (luminance ~0.0)"),
+        ('#ffffff', 0.99, 1.01, "white (luminance ~1.0)"),
+        ('#808080', 0.15, 0.35, "medium gray (gamma-corrected ~0.2-0.3)"),
+    ])
+    def test_calculate_luminance(self, hex_color, expected_min, expected_max, description):
+        """Test luminance calculation for various colors.
 
-        assert luminance == pytest.approx(0.0, abs=0.01)
-
-    def test_calculate_luminance_for_white(self):
-        """Test luminance calculation for white color."""
-        luminance = ThemeManager.calculate_luminance('#ffffff')
-
-        assert luminance == pytest.approx(1.0, abs=0.01)
-
-    def test_calculate_luminance_for_medium_gray(self):
-        """Test luminance calculation for medium gray."""
-        luminance = ThemeManager.calculate_luminance('#808080')
-
-        # Medium gray should be around 0.2-0.3 luminance due to gamma correction
-        assert 0.15 < luminance < 0.35
+        Uses relative luminance formula with gamma correction.
+        Black → 0.0, White → 1.0, Gray → ~0.2-0.3 (due to gamma).
+        """
+        luminance = ThemeManager.calculate_luminance(hex_color)
+        assert expected_min <= luminance <= expected_max, f"Failed for {description}"
 
     def test_calculate_luminance_handles_invalid_hex(self):
         """Test that calculate_luminance handles invalid hex colors."""
@@ -400,19 +395,14 @@ class TestLuminanceCalculation:
         # Should return 0.5 as fallback
         assert luminance == 0.5
 
-    def test_get_contrasting_text_color_for_light_background(self):
-        """Test that light backgrounds get dark text."""
-        text_color = ThemeManager.get_contrasting_text_color('#ffffff')
-
-        # White background should get black text
-        assert text_color == '#000000'
-
-    def test_get_contrasting_text_color_for_dark_background(self):
-        """Test that dark backgrounds get light text."""
-        text_color = ThemeManager.get_contrasting_text_color('#000000')
-
-        # Black background should get white text
-        assert text_color == '#ffffff'
+    @pytest.mark.parametrize("bg_color,expected_text,description", [
+        ('#ffffff', '#000000', "white background → black text"),
+        ('#000000', '#ffffff', "black background → white text"),
+    ])
+    def test_get_contrasting_text_color(self, bg_color, expected_text, description):
+        """Test that contrasting text color is calculated correctly."""
+        text_color = ThemeManager.get_contrasting_text_color(bg_color)
+        assert text_color == expected_text, f"Failed for {description}"
 
     def test_get_contrasting_text_color_custom_colors(self):
         """Test get_contrasting_text_color with custom colors."""

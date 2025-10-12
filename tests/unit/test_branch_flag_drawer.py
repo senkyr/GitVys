@@ -338,68 +338,56 @@ class TestDrawFlagConnection:
         assert call_args[1]['fill'] == '#3366cc'
         assert call_args[1]['width'] == branch_flag_drawer.line_width
 
-    def test_draw_flag_connection_uses_calculated_width(self, branch_flag_drawer):
-        """Test that connection uses calculated flag width."""
-        branch_flag_drawer.flag_width = 120
+    @pytest.mark.parametrize("flag_width,description", [
+        (120, "calculated width (120)"),
+        (None, "fallback width (None → 80)"),
+    ])
+    def test_draw_flag_connection_width_handling(self, branch_flag_drawer, flag_width, description):
+        """Test flag connection with calculated and fallback widths.
+
+        Verifies that connection line is drawn correctly when:
+        - flag_width is set (uses calculated width)
+        - flag_width is None (uses fallback width 80)
+        """
+        branch_flag_drawer.flag_width = flag_width
 
         branch_flag_drawer.draw_flag_connection(
             commit_x=200, commit_y=100, branch_color='#66cc33'
         )
 
-        # Should use flag_width in calculation
-        branch_flag_drawer.canvas.create_line.assert_called_once()
-
-    def test_draw_flag_connection_uses_fallback_width(self, branch_flag_drawer):
-        """Test that connection uses fallback width when flag_width is None."""
-        assert branch_flag_drawer.flag_width is None
-
-        branch_flag_drawer.draw_flag_connection(
-            commit_x=200, commit_y=100, branch_color='#cc6633'
-        )
-
-        # Should still create line (using fallback width 80)
-        branch_flag_drawer.canvas.create_line.assert_called_once()
+        # Should create line regardless of width source
+        branch_flag_drawer.canvas.create_line.assert_called_once(), f"Failed for: {description}"
 
 
 class TestTruncateBranchName:
     """Tests for _truncate_branch_name method."""
 
-    def test_truncate_short_name(self, branch_flag_drawer):
-        """Test that short names are not truncated."""
-        result = branch_flag_drawer._truncate_branch_name('main')
+    @pytest.mark.parametrize("name,max_length,expected_truncated,description", [
+        ('main', 12, False, "short name (no truncation)"),
+        ('very-long-branch-name-that-needs-truncation', 12, True, "very long name"),
+        ('twelve_chars', 12, False, "exactly at max length (12 chars)"),
+        ('thirteen_char', 12, True, "one character over max length"),
+        ('long-branch', 8, True, "custom max length (8)"),
+    ])
+    def test_truncate_branch_name_scenarios(self, branch_flag_drawer, name, max_length, expected_truncated, description):
+        """Test branch name truncation with various inputs.
 
-        assert result == 'main'
-        assert '...' not in result
+        Verifies:
+        - Short names are not truncated
+        - Long names are truncated with ellipsis
+        - Exact max length is not truncated
+        - Names over max length are truncated
+        - Custom max length works correctly
+        """
+        result = branch_flag_drawer._truncate_branch_name(name, max_length=max_length)
 
-    def test_truncate_long_name(self, branch_flag_drawer):
-        """Test that long names are truncated with ellipsis."""
-        result = branch_flag_drawer._truncate_branch_name(
-            'very-long-branch-name-that-needs-truncation'
-        )
-
-        assert result.endswith('...')
-        assert len(result) <= 12  # Max length
-
-    def test_truncate_exact_max_length(self, branch_flag_drawer):
-        """Test name exactly at max length."""
-        result = branch_flag_drawer._truncate_branch_name('twelve_chars')
-
-        assert result == 'twelve_chars'
-        assert '...' not in result
-
-    def test_truncate_one_over_max_length(self, branch_flag_drawer):
-        """Test name one character over max length."""
-        result = branch_flag_drawer._truncate_branch_name('thirteen_char')
-
-        assert result.endswith('...')
-        assert len(result) == 12
-
-    def test_truncate_custom_max_length(self, branch_flag_drawer):
-        """Test truncation with custom max length."""
-        result = branch_flag_drawer._truncate_branch_name('long-branch', max_length=8)
-
-        assert result.endswith('...')
-        assert len(result) == 8
+        # Verify truncation
+        if expected_truncated:
+            assert result.endswith('...'), f"Failed for: {description}"
+            assert len(result) == max_length, f"Failed for: {description}"
+        else:
+            assert result == name, f"Failed for: {description}"
+            assert '...' not in result, f"Failed for: {description}"
 
 
 class TestAddTooltipToFlag:
@@ -424,14 +412,25 @@ class TestAddTooltipToFlag:
         assert calls[1][0][0] == flag_item
         assert calls[1][0][1] == '<Leave>'
 
-    def test_tooltip_positioning_basic(self, branch_flag_drawer):
-        """Test basic tooltip positioning below flag."""
+    @pytest.mark.parametrize("canvas_width,flag_x,description", [
+        (800, 400, "basic positioning (centered)"),
+        (200, 180, "overflow right edge (narrow canvas)"),
+        (800, 30, "overflow left edge (close to left)"),
+    ])
+    def test_tooltip_positioning_scenarios(self, branch_flag_drawer, canvas_width, flag_x, description):
+        """Test tooltip positioning with various overflow scenarios.
+
+        Verifies that tooltip is correctly positioned:
+        - Centered below flag (basic case)
+        - Shifted left when overflowing right edge
+        - Shifted right when overflowing left edge
+        """
         flag_item = 123
-        branch_flag_drawer.canvas.winfo_width.return_value = 800
+        branch_flag_drawer.canvas.winfo_width.return_value = canvas_width
 
         branch_flag_drawer._add_tooltip_to_flag(
-            flag_item, flag_x=400, flag_y=100,
-            flag_width=100, flag_height=20, full_name='test-branch'
+            flag_item, flag_x=flag_x, flag_y=100,
+            flag_width=100, flag_height=20, full_name='test-branch-name'
         )
 
         # Get the show_tooltip callback
@@ -446,48 +445,8 @@ class TestAddTooltipToFlag:
         enter_callback(mock_event)
 
         # Should create tooltip rectangle and text
-        assert branch_flag_drawer.canvas.create_rectangle.call_count == 1
-        assert branch_flag_drawer.canvas.create_text.call_count == 1
-
-    def test_tooltip_overflow_right(self, branch_flag_drawer):
-        """Test tooltip positioning when overflowing right edge."""
-        flag_item = 123
-        branch_flag_drawer.canvas.winfo_width.return_value = 200  # Narrow canvas
-
-        branch_flag_drawer._add_tooltip_to_flag(
-            flag_item, flag_x=180, flag_y=100,
-            flag_width=100, flag_height=20, full_name='very-long-branch-name'
-        )
-
-        # Get callback and trigger
-        enter_callback = branch_flag_drawer.canvas.tag_bind.call_args_list[0][0][2]
-        branch_flag_drawer.canvas.create_rectangle.reset_mock()
-
-        mock_event = MagicMock()
-        enter_callback(mock_event)
-
-        # Tooltip should be created (shifted left to fit)
-        assert branch_flag_drawer.canvas.create_rectangle.call_count == 1
-
-    def test_tooltip_overflow_left(self, branch_flag_drawer):
-        """Test tooltip positioning when overflowing left edge."""
-        flag_item = 123
-        branch_flag_drawer.canvas.winfo_width.return_value = 800
-
-        branch_flag_drawer._add_tooltip_to_flag(
-            flag_item, flag_x=30, flag_y=100,  # Very close to left edge
-            flag_width=100, flag_height=20, full_name='very-long-branch-name'
-        )
-
-        # Get callback and trigger
-        enter_callback = branch_flag_drawer.canvas.tag_bind.call_args_list[0][0][2]
-        branch_flag_drawer.canvas.create_rectangle.reset_mock()
-
-        mock_event = MagicMock()
-        enter_callback(mock_event)
-
-        # Tooltip should be created (shifted right to fit)
-        assert branch_flag_drawer.canvas.create_rectangle.call_count == 1
+        assert branch_flag_drawer.canvas.create_rectangle.call_count == 1, f"Failed for: {description}"
+        assert branch_flag_drawer.canvas.create_text.call_count == 1, f"Failed for: {description}"
 
     def test_tooltip_hide_deletes_elements(self, branch_flag_drawer):
         """Test that hiding tooltip deletes canvas elements."""

@@ -4,11 +4,11 @@
 
 Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer, včetně aktuálního stavu pokrytí a dlouhodobého plánu pro robustní testovací suite.
 
-**Aktuální stav**: 671 testů, **99.9% pass rate** (671 passed, 1 skipped) ✅
+**Aktuální stav**: 623 test funkcí, **99.9% pass rate** (705 passed, 1 skipped, 706 collected) ✅
 
-**Poslední update**: 2025-10-12 (ÚROVEŇ 6 - DOKONČENO ✅: Entry Point, Logging, Data Structures)
+**Poslední update**: 2025-10-12 (Parametrizace Fáze 3 - Redukce redundance o 48 funkcí)
 
-**Aktuální fokus**: 🎉 **VŠECHNY ÚROVNĚ 1-6 DOKONČENY!** (536 testů = 100%) | **Coverage: ~81% overall, ~98% core logic** ✅
+**Aktuální fokus**: 🎉 **Test suite optimization dokončena!** (-7.2% redundance) | **Coverage: ~81% overall, ~98% core logic** ✅
 
 ### Terminologie
 
@@ -978,6 +978,59 @@ src/
 ---
 
 ## Changelog testů
+
+### v1.5.0 - Test Parametrizace Fáze 3 COMPLETED (2025-10-12) ✨✅
+
+**Shrnutí**: Refaktoring testovací suite pomocí pytest.mark.parametrize pro redukci redundance
+
+**Motivace**: Snížit počet duplicitních test funkcí při zachování (či zvýšení) pokrytí test případů
+
+**Refaktorované soubory (8 celkem)**:
+
+**Fáze 1-2** (dokončeno dříve):
+- test_drag_drop_frame.py: 15 → 1 test (-14 funkcí)
+- test_theme_manager.py: 7 → 3 testy (-4 funkce)
+- test_colors.py: 17 → 4 testy (-13 funkcí)
+- test_translation_manager.py: 5 → 2 testy (-3 funkce)
+
+**Fáze 3** (nově dokončeno):
+- test_github_auth.py: 10 → 2 testy (-8 funkcí, OAuth error handling)
+- test_token_storage.py: 23 → 20 testů (-3 funkce, load/exists scenarios)
+- test_branch_flag_drawer.py: 32 → 25 testů (-7 funkcí, truncation + overflow + width)
+- test_tag_drawer.py: 31 → 26 testů (-5 funkcí, edge cases + emoji + space)
+
+**Celkové metriky**:
+
+- **Test functions**: 671 → **623** (-48, -7.2%)
+- **Pytest collected**: 671 → **706** (+35 test cases díky parametrizaci)
+- **Pass rate**: **99.9%** (705 passed + 1 skipped) ✅
+- **Coverage**: Beze změny (~81% overall, ~98% core logic)
+
+**Výsledek**:
+
+- ✅ **Nižší redundance**: Méně duplicitního kódu v testech
+- ✅ **Více test cases**: Parametrické expanze pokrývají více scénářů
+- ✅ **Lepší maintainability**: Změny v jednom místě místo N kopií
+- ✅ **Zachované pokrytí**: Coverage zůstává stejné nebo lepší
+
+**Vzor parametrizace**:
+
+```python
+# Před: 3 separátní testy
+def test_truncate_short_name(): ...
+def test_truncate_long_name(): ...
+def test_truncate_exact_max(): ...
+
+# Po: 1 parametrizovaný test
+@pytest.mark.parametrize("name,max_length,expected,description", [
+    ('main', 12, False, "short name"),
+    ('very-long-name...', 12, True, "long name"),
+    ('twelve_chars', 12, False, "exact max"),
+])
+def test_truncate_scenarios(name, max_length, expected, description): ...
+```
+
+---
 
 ### v1.5.0 - ÚROVEŇ 6 COMPLETED: Entry Point & Utils (2025-10-12) 🎉✅
 

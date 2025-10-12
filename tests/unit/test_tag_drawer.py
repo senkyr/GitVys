@@ -202,28 +202,27 @@ class TestDrawTags:
 class TestTagEmoji:
     """Tests for _draw_tag_emoji method."""
 
-    def test_draw_local_tag_emoji(self, tag_drawer):
-        """Test drawing emoji for local tag."""
-        tag_drawer._draw_tag_emoji(100, 100, is_remote=False, font=('Arial', 10))
+    @pytest.mark.parametrize("is_remote,description", [
+        (False, "local tag"),
+        (True, "remote tag"),
+    ])
+    def test_draw_tag_emoji_scenarios(self, tag_drawer, is_remote, description):
+        """Test drawing emoji for local and remote tags.
+
+        Verifies that emoji (🏷️) is drawn correctly for:
+        - Local tags (is_remote=False)
+        - Remote tags (is_remote=True)
+        """
+        tag_drawer._draw_tag_emoji(100, 100, is_remote=is_remote, font=('Arial', 10))
 
         # Should create text with tag emoji
         tag_drawer.canvas.create_text.assert_called_once()
         call_args = tag_drawer.canvas.create_text.call_args
 
-        assert call_args[0] == (100, 99)  # x, y-1
-        assert call_args[1]['text'] == '🏷️'
-        assert call_args[1]['anchor'] == 'center'
-        assert call_args[1]['tags'] == 'tag_emoji'
-
-    def test_draw_remote_tag_emoji(self, tag_drawer):
-        """Test drawing emoji for remote tag."""
-        tag_drawer._draw_tag_emoji(100, 100, is_remote=True, font=('Arial', 10))
-
-        # Should create text with tag emoji
-        tag_drawer.canvas.create_text.assert_called_once()
-        call_args = tag_drawer.canvas.create_text.call_args
-
-        assert call_args[1]['text'] == '🏷️'
+        assert call_args[0] == (100, 99), f"Failed position for: {description}"  # x, y-1
+        assert call_args[1]['text'] == '🏷️', f"Failed emoji for: {description}"
+        assert call_args[1]['anchor'] == 'center', f"Failed anchor for: {description}"
+        assert call_args[1]['tags'] == 'tag_emoji', f"Failed tags for: {description}"
 
     def test_tag_emoji_uses_different_colors(self, tag_drawer):
         """Test that local and remote tags use different colors."""
@@ -491,49 +490,47 @@ class TestTextTruncation:
         # Result should be truncated (shorter or with ellipsis)
         assert len(result) < len('very-long-tag-name-that-needs-truncation') or result.endswith('...')
 
-    def test_truncate_empty_text(self, tag_drawer):
-        """Test truncation with empty text."""
-        result = tag_drawer._truncate_text_to_width('', ('Arial', 8), 100)
+    @pytest.mark.parametrize("text,width,expected_result,description", [
+        ('', 100, '', "empty text"),
+        ('text', 0, '', "zero width"),
+        ('text', -10, '', "negative width"),
+        ('text', 5, '...', "width smaller than ellipsis"),
+    ])
+    def test_truncate_text_edge_cases(self, tag_drawer, text, width, expected_result, description):
+        """Test text truncation with edge case inputs.
 
-        assert result == ''
+        Verifies correct handling of:
+        - Empty text (returns empty)
+        - Zero width (returns empty)
+        - Negative width (returns empty)
+        - Width smaller than ellipsis (returns ellipsis)
+        """
+        tag_drawer.canvas.tk.call.return_value = 50  # Default font measure
 
-    def test_truncate_zero_width(self, tag_drawer):
-        """Test truncation with zero width."""
-        result = tag_drawer._truncate_text_to_width('text', ('Arial', 8), 0)
+        result = tag_drawer._truncate_text_to_width(text, ('Arial', 8), width)
 
-        assert result == ''
-
-    def test_truncate_negative_width(self, tag_drawer):
-        """Test truncation with negative width."""
-        result = tag_drawer._truncate_text_to_width('text', ('Arial', 8), -10)
-
-        assert result == ''
-
-    def test_truncate_very_small_width(self, tag_drawer):
-        """Test truncation with width smaller than ellipsis."""
-        tag_drawer.canvas.tk.call.return_value = 50
-
-        result = tag_drawer._truncate_text_to_width('text', ('Arial', 8), 5)
-
-        assert result == '...'
+        assert result == expected_result, f"Failed for: {description}"
 
 
 class TestCalculateRequiredTagSpace:
     """Tests for calculate_required_tag_space method."""
 
-    def test_calculate_required_tag_space(self, tag_drawer):
-        """Test calculation of required space for tags."""
-        flag_width = 100
+    @pytest.mark.parametrize("flag_width,description", [
+        (100, "normal flag width (100)"),
+        (0, "zero flag width"),
+    ])
+    def test_calculate_required_tag_space_scenarios(self, tag_drawer, flag_width, description):
+        """Test calculation of required space with various flag widths.
+
+        Verifies that space = flag_width + BASE_MARGIN for:
+        - Normal flag width (100)
+        - Zero flag width
+        """
         space = tag_drawer.calculate_required_tag_space(flag_width)
 
         # Should return flag_width + BASE_MARGIN
-        assert space == flag_width + tag_drawer.BASE_MARGIN
-
-    def test_calculate_required_tag_space_zero_flag(self, tag_drawer):
-        """Test calculation with zero flag width."""
-        space = tag_drawer.calculate_required_tag_space(0)
-
-        assert space == tag_drawer.BASE_MARGIN
+        expected = flag_width + tag_drawer.BASE_MARGIN
+        assert space == expected, f"Failed for: {description}"
 
 
 class TestTagDrawerIntegration:

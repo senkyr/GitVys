@@ -35,72 +35,70 @@ class TestHslToHex:
 class TestGetSemanticHue:
     """Tests for semantic hue mapping."""
 
-    def test_main_branch(self):
-        """Main branch should return azure hue."""
-        assert get_semantic_hue("main") == 210
+    @pytest.mark.parametrize("branch_name,expected_hue,description", [
+        ("main", 210, "main → azure hue"),
+        ("master", 210, "master → azure hue"),
+        ("develop", 150, "develop → light green hue"),
+        ("feature/login", 90, "feature/* → yellow-green hue"),
+        ("feature/api", 90, "feature/* (different name)"),
+        ("hotfix/critical", 330, "hotfix/* → pink hue"),
+        ("bugfix/typo", 0, "bugfix/* → red hue"),
+        ("release/1.0", 270, "release/* → purple hue"),
+    ])
+    def test_semantic_branches(self, branch_name, expected_hue, description):
+        """Test semantic branch hue mapping.
 
-    def test_master_branch(self):
-        """Master branch should return azure hue."""
-        assert get_semantic_hue("master") == 210
+        Verifies that well-known branch names/prefixes map to
+        consistent semantic hues for visual consistency.
+        """
+        assert get_semantic_hue(branch_name) == expected_hue, f"Failed for {description}"
 
-    def test_develop_branch(self):
-        """Develop branch should return light green hue."""
-        assert get_semantic_hue("develop") == 150
-
-    def test_feature_prefix(self):
-        """Feature branches should return yellow-green hue."""
-        assert get_semantic_hue("feature/login") == 90
-        assert get_semantic_hue("feature/api") == 90
-
-    def test_hotfix_prefix(self):
-        """Hotfix branches should return pink hue."""
-        assert get_semantic_hue("hotfix/critical") == 330
-
-    def test_bugfix_prefix(self):
-        """Bugfix branches should return red hue."""
-        assert get_semantic_hue("bugfix/typo") == 0
-
-    def test_release_prefix(self):
-        """Release branches should return purple hue."""
-        assert get_semantic_hue("release/1.0") == 270
-
-    def test_no_semantic_match(self):
+    @pytest.mark.parametrize("branch_name", [
+        "custom-branch",
+        "my-feature",
+    ])
+    def test_no_semantic_match(self, branch_name):
         """Non-semantic branches should return None."""
-        assert get_semantic_hue("custom-branch") is None
-        assert get_semantic_hue("my-feature") is None
+        assert get_semantic_hue(branch_name) is None
 
 
 class TestIsSemanticHueConflict:
     """Tests for semantic hue conflict detection."""
 
-    def test_exact_semantic_hue(self):
-        """Exact semantic hues should conflict."""
-        assert is_semantic_hue_conflict(210) is True  # main
-        assert is_semantic_hue_conflict(150) is True  # develop
+    @pytest.mark.parametrize("hue,expected_conflict,description", [
+        # Exact semantic hues
+        (210, True, "exact main hue (210)"),
+        (150, True, "exact develop hue (150)"),
+        # Near semantic hues (within tolerance)
+        (215, True, "near main hue (210+5)"),
+        (205, True, "near main hue (210-5)"),
+        # Far from semantic hues
+        (50, False, "far from any semantic hue"),
+        (180, False, "far from any semantic hue"),
+    ])
+    def test_semantic_hue_conflict_detection(self, hue, expected_conflict, description):
+        """Test semantic hue conflict detection.
 
-    def test_near_semantic_hue(self):
-        """Near semantic hues (within tolerance) should conflict."""
-        assert is_semantic_hue_conflict(215) is True  # Close to main (210)
-        assert is_semantic_hue_conflict(205) is True  # Close to main (210)
-
-    def test_far_from_semantic_hues(self):
-        """Hues far from semantic values should not conflict."""
-        assert is_semantic_hue_conflict(50) is False
-        assert is_semantic_hue_conflict(180) is False
+        Semantic hues should conflict (return True) if they are exact matches
+        or within tolerance of well-known branch hues (main, develop, etc).
+        """
+        assert is_semantic_hue_conflict(hue) == expected_conflict, f"Failed for {description}"
 
 
 class TestNormalizeBranchName:
     """Tests for branch name normalization."""
 
-    def test_origin_prefix_removed(self):
-        """Origin prefix should be removed."""
-        assert normalize_branch_name("origin/main") == "main"
-        assert normalize_branch_name("origin/feature/login") == "feature/login"
-
-    def test_no_prefix(self):
-        """Branches without prefix should remain unchanged."""
-        assert normalize_branch_name("main") == "main"
-        assert normalize_branch_name("feature/test") == "feature/test"
+    @pytest.mark.parametrize("input_name,expected_output,description", [
+        # With origin/ prefix
+        ("origin/main", "main", "origin/main → main"),
+        ("origin/feature/login", "feature/login", "origin/feature/login → feature/login"),
+        # Without prefix
+        ("main", "main", "main → main (unchanged)"),
+        ("feature/test", "feature/test", "feature/test → feature/test (unchanged)"),
+    ])
+    def test_normalize_branch_name(self, input_name, expected_output, description):
+        """Test branch name normalization (removes origin/ prefix)."""
+        assert normalize_branch_name(input_name) == expected_output, f"Failed for {description}"
 
 
 class TestGetBranchColor:

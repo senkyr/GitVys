@@ -61,106 +61,66 @@ class TestURLValidation:
     are accepted, preventing malicious repository cloning.
     """
 
-    def test_is_git_url_https_github(self, root):
-        """Test HTTPS URL from GitHub (trusted host)."""
+    @pytest.mark.parametrize("url,expected,reason", [
+        # HTTPS - Trusted hosts (ACCEPT)
+        ("https://github.com/user/repo.git", True, "GitHub HTTPS with .git"),
+        ("https://github.com/user/repo", True, "GitHub HTTPS without .git"),
+        ("https://gitlab.com/user/repo.git", True, "GitLab HTTPS with .git"),
+        ("https://gitlab.com/user/repo", True, "GitLab HTTPS without .git"),
+        ("https://bitbucket.org/user/repo.git", True, "Bitbucket HTTPS with .git"),
+        ("https://bitbucket.org/user/repo", True, "Bitbucket HTTPS without .git"),
+        ("https://gitea.io/user/repo.git", True, "Gitea.io HTTPS"),
+        ("https://codeberg.org/user/repo.git", True, "Codeberg HTTPS"),
+        ("https://sr.ht/~user/repo", True, "Sourcehut HTTPS"),
+        ("http://github.com/user/repo.git", True, "HTTP from trusted host (git handles upgrade)"),
+
+        # Subdomains of trusted hosts (ACCEPT)
+        ("https://api.github.com/repos/user/repo", True, "GitHub subdomain"),
+        ("https://gitlab.example.gitlab.com/user/repo", True, "GitLab subdomain"),
+
+        # SSH - Trusted hosts (ACCEPT)
+        ("git@github.com:user/repo.git", True, "GitHub SSH with .git"),
+        ("git@github.com:user/repo", True, "GitHub SSH without .git"),
+        ("git@gitlab.com:user/repo.git", True, "GitLab SSH"),
+        ("git@gitlab.com:group/subgroup/repo.git", True, "GitLab SSH nested groups"),
+
+        # Untrusted hosts (REJECT - SECURITY)
+        ("https://evil.com/user/repo.git", False, "Untrusted host (evil.com)"),
+        ("https://malicious-site.org/repo.git", False, "Untrusted host (malicious-site.org)"),
+        ("https://attacker.net/malware.git", False, "Untrusted host (attacker.net)"),
+
+        # Similar-looking untrusted hosts (REJECT - SECURITY)
+        ("https://github.com.evil.com/repo.git", False, "Fake subdomain (github.com.evil.com)"),
+        ("https://fakegithub.com/repo.git", False, "Similar name (fakegithub.com)"),
+        ("https://github-clone.com/repo.git", False, "Similar name (github-clone.com)"),
+
+        # SSH - Untrusted hosts (REJECT - SECURITY)
+        ("git@evil.com:user/repo.git", False, "SSH untrusted host (evil.com)"),
+        ("git@malicious.org:repo.git", False, "SSH untrusted host (malicious.org)"),
+
+        # Invalid schemes (REJECT)
+        ("ftp://github.com/user/repo.git", False, "Invalid scheme (FTP)"),
+        ("file:///home/user/repo", False, "Invalid scheme (file://)"),
+        ("ssh://github.com/user/repo", False, "Invalid scheme (ssh://)"),
+
+        # Malformed URLs (REJECT)
+        ("not a url", False, "Not a URL"),
+        ("github.com/user/repo", False, "Missing scheme"),
+        ("https://", False, "Incomplete URL"),
+        ("", False, "Empty string"),
+        ("   ", False, "Whitespace only"),
+    ])
+    def test_is_git_url(self, url, expected, reason, root):
+        """Test URL validation for all scenarios (SECURITY CRITICAL).
+
+        Args:
+            url: URL to validate
+            expected: Expected validation result (True=accept, False=reject)
+            reason: Human-readable description of test case
+        """
         frame = DragDropFrame(root)
-
-        assert frame._is_git_url("https://github.com/user/repo.git") is True
-        assert frame._is_git_url("https://github.com/user/repo") is True
-
-    def test_is_git_url_https_gitlab(self, root):
-        """Test HTTPS URL from GitLab (trusted host)."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("https://gitlab.com/user/repo.git") is True
-        assert frame._is_git_url("https://gitlab.com/user/repo") is True
-
-    def test_is_git_url_https_bitbucket(self, root):
-        """Test HTTPS URL from Bitbucket (trusted host)."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("https://bitbucket.org/user/repo.git") is True
-        assert frame._is_git_url("https://bitbucket.org/user/repo") is True
-
-    def test_is_git_url_https_other_trusted_hosts(self, root):
-        """Test HTTPS URLs from other trusted hosts (gitea.io, codeberg.org, sr.ht)."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("https://gitea.io/user/repo.git") is True
-        assert frame._is_git_url("https://codeberg.org/user/repo.git") is True
-        assert frame._is_git_url("https://sr.ht/~user/repo") is True
-
-    def test_is_git_url_subdomain_trusted(self, root):
-        """Test subdomain of trusted host is accepted."""
-        frame = DragDropFrame(root)
-
-        # Subdomains should be accepted
-        assert frame._is_git_url("https://api.github.com/repos/user/repo") is True
-        assert frame._is_git_url("https://gitlab.example.gitlab.com/user/repo") is True
-
-    def test_is_git_url_rejects_untrusted_host(self, root):
-        """Test that untrusted hosts are rejected (SECURITY)."""
-        frame = DragDropFrame(root)
-
-        # Evil host should be rejected
-        assert frame._is_git_url("https://evil.com/user/repo.git") is False
-        assert frame._is_git_url("https://malicious-site.org/repo.git") is False
-        assert frame._is_git_url("https://attacker.net/malware.git") is False
-
-    def test_is_git_url_rejects_similar_but_untrusted_host(self, root):
-        """Test that similar-looking but untrusted hosts are rejected."""
-        frame = DragDropFrame(root)
-
-        # These look similar but are NOT trusted
-        assert frame._is_git_url("https://github.com.evil.com/repo.git") is False
-        assert frame._is_git_url("https://fakegithub.com/repo.git") is False
-        assert frame._is_git_url("https://github-clone.com/repo.git") is False
-
-    def test_is_git_url_ssh_github(self, root):
-        """Test SSH format for GitHub (git@github.com:user/repo.git)."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("git@github.com:user/repo.git") is True
-        assert frame._is_git_url("git@github.com:user/repo") is True
-
-    def test_is_git_url_ssh_gitlab(self, root):
-        """Test SSH format for GitLab."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("git@gitlab.com:user/repo.git") is True
-        assert frame._is_git_url("git@gitlab.com:group/subgroup/repo.git") is True
-
-    def test_is_git_url_ssh_untrusted(self, root):
-        """Test SSH format rejects untrusted hosts."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("git@evil.com:user/repo.git") is False
-        assert frame._is_git_url("git@malicious.org:repo.git") is False
-
-    def test_is_git_url_invalid_scheme(self, root):
-        """Test that invalid URL schemes are rejected."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("ftp://github.com/user/repo.git") is False
-        assert frame._is_git_url("file:///home/user/repo") is False
-        assert frame._is_git_url("ssh://github.com/user/repo") is False
-
-    def test_is_git_url_invalid_format(self, root):
-        """Test that malformed URLs are rejected."""
-        frame = DragDropFrame(root)
-
-        assert frame._is_git_url("not a url") is False
-        assert frame._is_git_url("github.com/user/repo") is False  # No scheme
-        assert frame._is_git_url("https://") is False
-        assert frame._is_git_url("") is False
-        assert frame._is_git_url("   ") is False
-
-    def test_is_git_url_http_trusted(self, root):
-        """Test HTTP (not HTTPS) from trusted host is accepted."""
-        frame = DragDropFrame(root)
-
-        # HTTP should be accepted (will be handled by git clone)
-        assert frame._is_git_url("http://github.com/user/repo.git") is True
+        result = frame._is_git_url(url)
+        assert result == expected, f"Failed for: {reason} | URL: {url}"
 
 
 class TestAutoDetection:

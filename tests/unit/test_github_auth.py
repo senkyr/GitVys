@@ -58,76 +58,54 @@ class TestRequestDeviceCode:
         assert call_args[1]['data']['client_id'] == GITHUB_CLIENT_ID
         assert call_args[1]['data']['scope'] == 'repo'
 
+    @pytest.mark.parametrize("error_type,mock_setup,description", [
+        ("http_error", lambda m: (
+            setattr(m.return_value, 'status_code', 403),
+        ), "HTTP 403 error"),
+        ("missing_fields", lambda m: (
+            setattr(m.return_value, 'status_code', 200),
+            m.return_value.json.return_value.__setitem__('device_code', 'test_device_code_123'),
+        ), "Missing required fields (user_code, verification_uri, interval)"),
+        ("network_error", lambda m: setattr(m, 'side_effect', requests.RequestException("Network error")), "Network connection error"),
+        ("json_error", lambda m: (
+            setattr(m.return_value, 'status_code', 200),
+            setattr(m.return_value.json, 'side_effect', ValueError("Invalid JSON")),
+        ), "JSON parsing error"),
+        ("timeout", lambda m: setattr(m, 'side_effect', requests.Timeout("Request timed out")), "Request timeout"),
+    ])
     @patch('auth.github_auth.requests.post')
-    def test_request_device_code_http_error(self, mock_post):
-        """Test device code request with HTTP error."""
-        # Mock HTTP error response
-        mock_response = MagicMock()
-        mock_response.status_code = 403
-        mock_post.return_value = mock_response
+    def test_request_device_code_errors(self, mock_post, error_type, mock_setup, description):
+        """Test device code request error handling (SECURITY CRITICAL).
+
+        Verifies that all error conditions return None gracefully:
+        - HTTP errors (4xx, 5xx)
+        - Missing required fields
+        - Network errors
+        - JSON parsing errors
+        - Timeouts
+        """
+        # Setup mock according to error type
+        if error_type == "missing_fields":
+            mock_post.return_value = MagicMock()
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {'device_code': 'test_device_code_123'}
+        elif error_type == "http_error":
+            mock_post.return_value = MagicMock()
+            mock_post.return_value.status_code = 403
+        elif error_type == "json_error":
+            mock_post.return_value = MagicMock()
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.side_effect = ValueError("Invalid JSON")
+        elif error_type == "network_error":
+            mock_post.side_effect = requests.RequestException("Network error")
+        elif error_type == "timeout":
+            mock_post.side_effect = requests.Timeout("Request timed out")
 
         auth = GitHubAuth()
         result = auth.request_device_code()
 
-        # Should return None on HTTP error
-        assert result is None
-
-    @patch('auth.github_auth.requests.post')
-    def test_request_device_code_missing_fields(self, mock_post):
-        """Test device code request with missing required fields."""
-        # Mock response with missing fields
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            'device_code': 'test_device_code_123',
-            # Missing: user_code, verification_uri, interval
-        }
-        mock_post.return_value = mock_response
-
-        auth = GitHubAuth()
-        result = auth.request_device_code()
-
-        # Should return None if required fields missing
-        assert result is None
-
-    @patch('auth.github_auth.requests.post')
-    def test_request_device_code_network_error(self, mock_post):
-        """Test device code request with network error."""
-        # Mock network error
-        mock_post.side_effect = requests.RequestException("Network error")
-
-        auth = GitHubAuth()
-        result = auth.request_device_code()
-
-        # Should return None on network error
-        assert result is None
-
-    @patch('auth.github_auth.requests.post')
-    def test_request_device_code_json_error(self, mock_post):
-        """Test device code request with JSON parsing error."""
-        # Mock response with invalid JSON
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.side_effect = ValueError("Invalid JSON")
-        mock_post.return_value = mock_response
-
-        auth = GitHubAuth()
-        result = auth.request_device_code()
-
-        # Should return None on JSON error
-        assert result is None
-
-    @patch('auth.github_auth.requests.post')
-    def test_request_device_code_timeout(self, mock_post):
-        """Test device code request with timeout."""
-        # Mock timeout
-        mock_post.side_effect = requests.Timeout("Request timed out")
-
-        auth = GitHubAuth()
-        result = auth.request_device_code()
-
-        # Should return None on timeout
-        assert result is None
+        # All error conditions should return None
+        assert result is None, f"Failed for: {description}"
 
 
 class TestPollForToken:
@@ -376,76 +354,46 @@ class TestVerifyToken:
         assert call_args[0][0] == 'https://api.github.com/user'
         assert call_args[1]['headers']['Authorization'] == 'token gho_test_token_123'
 
+    @pytest.mark.parametrize("error_type,description", [
+        ("http_error", "HTTP 401 unauthorized (invalid token)"),
+        ("missing_username", "Missing 'login' field in response"),
+        ("network_error", "Network connection error"),
+        ("json_error", "JSON parsing error"),
+        ("timeout", "Request timeout"),
+    ])
     @patch('auth.github_auth.requests.get')
-    def test_verify_token_http_error(self, mock_get):
-        """Test token verification with HTTP error (invalid token)."""
-        # Mock HTTP 401 (unauthorized)
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_get.return_value = mock_response
+    def test_verify_token_errors(self, mock_get, error_type, description):
+        """Test token verification error handling (SECURITY CRITICAL).
 
-        auth = GitHubAuth()
-        username = auth.verify_token('invalid_token')
-
-        # Should return None on HTTP error
-        assert username is None
-
-    @patch('auth.github_auth.requests.get')
-    def test_verify_token_missing_username(self, mock_get):
-        """Test token verification with missing username in response."""
-        # Mock response without 'login' field
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            'id': 12345,
-            # Missing 'login'
-        }
-        mock_get.return_value = mock_response
-
-        auth = GitHubAuth()
-        username = auth.verify_token('gho_test_token_123')
-
-        # Should return None if username missing
-        assert username is None
-
-    @patch('auth.github_auth.requests.get')
-    def test_verify_token_network_error(self, mock_get):
-        """Test token verification with network error."""
-        # Mock network error
-        mock_get.side_effect = requests.RequestException("Network error")
+        Verifies that all error conditions return None gracefully:
+        - HTTP errors (401 unauthorized)
+        - Missing username in response
+        - Network errors
+        - JSON parsing errors
+        - Timeouts
+        """
+        # Setup mock according to error type
+        if error_type == "http_error":
+            mock_get.return_value = MagicMock()
+            mock_get.return_value.status_code = 401
+        elif error_type == "missing_username":
+            mock_get.return_value = MagicMock()
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {'id': 12345}  # Missing 'login'
+        elif error_type == "json_error":
+            mock_get.return_value = MagicMock()
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.side_effect = ValueError("Invalid JSON")
+        elif error_type == "network_error":
+            mock_get.side_effect = requests.RequestException("Network error")
+        elif error_type == "timeout":
+            mock_get.side_effect = requests.Timeout("Request timed out")
 
         auth = GitHubAuth()
         username = auth.verify_token('gho_test_token_123')
 
-        # Should return None on network error
-        assert username is None
-
-    @patch('auth.github_auth.requests.get')
-    def test_verify_token_json_error(self, mock_get):
-        """Test token verification with JSON parsing error."""
-        # Mock response with invalid JSON
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.side_effect = ValueError("Invalid JSON")
-        mock_get.return_value = mock_response
-
-        auth = GitHubAuth()
-        username = auth.verify_token('gho_test_token_123')
-
-        # Should return None on JSON error
-        assert username is None
-
-    @patch('auth.github_auth.requests.get')
-    def test_verify_token_timeout(self, mock_get):
-        """Test token verification with timeout."""
-        # Mock timeout
-        mock_get.side_effect = requests.Timeout("Request timed out")
-
-        auth = GitHubAuth()
-        username = auth.verify_token('gho_test_token_123')
-
-        # Should return None on timeout
-        assert username is None
+        # All error conditions should return None
+        assert username is None, f"Failed for: {description}"
 
 
 class TestGitHubAuthIntegration:
