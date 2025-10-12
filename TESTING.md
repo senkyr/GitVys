@@ -4,17 +4,30 @@
 
 Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer, včetně aktuálního stavu pokrytí a dlouhodobého plánu pro robustní testovací suite.
 
-**Aktuální stav**: 224 testů, **100% pass rate** ✅
+**Aktuální stav**: 303 testů, **100% pass rate** ✅
 
-**Poslední update**: 2025-10-12 (Phase 3 komponenty dokončeny)
+**Poslední update**: 2025-10-12 (ÚROVEŇ 2 dokončena - Utils managers)
 
-**Aktuální fokus**: FÁZE 2 - Utils managers (ThemeManager, TranslationManager)
+**Aktuální fokus**: ÚROVEŇ 3 - Visualization chybějící komponenty (Drawing & UI)
+
+### Terminologie
+
+- **Visualization, Repository, GUI** = Architektonické vrstvy projektu (z refaktoringu):
+  - Visualization = GraphDrawer, ConnectionDrawer, CommitDrawer, TagDrawer, BranchFlagDrawer, atd.
+  - Repository = CommitParser, BranchAnalyzer, TagParser, MergeDetector, atd.
+  - GUI = MainWindow, RepositoryManager, ThemeSwitcher, LanguageSwitcher, atd.
+
+- **ÚROVEŇ 1, 2, 3, 4** = Implementační úrovně testovacího plánu:
+  - ÚROVEŇ 1 ✅ = Testy pro GUI komponenty
+  - ÚROVEŇ 2 ✅ = Testy pro Utils managers (singleton komponenty)
+  - ÚROVEŇ 3 ⏳ = Testy pro Visualization komponenty
+  - ÚROVEŇ 4 ⏳ = Testy pro ostatní GUI komponenty
 
 ## Aktuální stav pokrytí testů
 
-### ✅ Dobře pokryto (Phase 1, 2 & 3)
+### ✅ Dobře pokryto (Visualization, Repository & GUI)
 
-#### Phase 3 - GUI komponenty (100% pokrytí)
+#### GUI komponenty (100% pokrytí)
 
 - ✅ `test_repo_manager.py` (32 testů, 451 ř. zdrojového kódu) - repository operations, OAuth, temp cleanup
 - ✅ `test_theme_switcher.py` (26 testů, 204 ř.) - theme switching, regression testy pro visibility bug
@@ -23,9 +36,9 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 - ✅ `test_main_window.py` (13 testů, 500 ř.) - component orchestration, event propagation
 
 **Pokrytí**: 5/5 komponent = **100%** ✅
-**Total Phase 3 tests**: 103 (plánováno 60) - **+72% nad plán**
+**Total GUI tests**: 103 (plánováno 60) - **+72% nad plán**
 
-#### Phase 2 - Repository komponenty (100% pokrytí)
+#### Repository komponenty (100% pokrytí)
 
 - ✅ `test_commit_parser.py` (268 řádků) - parsing commitů, truncation, formátování
 - ✅ `test_branch_analyzer.py` - analýza větví, divergence
@@ -35,7 +48,7 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 
 **Pokrytí**: 5/5 komponent = **100%**
 
-#### Phase 1 - Visualization komponenty (50% pokrytí)
+#### Visualization komponenty (50% pokrytí)
 
 - ✅ `test_colors.py` - HSL manipulace, branch colors
 - ✅ `test_tooltip_manager.py` (110 řádků) - tooltip lifecycle
@@ -46,7 +59,7 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 
 ### ❌ Chybí pokrytí
 
-#### Phase 1 - Drawing komponenty (0% pokrytí)
+#### Visualization - Drawing komponenty (0% pokrytí)
 
 - ❌ `ConnectionDrawer` (384 řádků) - MEDIUM
 - ❌ `CommitDrawer` (396 řádků) - MEDIUM
@@ -55,14 +68,17 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 
 **Pokrytí**: 0/4 komponent = **0%**
 
-#### Phase 1 - UI komponenty (0% pokrytí)
+#### Visualization - UI komponenty (0% pokrytí)
 
 - ❌ `ColumnManager` (430 řádků) - HIGH
 
-#### Utils (0% pokrytí)
+#### Utils (100% pokrytí)
 
-- ❌ `theme_manager.py` - **KRITICKÉ** (globální state)
-- ❌ `translations.py` - **KRITICKÉ** (globální state)
+- ✅ `test_theme_manager.py` (40 testů, 431 ř. zdrojového kódu) - singleton, persistence, callbacks, TTK styling
+- ✅ `test_translation_manager.py` (48 testů, 353 ř.) - singleton, pluralization, translations, callbacks
+
+**Pokrytí**: 2/2 komponent = **100%** ✅
+**Total Utils tests**: 88 (plánováno 27+) - **+226% nad plán**
 
 #### Ostatní GUI (0% pokrytí)
 
@@ -74,23 +90,17 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 
 ## Testovací priority
 
-### P0 - KRITICKÉ (Globální state managers) - **AKTUÁLNÍ PRIORITA** 🎯
+### P0 - DOKONČENO ✅ (Globální state managers)
 
-**Odůvodnění**: Singleton komponenty s globálním state a persistence. Phase 3 business logic je dokončena.
+1. **ThemeManager** (431 ř.)
+   - **Status**: ✅ HOTOVO - 40 testů (target: 15+)
+   - **Pokrytí**: Singleton pattern, persistence, callbacks, TTK styling, luminance calculation
+   - **Datum dokončení**: 2025-10-12
 
-1. **ThemeManager** (singleton) ⬆️ NOVĚ P0
-   - **Důvod**: Globální state, persistence do ~/.gitvys/settings.json, callback systém, TTK styling
-   - **Risk**: State corruption, race conditions, UI corruption
-   - **Test cases**: 15+ testů
-   - **Status**: ❌ TODO - **AKTUÁLNÍ PRIORITA**
-
-2. **TranslationManager** (singleton) ⬆️ NOVĚ P0
-   - **Důvod**: Globální state, pluralization logika (Czech: 1, 2-4, 5+), callback systém
-   - **Risk**: UI corruption, chybějící překlady, pluralization errors
-   - **Test cases**: 12+ testů
-   - **Status**: ❌ TODO - **AKTUÁLNÍ PRIORITA**
-
-### P0 - DOKONČENO ✅
+2. **TranslationManager** (353 ř.)
+   - **Status**: ✅ HOTOVO - 48 testů (target: 12+)
+   - **Pokrytí**: Singleton pattern, translations, pluralization (Czech: 1,2-4,5+), callbacks, persistence
+   - **Datum dokončení**: 2025-10-12
 
 3. **RepositoryManager** (451 ř.)
    - **Status**: ✅ HOTOVO - 32 testů (target: 25)
@@ -115,13 +125,13 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
    - **Pokrytí**: Stats UI, pluralization (Czech/English), tooltip
    - **Datum dokončení**: 2025-10-12
 
-### P1 - TODO
+### P1 - TODO - **AKTUÁLNÍ PRIORITA** 🎯
 
 7. **ColumnManager** (430 ř.)
    - **Důvod**: Složitá resize logika, throttling (60 FPS), floating headers
    - **Risk**: Performance issues, UI glitches, memory leaks
    - **Test cases**: 20+ testů
-   - **Status**: ❌ TODO
+   - **Status**: ❌ TODO - **NEXT PRIORITY**
 
 ### P2 - STŘEDNÍ (Drawing komponenty)
 
@@ -154,9 +164,9 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 
 ## Plán implementace testů
 
-### ✅ FÁZE 1: Phase 3 komponenty - **DOKONČENO** 🎉
+### ✅ ÚROVEŇ 1: GUI komponenty - **DOKONČENO** 🎉
 
-**Cíl**: Konzistentní pokrytí Phase 3 komponent ✅
+**Cíl**: Konzistentní pokrytí GUI komponent ✅
 
 **Rozsah**: 5 test souborů, 103 testů, ~1400 řádků kódu
 
@@ -224,50 +234,76 @@ def temp_settings_dir():
 
 ---
 
-### FÁZE 2: Utils & managers - **AKTUÁLNÍ PRIORITA** 🎯
+### ✅ ÚROVEŇ 2: Utils & managers - **DOKONČENO** 🎉
 
-**Cíl**: Otestovat kritické singleton komponenty s globálním state
+**Cíl**: Otestovat kritické singleton komponenty s globálním state ✅
 
-**Rozsah**: 2 test soubory, ~27 testů, ~450 řádků kódu
+**Rozsah**: 2 test soubory, 88 testů, ~950 řádků kódu
 
-**Časový odhad**: 2-3 pracovní dny
+**Časový odhad**: 2-3 pracovní dny → **Skutečnost**: Dokončeno ✅
 
 **Priorita**: **P0 - KRITICKÉ** (globální state, persistence)
 
-1. **`tests/unit/test_theme_manager.py`** (15+ testů, ~250 řádků)
-   - Singleton pattern
-   - Theme initialization & loading
-   - Get/set theme with validation
-   - Persistence do ~/.gitvys/settings.json
-   - Callback registration & notification
-   - TTK styling updates
-   - Theme color retrieval
-   - Edge cases: corrupt settings file, missing keys
+**Výsledky**:
 
-2. **`tests/unit/test_translation_manager.py`** (12+ testů, ~200 řádků)
-   - Singleton pattern
-   - Language management (cs/en)
-   - Translation key lookup
-   - Pluralization (Czech rules: 1, 2-4, 5+)
-   - Callback system
-   - Missing translation handling
-   - Persistence
+- ✅ 88 testů vytvořeno (+226% nad plán 27 testů)
+- ✅ 303 celkem testů v projektu (bylo: 224)
+- ✅ 100% pass rate
+- ✅ Kompletní pokrytí singleton pattern, persistence, callbacks
+- ✅ TCL/TK init fix v conftest.py (prevence intermittentních chyb)
+- ✅ Cross-platform path handling (Windows/Linux)
 
-**Fixtures potřebné**:
+**Datum dokončení**: 2025-10-12
+
+#### Test soubory (DOKONČENO)
+
+1. **`tests/unit/test_theme_manager.py`** ✅ (40 testů, target: 15+)
+   - Singleton pattern (3 testy)
+   - Theme initialization & loading (4 testy)
+   - Get/set theme with validation (7 testů)
+   - Persistence do ~/.gitvys/settings.json (5 testů)
+   - Callback registration & notification (5 testů)
+   - TTK styling updates (4 testy)
+   - Theme color retrieval (3 testy)
+   - Luminance calculation (7 testů)
+   - Edge cases: corrupt settings file, missing keys (2 testy)
+
+2. **`tests/unit/test_translation_manager.py`** ✅ (48 testů, target: 12+)
+   - Singleton pattern (3 testy)
+   - Initialization (3 testy)
+   - Language getter/setter (4 testy)
+   - Persistence (5 testů)
+   - Translation retrieval (6 testů)
+   - Pluralization (Czech rules: 1, 2-4, 5+) (6 testů)
+   - Callback system (5 testů)
+   - Global helpers (t(), get_translation_manager()) (3 testy)
+   - Settings directory management (2 testy)
+   - Edge cases (3 testy)
+
+**Fixtures vytvořené** (v test souborech):
 
 ```python
 @pytest.fixture
-def temp_settings_file(tmp_path):
-    """Temporary ~/.gitvys/settings.json for testing."""
+def reset_theme_manager():
+    """Reset ThemeManager singleton between tests."""
 
 @pytest.fixture
-def mock_theme_manager_singleton():
-    """Reset ThemeManager singleton between tests."""
+def reset_translation_manager():
+    """Reset TranslationManager singleton between tests."""
+
+@pytest.fixture
+def temp_settings_dir(tmp_path):
+    """Temporary ~/.gitvys/ directory for testing."""
 ```
+
+**Fixes implementované**:
+
+- ✅ TCL/TK environment variables v `conftest.py` (prevence init.tcl chyby)
+- ✅ Cross-platform path separators (Windows `\` vs Linux `/`)
 
 ---
 
-### FÁZE 3: Phase 1 chybějící komponenty - **PLANNED**
+### ÚROVEŇ 3: Visualization chybějící komponenty - **PLANNED**
 
 **Priorita**: P2 - STŘEDNÍ (drawing komponenty)
 
@@ -281,7 +317,7 @@ def mock_theme_manager_singleton():
 
 ---
 
-### FÁZE 4: Ostatní GUI komponenty - **PLANNED**
+### ÚROVEŇ 4: Ostatní GUI komponenty - **PLANNED**
 
 **Priorita**: P3 - NÍZKÁ (integration komponenty)
 
@@ -450,7 +486,7 @@ def test_update_position_on_window_resize():
 # Všechny testy
 pytest tests/ -v
 
-# Pouze Phase 3 testy
+# Pouze GUI komponenty testy
 pytest tests/unit/test_repo_manager.py \
        tests/unit/test_theme_switcher.py \
        tests/unit/test_language_switcher.py \
@@ -469,20 +505,20 @@ pytest-watch tests/ src/ -v
 
 ### Coverage cíle
 
-**Aktuální (po Phase 3 testech)**: ✅
+**Aktuální (po ÚROVNI 2)**: ✅
 
-- Phase 1 komponenty: **50% coverage**
-- Phase 2 komponenty: **100% coverage**
-- Phase 3 komponenty: **100% coverage** ✅ (bylo: 0%)
-- Utils managers: **0% coverage** 🎯 NEXT
-- Celkové pokrytí: **~75%** (bylo: ~65%)
+- Visualization komponenty: **50% coverage**
+- Repository komponenty: **100% coverage**
+- GUI komponenty: **100% coverage** ✅
+- Utils managers: **100% coverage** ✅ (bylo: 0%)
+- Celkové pokrytí: **~80%** (bylo: ~75%)
 
-**Po FÁZI 2 (Utils managers)**:
+**Po ÚROVNI 3 (Visualization chybějící komponenty)**:
 
-- Utils managers: **90%+ coverage**
-- Celkové pokrytí: **~78%**
+- Visualization komponenty: **100% coverage**
+- Celkové pokrytí: **~85%**
 
-**Dlouhodobý cíl (po všech fázích)**:
+**Dlouhodobý cíl (po všech úrovních)**:
 
 - P0 komponenty: **90%+ coverage**
 - P1 komponenty: **85%+ coverage**
@@ -636,9 +672,46 @@ src/
 
 ## Changelog testů
 
-### v1.5.0 - Phase 3 tests COMPLETED (2025-10-12) ✅
+### v1.5.0 - ÚROVEŇ 2 Utils managers COMPLETED (2025-10-12) ✅
 
-**Shrnutí**: Dokončena kompletní testovací suite pro Phase 3 GUI komponenty
+**Shrnutí**: Dokončeny testy pro kritické singleton komponenty s globálním state
+
+- ✅ Přidány testy pro ThemeManager (40 testů)
+  - Singleton pattern (3 testy)
+  - Theme management (light/dark) s validací
+  - Persistence do `~/.gitvys/settings.json` (5 testů)
+  - Callback system pro theme change notifications (5 testů)
+  - TTK styling configuration (4 testy)
+  - Luminance calculation & contrast (7 testů) - WCAG formula
+  - Edge cases: corrupt settings, invalid themes (2 testy)
+- ✅ Přidány testy pro TranslationManager (48 testů)
+  - Singleton pattern (3 testy)
+  - Multi-language support (Czech/English)
+  - Translation key lookup s format arguments (6 testů)
+  - **Pluralization** (6 testů):
+    - Czech: 1, 2-4, 5+ forms
+    - English: 1, other
+  - Callback system (5 testů)
+  - Persistence s preservation of other settings (5 testů)
+  - Global helpers (`t()`, `get_translation_manager()`) (3 testy)
+- ✅ Fix: TCL/TK environment variables v `conftest.py`
+  - Prevence intermittentní chyby `Can't find a usable init.tcl`
+  - Cross-platform support (Windows/Linux)
+  - Ověřeno 3× opakovanými běhy
+
+**Metriky**:
+
+- **Tests created**: 88 (plánováno 27) → **+226% nad plán**
+- **Total project tests**: 224 → **303**
+- **Pass rate**: **100% (303/303)** ✅
+- **Coverage Utils**: 0% → **100%**
+- **Coverage celkem**: ~75% → **~80%**
+
+**Další kroky**: ÚROVEŇ 3 - Visualization chybějící komponenty (Drawing & UI)
+
+### v1.5.0 - GUI tests COMPLETED (2025-10-12) ✅
+
+**Shrnutí**: Dokončena kompletní testovací suite pro GUI komponenty
 
 - ✅ Přidány testy pro RepositoryManager (32 testů)
   - OAuth Device Flow authentication
@@ -671,27 +744,27 @@ src/
 - **Tests created**: 103 (plánováno 60) → **+72% nad plán**
 - **Total project tests**: 121 → **224**
 - **Pass rate**: **100% (224/224)** ✅
-- **Coverage Phase 3**: 0% → **100%**
+- **Coverage GUI**: 0% → **100%**
 - **Coverage celkem**: ~65% → **~75%**
 
-**Další kroky**: FÁZE 2 - Utils managers (ThemeManager, TranslationManager)
+**Další kroky**: ÚROVEŇ 2 - Utils managers (ThemeManager, TranslationManager)
 
-### v1.5.0 - Phase 2 tests (2025-09)
+### v1.5.0 - Repository tests (2025-09)
 
 - ✅ Přidány testy pro CommitParser
 - ✅ Přidány testy pro BranchAnalyzer
 - ✅ Přidány testy pro TagParser
 - ✅ Přidány testy pro MergeDetector
 - ✅ Přidány integration testy pro GitRepository
-- **Coverage Phase 2**: 0% → 100%
+- **Coverage Repository**: 0% → 100%
 
-### v1.5.0 - Phase 1 tests (2025-09)
+### v1.5.0 - Visualization tests (2025-09)
 
 - ✅ Přidány testy pro colors utility
 - ✅ Přidány testy pro TooltipManager
 - ✅ Přidány testy pro TextFormatter
 - ✅ Přidány integration testy pro GraphDrawer
-- **Coverage Phase 1**: 0% → 50%
+- **Coverage Visualization**: 0% → 50%
 
 ---
 
@@ -726,7 +799,7 @@ Tato testovací strategie zajišťuje:
 1. ✅ **Konzistentní pokrytí** refaktorovaných komponent
 2. ✅ **Regression prevence** pro opravené bugy
 3. ✅ **Prioritizace** kritických komponent (data loss, security)
-4. ✅ **Incremental approach** - dokončit Phase 3, pak expandovat
+4. ✅ **Incremental approach** - dokončit GUI, pak Utils, pak Visualization
 5. ✅ **Dlouhodobý plán** pro dosažení 80%+ coverage
 
-**Aktuální fokus**: Phase 3 testy (5 souborů, ~60 testů, 5-7 dní)
+**Aktuální fokus**: ÚROVEŇ 3 - Visualization komponenty (5 souborů, ~60 testů)

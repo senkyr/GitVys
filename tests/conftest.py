@@ -1,15 +1,24 @@
 """Pytest configuration and shared fixtures."""
 
-import pytest
-import sys
 import os
+import sys
 from pathlib import Path
+
+# Set TCL/TK library paths before importing tkinter
+# This prevents "Can't find a usable init.tcl" errors in some environments
+python_root = Path(sys.executable).parent
+tcl_dir = python_root / "tcl"
+if tcl_dir.exists():
+    os.environ.setdefault("TCL_LIBRARY", str(tcl_dir / "tcl8.6"))
+    os.environ.setdefault("TK_LIBRARY", str(tcl_dir / "tk8.6"))
+
+import pytest
 
 # Add src directory to path for imports
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-# Import after path setup
+# Import after path setup and TCL/TK initialization
 import tkinter as tk
 from utils.data_structures import Commit, Tag
 
