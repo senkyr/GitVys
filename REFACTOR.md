@@ -722,9 +722,13 @@ class GitRepository:
   - [x] Spustit aplikaci a otestovat loading repozitářů
   - [x] Commit: "Finalize GitRepository refactoring - now facade only"
 
-- [ ] **Krok 7: Dokumentace**
-  - [ ] Aktualizovat dokumentaci
-  - [ ] Commit: "Update documentation for GitRepository refactoring"
+- [x] **Krok 7: Dokumentace** ✅ HOTOVO
+  - [x] Aktualizovat CLAUDE.md s novou strukturou ✅
+  - [x] Aktualizovat docs/DESIGN.md ✅
+  - [x] Aktualizovat README.md ✅
+  - [x] Vytvořit 58 testů pro Phase 2 komponenty ✅
+  - [x] Aktualizovat tests/README.md ✅
+  - [ ] Commit: "Update documentation for GitRepository refactoring" (zatím bez commitů)
 
 ---
 

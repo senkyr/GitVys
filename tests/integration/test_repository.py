@@ -126,3 +126,194 @@ class TestGitRepositoryIntegration:
 
         # Should return list (may be empty or with merges)
         assert isinstance(merge_branches, list)
+
+
+class TestGitRepositoryFacade:
+    """Tests for GitRepository facade pattern (Phase 2 refactoring)."""
+
+    @pytest.fixture
+    def temp_git_repo(self):
+        """Create a temporary directory for testing."""
+        temp_dir = tempfile.mkdtemp()
+        yield temp_dir
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @patch('repo.repository.Repo')
+    @patch('repo.repository.CommitParser')
+    @patch('repo.repository.BranchAnalyzer')
+    @patch('repo.repository.TagParser')
+    def test_component_initialization_on_load(self, mock_tag_parser, mock_branch_analyzer,
+                                             mock_commit_parser, mock_repo_class, temp_git_repo):
+        """Test that components are initialized when repository is loaded."""
+        mock_repo = MagicMock()
+        mock_repo_class.return_value = mock_repo
+
+        repo = GitRepository(temp_git_repo)
+        result = repo.load_repository()
+
+        assert result is True
+        # Verify components were initialized
+        mock_commit_parser.assert_called_once_with(mock_repo)
+        mock_branch_analyzer.assert_called_once_with(mock_repo)
+        mock_tag_parser.assert_called_once_with(mock_repo)
+
+    @patch('repo.repository.Repo')
+    @patch('repo.repository.CommitParser')
+    @patch('repo.repository.BranchAnalyzer')
+    @patch('repo.repository.TagParser')
+    @patch('repo.repository.MergeDetector')
+    def test_parse_commits_delegates_to_components(self, mock_merge_detector_class,
+                                                   mock_tag_parser_class, mock_branch_analyzer_class,
+                                                   mock_commit_parser_class, mock_repo_class, temp_git_repo):
+        """Test that parse_commits delegates to CommitParser and other components."""
+        # Setup mocks
+        mock_repo = MagicMock()
+        mock_repo_class.return_value = mock_repo
+        mock_repo.heads = []
+        mock_repo.git.status.return_value = ""  # No uncommitted changes
+
+        # Mock component instances
+        mock_commit_parser = MagicMock()
+        mock_commit_parser.parse_commits.return_value = []
+        mock_commit_parser_class.return_value = mock_commit_parser
+
+        mock_branch_analyzer = MagicMock()
+        mock_branch_analyzer.build_commit_branch_map.return_value = {}
+        mock_branch_analyzer.build_branch_availability_map.return_value = {}
+        mock_branch_analyzer_class.return_value = mock_branch_analyzer
+
+        mock_tag_parser = MagicMock()
+        mock_tag_parser.build_commit_tag_map.return_value = {}
+        mock_tag_parser_class.return_value = mock_tag_parser
+
+        mock_merge_detector = MagicMock()
+        mock_merge_detector.detect_merge_branches.return_value = []
+        mock_merge_detector_class.return_value = mock_merge_detector
+
+        # Load and parse
+        repo = GitRepository(temp_git_repo)
+        repo.load_repository()
+        commits = repo.parse_commits()
+
+        # Verify delegation
+        mock_branch_analyzer.build_commit_branch_map.assert_called_once()
+        mock_tag_parser.build_commit_tag_map.assert_called_once()
+        mock_branch_analyzer.build_branch_availability_map.assert_called_once()
+        mock_commit_parser.parse_commits.assert_called_once()
+        mock_merge_detector_class.assert_called_once()
+        mock_merge_detector.detect_merge_branches.assert_called_once()
+
+    @patch('repo.repository.Repo')
+    @patch('repo.repository.CommitParser')
+    @patch('repo.repository.BranchAnalyzer')
+    @patch('repo.repository.TagParser')
+    @patch('repo.repository.MergeDetector')
+    def test_parse_commits_with_remote_delegates(self, mock_merge_detector_class,
+                                                 mock_tag_parser_class, mock_branch_analyzer_class,
+                                                 mock_commit_parser_class, mock_repo_class, temp_git_repo):
+        """Test that parse_commits_with_remote delegates properly."""
+        # Setup mocks
+        mock_repo = MagicMock()
+        mock_repo_class.return_value = mock_repo
+        mock_repo.heads = []
+        mock_repo.git.status.return_value = ""
+
+        mock_commit_parser = MagicMock()
+        mock_commit_parser.parse_commits_with_remote.return_value = []
+        mock_commit_parser_class.return_value = mock_commit_parser
+
+        mock_branch_analyzer = MagicMock()
+        mock_branch_analyzer.build_commit_branch_map_with_remote.return_value = ({}, {})
+        mock_branch_analyzer.build_branch_availability_map.return_value = {}
+        mock_branch_analyzer.get_all_branch_names.return_value = set()
+        mock_branch_analyzer.detect_branch_divergence.return_value = {}
+        mock_branch_analyzer_class.return_value = mock_branch_analyzer
+
+        mock_tag_parser = MagicMock()
+        mock_tag_parser.build_commit_tag_map_with_remote.return_value = {}
+        mock_tag_parser_class.return_value = mock_tag_parser
+
+        mock_merge_detector = MagicMock()
+        mock_merge_detector.detect_merge_branches.return_value = []
+        mock_merge_detector_class.return_value = mock_merge_detector
+
+        # Load and parse with remote
+        repo = GitRepository(temp_git_repo)
+        repo.load_repository()
+        commits = repo.parse_commits_with_remote()
+
+        # Verify delegation to remote-aware methods
+        mock_branch_analyzer.build_commit_branch_map_with_remote.assert_called_once()
+        mock_tag_parser.build_commit_tag_map_with_remote.assert_called_once()
+        mock_branch_analyzer.get_all_branch_names.assert_called_once()
+        mock_commit_parser.parse_commits_with_remote.assert_called_once()
+
+    @patch('repo.repository.Repo')
+    def test_components_are_none_before_load(self, mock_repo_class, temp_git_repo):
+        """Test that component instances are None before loading."""
+        repo = GitRepository(temp_git_repo)
+
+        assert repo.commit_parser is None
+        assert repo.branch_analyzer is None
+        assert repo.tag_parser is None
+        assert repo.merge_detector is None
+
+    @patch('repo.repository.Repo')
+    @patch('repo.repository.CommitParser')
+    @patch('repo.repository.BranchAnalyzer')
+    @patch('repo.repository.TagParser')
+    def test_components_are_set_after_load(self, mock_tag_parser_class, mock_branch_analyzer_class,
+                                          mock_commit_parser_class, mock_repo_class, temp_git_repo):
+        """Test that component instances are set after loading."""
+        mock_repo = MagicMock()
+        mock_repo_class.return_value = mock_repo
+
+        repo = GitRepository(temp_git_repo)
+        repo.load_repository()
+
+        assert repo.commit_parser is not None
+        assert repo.branch_analyzer is not None
+        assert repo.tag_parser is not None
+
+    @patch('repo.repository.Repo')
+    @patch('repo.repository.CommitParser')
+    @patch('repo.repository.BranchAnalyzer')
+    @patch('repo.repository.TagParser')
+    @patch('repo.repository.MergeDetector')
+    def test_merge_detector_created_on_parse(self, mock_merge_detector_class,
+                                            mock_tag_parser_class, mock_branch_analyzer_class,
+                                            mock_commit_parser_class, mock_repo_class, temp_git_repo):
+        """Test that MergeDetector is created during parse_commits."""
+        mock_repo = MagicMock()
+        mock_repo_class.return_value = mock_repo
+        mock_repo.heads = []
+        mock_repo.git.status.return_value = ""
+
+        mock_commit_parser = MagicMock()
+        mock_commit_parser.parse_commits.return_value = []
+        mock_commit_parser_class.return_value = mock_commit_parser
+
+        mock_branch_analyzer = MagicMock()
+        mock_branch_analyzer.build_commit_branch_map.return_value = {}
+        mock_branch_analyzer.build_branch_availability_map.return_value = {}
+        mock_branch_analyzer_class.return_value = mock_branch_analyzer
+
+        mock_tag_parser = MagicMock()
+        mock_tag_parser.build_commit_tag_map.return_value = {}
+        mock_tag_parser_class.return_value = mock_tag_parser
+
+        mock_merge_detector = MagicMock()
+        mock_merge_detector.detect_merge_branches.return_value = []
+        mock_merge_detector_class.return_value = mock_merge_detector
+
+        repo = GitRepository(temp_git_repo)
+        repo.load_repository()
+
+        # MergeDetector should be None before parsing
+        assert repo.merge_detector is None
+
+        repo.parse_commits()
+
+        # MergeDetector should be created during parse
+        mock_merge_detector_class.assert_called_once()
+        assert repo.merge_detector is not None
