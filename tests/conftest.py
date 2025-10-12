@@ -281,3 +281,55 @@ def mock_merge_commit():
     merge_commit.parents = [parent1, parent2]
 
     return merge_commit
+
+
+# === Phase 3 GUI Component Fixtures ===
+
+@pytest.fixture
+def mock_parent_window(root):
+    """Create a mock MainWindow instance for component tests."""
+    from unittest.mock import MagicMock
+
+    window = MagicMock()
+    window.root = root
+    window.theme_manager = MagicMock()
+    window.theme_manager.get_color.return_value = "#FFFFFF"
+
+    # Mock common methods
+    window.update_status = MagicMock()
+    window.show_error = MagicMock()
+    window.show_graph = MagicMock()
+
+    # Mock UI elements that components interact with
+    window.progress = MagicMock()
+    window.progress.config = MagicMock()
+    window.progress.start = MagicMock()
+    window.progress.stop = MagicMock()
+
+    window.fetch_button = MagicMock()
+    window.fetch_button.config = MagicMock()
+
+    return window
+
+
+@pytest.fixture
+def temp_settings_dir(tmp_path):
+    """Create temporary ~/.gitvys/ directory for testing."""
+    settings_dir = tmp_path / ".gitvys"
+    settings_dir.mkdir()
+
+    # Patch os.path.expanduser to return test directory
+    import os
+    original_expanduser = os.path.expanduser
+
+    def mock_expanduser(path):
+        if path.startswith("~"):
+            return str(tmp_path / path[2:])  # Replace ~ with tmp_path
+        return original_expanduser(path)
+
+    os.path.expanduser = mock_expanduser
+
+    yield settings_dir
+
+    # Restore original function
+    os.path.expanduser = original_expanduser
