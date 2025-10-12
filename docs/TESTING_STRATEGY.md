@@ -4,11 +4,11 @@
 
 Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer, včetně aktuálního stavu pokrytí a dlouhodobého plánu pro robustní testovací suite.
 
-**Aktuální stav**: 623 test funkcí, **99.9% pass rate** (705 passed, 1 skipped, 706 collected) ✅
+**Aktuální stav**: 623 test funkcí, **99.9% pass rate** (712 passed, 1 skipped, 713 collected) ✅
 
-**Poslední update**: 2025-10-12 (Parametrizace Fáze 3 - Redukce redundance o 48 funkcí)
+**Poslední update**: 2025-10-12 (Integration tests + TCL/TK regression fix)
 
-**Aktuální fokus**: 🎉 **Test suite optimization dokončena!** (-7.2% redundance) | **Coverage: ~81% overall, ~98% core logic** ✅
+**Aktuální fokus**: 🎉 **Test suite optimization dokončena!** + **Integration tests přidány** | **Coverage: ~81% overall, ~98% core logic** ✅
 
 ### Terminologie
 
@@ -978,6 +978,85 @@ src/
 ---
 
 ## Changelog testů
+
+### v1.5.0 - Integration Tests + TCL/TK Regression Fix (2025-10-12) 🎉✅
+
+**Shrnutí**: Přidány integration testy pro Repository → Visualization pipeline + oprava TCL/TK regrese
+
+**Integration Tests vytvořeny** (`tests/integration/test_repository_visualization_pipeline.py`):
+
+- ✅ **7 nových integration testů** (0 → 7):
+  - Full pipeline: Repository parsing → Layout → Visualization → Canvas (CRITICAL PATH)
+  - Pipeline with tags (tag data flow validation)
+  - Pipeline with multiple branches (branch structure preservation)
+  - Empty repository handling (edge case)
+  - Commit metadata preservation (data integrity)
+  - Error handling: commits without positions
+  - Error handling: commits without colors
+
+**Testované CRITICAL PATH**:
+
+```python
+# KROK 1: Repository parsing (Repository layer)
+repo = GitRepository("/path/to/repo")
+commits = repo.parse_commits()
+
+# KROK 2: Layout calculation (Layout layer)
+layout = GraphLayout(commits)
+positioned_commits = layout.calculate_positions()
+
+# KROK 3: Canvas rendering (Visualization layer)
+drawer = GraphDrawer()
+drawer.draw_graph(canvas, positioned_commits)
+```
+
+**TCL/TK Regression Fix**:
+
+- ✅ **Problém**: Lokální canvas fixtures v `test_repository_visualization_pipeline.py` bypassovaly správnou TCL/TK inicializaci z `conftest.py`
+- ✅ **Chyba**: `_tkinter.TclError: Can't find a usable init.tcl`
+- ✅ **Root cause**: Test definoval vlastní `canvas` fixtures, které vytvářely `tk.Tk()` přímo bez navázání na global `root` fixture
+- ✅ **Fix**: Odstraněny lokální canvas fixtures, nyní používají globální fixture z `conftest.py` (řádky 41-48)
+- ✅ **Důsledek**: TCL/TK environment správně inicializováno před vytvořením canvas widgetu
+
+**Metriky**:
+
+- **Integration tests**: 39 → **46** (+7 testů, +18%)
+- **Total project tests**: 706 → **713 collected** (+7)
+- **Test functions**: **623** (beze změny)
+- **Pass rate**: **99.9% (712 passed, 1 skipped)** ✅
+- **Coverage**: ~81% overall, ~98% core logic (beze změny)
+
+**Test categories po integration tests**:
+
+| Kategorie | Soubory | Testy | Poznámka |
+|-----------|---------|-------|----------|
+| **Unit tests** | 27 | 667 | Všechny komponenty |
+| **Integration tests** | 4 | 46 | Cross-layer + pipeline |
+| **E2E tests** | 0 | 0 | Not implemented |
+| **Total** | 31 | 713 | Production-ready ✅ |
+
+**Integration test soubory**:
+
+1. `test_repository.py` (13 testů) - GitRepository facade orchestrace
+2. `test_graph_drawer.py` (13 testů) - GraphDrawer component integration
+3. `test_main_window.py` (13 testů) - MainWindow GUI orchestrace
+4. `test_repository_visualization_pipeline.py` (7 testů) - **NOVÝ** - Full data flow pipeline
+
+**Výsledek**:
+
+- ✅ **CRITICAL PATH testován** - Repository → Layout → Visualization → Canvas
+- ✅ **Cross-layer data flow validated** - Commit metadata integrity
+- ✅ **TCL/TK fixture pattern established** - Use global fixtures from conftest.py
+- ✅ **Integration coverage kompletní** - All major component interactions tested
+
+**Doporučení pro budoucí testy**:
+
+- ⚠️ **ALWAYS use global fixtures** from `conftest.py` for TCL/TK widgets (root, canvas)
+- ⚠️ **NEVER create local** `tk.Tk()` instances in test files
+- ✅ Global `root` fixture properly initializes TCL/TK environment via `tests.setup_tcl`
+- ✅ Global `canvas` fixture depends on `root` fixture for proper initialization chain
+
+---
 
 ### v1.5.0 - Test Parametrizace Fáze 3 COMPLETED (2025-10-12) ✨✅
 
