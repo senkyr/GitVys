@@ -8,7 +8,7 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 
 **Poslední update**: 2025-10-12 (ÚROVEŇ 4 - DOKONČENO ✅: DragDropFrame, AuthDialog, GraphCanvas)
 
-**Aktuální fokus**: 🎉 Všechny plánované úrovně dokončeny! (ÚROVEŇ 1-4 = 100%)
+**Aktuální fokus**: 🎉 ÚROVNĚ 1-4 dokončeny! (429 testů = 100%) | 🔄 ÚROVEŇ 5 PLÁNOVÁNA (Auth & Layout) | 🔄 ÚROVEŇ 6 DOPORUČENA (Entry point & Utils → ~98% coverage)
 
 ### Terminologie
 
@@ -17,11 +17,13 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
   - Repository = CommitParser, BranchAnalyzer, TagParser, MergeDetector, atd.
   - GUI = MainWindow, RepositoryManager, ThemeSwitcher, LanguageSwitcher, atd.
 
-- **ÚROVEŇ 1, 2, 3, 4** = Implementační úrovně testovacího plánu:
+- **ÚROVEŇ 1, 2, 3, 4, 5, 6** = Implementační úrovně testovacího plánu:
   - ÚROVEŇ 1 ✅ = Testy pro GUI komponenty (103 testů - 100% hotovo)
   - ÚROVEŇ 2 ✅ = Testy pro Utils managers (88 testů - 100% hotovo)
   - ÚROVEŇ 3 ✅ = Testy pro Visualization komponenty (133 testů - 100% hotovo)
   - ÚROVEŇ 4 ✅ = Testy pro ostatní GUI komponenty (105 testů - 100% hotovo: DragDropFrame, AuthDialog, GraphCanvas)
+  - ÚROVEŇ 5 ⏳ = Testy pro Auth module & Layout (40+ testů - PLÁNOVÁNO: github_auth.py, token_storage.py, layout.py)
+  - ÚROVEŇ 6 ⏳ = Testy pro Entry point & Utils (23+ testů - DOPORUČENO: main.py, logging_config.py, data_structures.py)
 
 ## Aktuální stav pokrytí testů
 
@@ -435,6 +437,116 @@ def temp_settings_dir(tmp_path):
    - Theme (canvas bg update, redraw graph if loaded) (2 testy)
    - Canvas resize (separators, scrollbars) (1 test)
    - Integration (full workflow, scrollbar visibility lifecycle) (2 testy)
+
+---
+
+### 🔄 ÚROVEŇ 5: Auth Module & Layout - **PLÁNOVÁNO** (0/3 hotovo)
+
+**Priorita**: P0-P1 - VYSOKÁ (Auth je **SECURITY CRITICAL**, Layout je core functionality)
+
+**Rozsah**: 3 test soubory, ~40+ testů, ~600 řádků kódu
+
+**Odůvodnění**: Po dokončení ÚROVNÍ 1-4 (565 testů, ~92% coverage) byly identifikovány kritické komponenty bez pokrytí:
+- **Auth modul** (github_auth.py, token_storage.py) - **SECURITY CRITICAL**: OAuth Device Flow a token persistence
+- **Layout algorithm** (layout.py) - Core functionality: Výpočet pozic commitů a větví v grafu
+
+**Komponenty k testování**:
+
+1. **`tests/unit/test_github_auth.py`** ⏳ (15+ testů) - **PLÁNOVÁNO**
+   - **SECURITY CRITICAL**: OAuth Device Flow implementation (205 řádků zdrojového kódu)
+   - Request device code (HTTP request mocking, GitHub API response handling)
+   - Poll for token (success, timeout, slow_down, authorization_pending)
+   - Error handling (network failures, API errors, malformed responses)
+   - URL construction (authenticated URL for private repos)
+   - Integration tests (full OAuth flow)
+
+2. **`tests/unit/test_token_storage.py`** ⏳ (10+ testů) - **PLÁNOVÁNO**
+   - **SECURITY CRITICAL**: Token persistence (106 řádků zdrojového kódu)
+   - Save token to `~/.gitvys/github_token`
+   - Load token from disk (exists, missing, corrupt)
+   - Delete token
+   - File permissions (security - token file should not be world-readable)
+   - Directory creation (ensure `~/.gitvys/` exists)
+   - Edge cases (empty token, invalid paths, permission errors)
+
+3. **`tests/unit/test_layout.py`** ⏳ (15+ testů) - **PLÁNOVÁNO**
+   - Graph positioning algorithm (272 řádků zdrojového kódu)
+   - Calculate positions (commits, branches)
+   - Lane assignment (branch placement in columns)
+   - Lane recycling (reuse lanes when branches merge)
+   - Merge branch detection (identify merge commits)
+   - Position calculation (x/y coordinates based on time and lane)
+   - Edge cases (empty commits, single commit, complex merge graphs)
+   - Integration tests (real-world branch structures)
+
+**Testovací pokrytí po ÚROVNI 5**:
+- Auth module: 0% → **100%** (CRITICAL!)
+- Layout algorithm: 0% → **85%+** (P1)
+- Celkové pokrytí projektu: ~92% → **~95%**
+- Celkové testy: 565 → **~605**
+
+**Časový odhad**: 3-4 pracovní dny
+
+**Další kroky**:
+- Po dokončení ÚROVNĚ 5 budou všechny **SECURITY CRITICAL** komponenty pokryty testy
+- ÚROVEŇ 6 (Entry point & Utils) doporučena pro near-perfect coverage (~98%)
+
+---
+
+### 🔄 ÚROVEŇ 6: Entry Point & Utilities - **DOPORUČENO** (0/3 hotovo)
+
+**Priorita**: P3 - STŘEDNÍ (Entry point je první co uživatel vidí, OS-specific logika v logging)
+
+**Rozsah**: 3 test soubory, ~23 testů, ~250 řádků kódu
+
+**Odůvodnění**: Po ÚROVNI 5 zbude ~5% nepokrytého kódu:
+- **main.py** (88 řádků) - Entry point aplikace, Git detection, startup flow
+- **logging_config.py** (91 řádků) - OS-specific paths (Windows vs Linux), logger setup
+- **data_structures.py** (72 řádků) - Dataclassy s minimální logikou (`__post_init__`)
+
+**Komponenty k testování**:
+
+1. **`tests/unit/test_main.py`** ⏳ (8-10 testů) - **DOPORUČENO**
+   - **Entry point**: První co uživatel spustí (88 řádků zdrojového kódu)
+   - Git detection (`check_git_installed()`) - subprocess call, success/failure
+   - Git missing dialog (`show_git_missing_dialog()`) - tkinter error dialog
+   - Main entry point (`main()`) - startup flow, conditional logging
+   - Logging setup conditions (`sys.frozen` detection, `GITVIS_DEBUG` env var)
+   - Error handling (KeyboardInterrupt, exceptions)
+   - Integration test (full startup flow with Git available/missing)
+
+2. **`tests/unit/test_logging_config.py`** ⏳ (10-12 testů) - **DOPORUČENO**
+   - **OS-specific paths**: Windows vs Linux (91 řádků zdrojového kódu)
+   - Get log file path (Windows `USERPROFILE`, Linux `~/.gitvys/`)
+   - Directory creation (ensure `~/.gitvys/` exists)
+   - Setup logging (file handler, console handler, formatter)
+   - Error handling (file creation failures, permission errors)
+   - Handler deduplication (prevent adding multiple handlers)
+   - Logger retrieval (`get_logger()`)
+   - Cross-platform testing (mock Windows/Linux environments)
+
+3. **`tests/unit/test_data_structures.py`** ⏳ (5 testů) - **OPTIONAL**
+   - **Minimální logika**: Jen `__post_init__` defaults (72 řádků)
+   - Commit dataclass (`tags=[]`, `additional_branches=[]` defaults)
+   - Tag dataclass (default values)
+   - MergeBranch dataclass (all fields required)
+   - Branch dataclass (all fields required)
+   - Optional: Field type validation (pro robustnost)
+
+**Testovací pokrytí po ÚROVNI 6**:
+- Entry point (main.py): 0% → **85%+** ✅
+- Logging config: 0% → **90%+** ✅
+- Data structures: 0% → **70%+** (optional)
+- Celkové pokrytí projektu: ~95% → **~98%** 🎉
+- Celkové testy: ~605 → **~628**
+
+**Časový odhad**: 2-3 pracovní dny
+
+**Výsledek po ÚROVNI 6**:
+- ✅ **Near-perfect coverage** (~98%)
+- ✅ Všechna aplikační logika pokryta
+- ✅ Zbude jen: `constants.py` (netestovatelné), `__init__.py` soubory (netestovatelné)
+- ✅ **Production-ready test suite**
 
 ---
 

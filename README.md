@@ -65,12 +65,27 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 
 Viz [docs/INSTALLATION.md](docs/INSTALLATION.md) pro instrukce k instalaci a spuštění ze zdrojového kódu.
 
+## Testing
+
+Projekt má komprehensivní testovací pokrytí (**~92%**, 565 testů).
+
+```bash
+# Spustit všechny testy
+pytest tests/ -v
+
+# Coverage report
+pytest tests/ --cov=src --cov-report=html
+```
+
+Viz [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) pro kompletní testovací strategii.
+
 ## Dokumentace
 
 - **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Instalace ze zdrojového kódu a vývoj
 - **[docs/BUILD-INSTRUCTIONS.md](docs/BUILD-INSTRUCTIONS.md)** - Vytvoření .exe pomocí PyInstaller
 - **[docs/DESIGN.md](docs/DESIGN.md)** - Architektura a design projektu
 - **[docs/CHANGELOG.md](docs/CHANGELOG.md)** - Historie verzí a změn
+- **[docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** - Testovací strategie a pokrytí
 - **[CLAUDE.md](CLAUDE.md)** - Instrukce pro Claude Code
 - **[LICENSE.md](LICENSE.md)** - Licence projektu
 
