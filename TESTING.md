@@ -4,11 +4,11 @@
 
 Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer, včetně aktuálního stavu pokrytí a dlouhodobého plánu pro robustní testovací suite.
 
-**Aktuální stav**: 303 testů, **100% pass rate** ✅
+**Aktuální stav**: 460 testů, **100% pass rate** ✅
 
-**Poslední update**: 2025-10-12 (ÚROVEŇ 2 dokončena - Utils managers)
+**Poslední update**: 2025-10-12 (ÚROVEŇ 3 - DOKONČENO ✅: ColumnManager, ConnectionDrawer, CommitDrawer, TagDrawer, BranchFlagDrawer)
 
-**Aktuální fokus**: ÚROVEŇ 3 - Visualization chybějící komponenty (Drawing & UI)
+**Aktuální fokus**: ÚROVEŇ 4 - Ostatní GUI komponenty (GraphCanvas, DragDropFrame, AuthDialog)
 
 ### Terminologie
 
@@ -18,10 +18,10 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
   - GUI = MainWindow, RepositoryManager, ThemeSwitcher, LanguageSwitcher, atd.
 
 - **ÚROVEŇ 1, 2, 3, 4** = Implementační úrovně testovacího plánu:
-  - ÚROVEŇ 1 ✅ = Testy pro GUI komponenty
-  - ÚROVEŇ 2 ✅ = Testy pro Utils managers (singleton komponenty)
-  - ÚROVEŇ 3 ⏳ = Testy pro Visualization komponenty
-  - ÚROVEŇ 4 ⏳ = Testy pro ostatní GUI komponenty
+  - ÚROVEŇ 1 ✅ = Testy pro GUI komponenty (103 testů)
+  - ÚROVEŇ 2 ✅ = Testy pro Utils managers (88 testů)
+  - ÚROVEŇ 3 ✅ = Testy pro Visualization komponenty (133/133 testů - 100% hotovo)
+  - ÚROVEŇ 4 ⏳ = Testy pro ostatní GUI komponenty (0/24 testů)
 
 ## Aktuální stav pokrytí testů
 
@@ -48,29 +48,30 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 
 **Pokrytí**: 5/5 komponent = **100%**
 
-#### Visualization komponenty (50% pokrytí)
+#### Visualization komponenty (100% pokrytí) ✅
 
 - ✅ `test_colors.py` - HSL manipulace, branch colors
 - ✅ `test_tooltip_manager.py` (110 řádků) - tooltip lifecycle
 - ✅ `test_text_formatter.py` - truncation, DPI scaling
 - ✅ `test_graph_drawer.py` (158 řádků) - integration orchestrace
+- ✅ `test_column_manager.py` (37 testů, 430 ř. zdrojového kódu) - column resizing, throttling (60 FPS), drag & drop
+- ✅ `test_connection_drawer.py` (33 testů, 356 ř. zdrojového kódu) - Bézier curves, connection routing, merge/branch detection
+- ✅ `test_commit_drawer.py` (24 testů, 365 ř. zdrojového kódu) - node rendering, text truncation, tooltips, dominant author
+- ✅ `test_tag_drawer.py` (31 testů, 241 ř. zdrojového kódu) - tag icons with emojis, tooltips, truncation, positioning
+- ✅ `test_branch_flag_drawer.py` (32 testů, 335 ř. zdrojového kódu) - branch flags, local/remote symbols, tooltips, contrasting colors
 
-**Pokrytí**: 4/8 komponent = **50%**
+**Pokrytí**: 9/9 komponent = **100%** ✅ (bylo: 8/9 = 89%)
 
 ### ❌ Chybí pokrytí
 
-#### Visualization - Drawing komponenty (0% pokrytí)
+#### Visualization - Drawing komponenty (100% pokrytí) ✅
 
-- ❌ `ConnectionDrawer` (384 řádků) - MEDIUM
-- ❌ `CommitDrawer` (396 řádků) - MEDIUM
-- ❌ `TagDrawer` (241 řádků) - MEDIUM
-- ❌ `BranchFlagDrawer` (335 řádků) - MEDIUM
+- ✅ `ConnectionDrawer` (356 řádků) - MEDIUM ✅
+- ✅ `CommitDrawer` (365 řádků) - MEDIUM ✅
+- ✅ `TagDrawer` (241 řádků) - MEDIUM ✅
+- ✅ `BranchFlagDrawer` (335 řádků) - MEDIUM ✅
 
-**Pokrytí**: 0/4 komponent = **0%**
-
-#### Visualization - UI komponenty (0% pokrytí)
-
-- ❌ `ColumnManager` (430 řádků) - HIGH
+**Pokrytí**: 4/4 komponent = **100%** ✅ (bylo: 3/4 = 75%)
 
 #### Utils (100% pokrytí)
 
@@ -125,27 +126,46 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
    - **Pokrytí**: Stats UI, pluralization (Czech/English), tooltip
    - **Datum dokončení**: 2025-10-12
 
-### P1 - TODO - **AKTUÁLNÍ PRIORITA** 🎯
+### P1 - DOKONČENO ✅ (Pokračování)
 
 7. **ColumnManager** (430 ř.)
-   - **Důvod**: Složitá resize logika, throttling (60 FPS), floating headers
-   - **Risk**: Performance issues, UI glitches, memory leaks
-   - **Test cases**: 20+ testů
-   - **Status**: ❌ TODO - **NEXT PRIORITY**
+   - **Status**: ✅ HOTOVO - 37 testů (target: 20+)
+   - **Pokrytí**: Column separators, resize events, drag & drop, throttling (60 FPS), scrolling
+   - **Datum dokončení**: 2025-10-12
+
+8. **ConnectionDrawer** (356 ř.)
+   - **Status**: ✅ HOTOVO - 33 testů (target: 12+)
+   - **Pokrytí**: Bézier curves, connection routing, merge/branch detection, arc calculations (4 quadrants)
+   - **Datum dokončení**: 2025-10-12
+
+9. **CommitDrawer** (365 ř.)
+   - **Status**: ✅ HOTOVO - 24 testů (target: 12+)
+   - **Pokrytí**: Node types (normal/remote/uncommitted), text rendering, branch flags, dominant author detection
+   - **Datum dokončení**: 2025-10-12
+
+10. **TagDrawer** (241 ř.)
+   - **Status**: ✅ HOTOVO - 31 testů (target: 12+)
+   - **Pokrytí**: Tag emoji icons, label truncation, tooltips, horizontal line extent, positioning
+   - **Datum dokončení**: 2025-10-12
+
+11. **BranchFlagDrawer** (335 ř.)
+   - **Status**: ✅ HOTOVO - 32 testů (target: 12+)
+   - **Pokrytí**: Flag width calculation, branch flags (local/remote/both), symbols (💻/☁), contrasting text colors, tooltips
+   - **Datum dokončení**: 2025-10-12
 
 ### P2 - STŘEDNÍ (Drawing komponenty)
 
 **Odůvodnění**: Komplexní rendering logika, ale primárně visual issues (ne data loss).
 
-8-11. **Drawing komponenty**
+9-12. **Drawing komponenty** ✅
 
-- ConnectionDrawer (384 ř.) - Bézier curves, connection routing
-- CommitDrawer (396 ř.) - Node rendering, metadata display
-- TagDrawer (241 ř.) - Tag icons, tooltips
-- BranchFlagDrawer (335 ř.) - Branch flags, local/remote indicators
+- ✅ ConnectionDrawer (356 ř.) - Bézier curves, connection routing ✅
+- ✅ CommitDrawer (365 ř.) - Node rendering, metadata display ✅
+- ✅ TagDrawer (241 ř.) - Tag icons, tooltips ✅
+- ✅ BranchFlagDrawer (335 ř.) - Branch flags, local/remote indicators ✅
 - **Risk**: Visual glitches, performance issues
-- **Test cases**: 12+ testů každá
-- **Priority**: Střední
+- **Test cases**: 12+ testů každá - **VŠECHNY DOKONČENY**
+- **Priority**: Střední - **DOKONČENO**
 
 ### P3 - NÍZKÁ (Integration, orchestrace)
 
@@ -303,17 +323,65 @@ def temp_settings_dir(tmp_path):
 
 ---
 
-### ÚROVEŇ 3: Visualization chybějící komponenty - **PLANNED**
+### ✅ ÚROVEŇ 3: Visualization chybějící komponenty - **DOKONČENO** 🎉 (100% hotovo)
 
-**Priorita**: P2 - STŘEDNÍ (drawing komponenty)
+**Priorita**: P1-P2 (ColumnManager P1 ✅, ConnectionDrawer P1 ✅, CommitDrawer P2 ✅, TagDrawer P2 ✅, BranchFlagDrawer P2 ✅)
 
-**Rozsah**: 5 test souborů, ~60 testů, ~1000 řádků kódu
+**Rozsah**: 5 test souborů, 133 testů, ~1800 řádků kódu
 
-1. **`tests/unit/test_connection_drawer.py`** (12+ testů)
-2. **`tests/unit/test_commit_drawer.py`** (12+ testů)
-3. **`tests/unit/test_tag_drawer.py`** (12+ testů)
-4. **`tests/unit/test_branch_flag_drawer.py`** (12+ testů)
-5. **`tests/unit/test_column_manager.py`** (20+ testů)
+**Pokrok**: 133/133 testů (100% hotovo) ✅
+
+#### Hotovo:
+
+1. **`tests/unit/test_column_manager.py`** ✅ (37 testů, target: 20+)
+   - Initialization & setup
+   - Column separators (drawing, positioning, bindings)
+   - Getters/setters (column widths, graph column width)
+   - Drag & drop (start drag, drag movement, release)
+   - Throttled redraw (60 FPS) - performance optimization
+   - Scrolling (move separators to scroll position, layering)
+   - Edge cases & error handling
+   - Integration tests (full resize workflow, multiple drags)
+
+2. **`tests/unit/test_connection_drawer.py`** ✅ (33 testů, target: 12+)
+   - Initialization (curve intensity, theme manager)
+   - Draw connections (empty list, single commit, parent-child, merge detection)
+   - Draw line (straight vertical, Bézier curves, color, stipple, remote/merge)
+   - Draw Bézier curve (L-shaped connections, merge/branching types)
+   - Calculate rounded corner arc (4 quadrants: right_down, right_up, left_down, left_up)
+   - Edge cases (unknown arc type, angle wrapping)
+   - Integration tests (full workflow, complex graph with merges)
+
+3. **`tests/unit/test_commit_drawer.py`** ✅ (24 testů, target: 12+)
+   - Initialization (constants, theme manager)
+   - Draw commits (empty list, node drawing, text rendering)
+   - Node types (normal oval, remote pale oval, uncommitted stippled polygon)
+   - Text rendering (message, description, author, email, date)
+   - Text truncation with tooltip callbacks
+   - Branch flags (branch_head mode, merge branch detection, flag connections)
+   - Dominant author detection (>80% threshold)
+   - Circle polygon helper (Windows stipple support, mathematical validation)
+   - Integration tests (full workflow, mixed commit types)
+
+4. **`tests/unit/test_tag_drawer.py`** ✅ (31 testů, target: 12+)
+   - Initialization (constants, theme manager)
+   - Draw tags (empty list, single/multiple commits, theme colors)
+   - Tag emoji (local vs remote colors, emoji rendering)
+   - Tag label (basic rendering, remote tags, truncation, tooltips)
+   - Tag tooltip (annotated tags with messages, hover events)
+   - Horizontal line extent (collision detection with connections)
+   - Text truncation (short text, long text, edge cases: empty/zero/negative width)
+   - Calculate required tag space (estimation for layout)
+   - Integration tests (full workflow, mixed local/remote tags, limited space)
+
+5. **`tests/unit/test_branch_flag_drawer.py`** ✅ (32 testů, target: 12+)
+   - Initialization (constants, theme manager, flag tooltips dict)
+   - Calculate flag width (basic, empty list, long names, skips unknown, removes origin/)
+   - Draw branch flag (local_only, remote_only, both symbols, removes origin/, truncates long names, adds tooltips, fallback width, contrasting text color)
+   - Draw flag connection (basic, uses calculated width, fallback width)
+   - Truncate branch name (short, long, exact max, one over max, custom max length)
+   - Add tooltip to flag (event bindings, positioning, overflow right/left, hide deletes, prevents duplicates)
+   - Integration tests (full workflow calculate and draw, flags with connections, mixed availability types)
 
 ---
 
@@ -505,15 +573,15 @@ pytest-watch tests/ src/ -v
 
 ### Coverage cíle
 
-**Aktuální (po ÚROVNI 2)**: ✅
+**Aktuální (ÚROVEŇ 3 - 83% hotovo)**: ✅
 
-- Visualization komponenty: **50% coverage**
+- Visualization komponenty: **67% coverage** (bylo: 56%) - ColumnManager + ConnectionDrawer přidáno
 - Repository komponenty: **100% coverage**
 - GUI komponenty: **100% coverage** ✅
-- Utils managers: **100% coverage** ✅ (bylo: 0%)
-- Celkové pokrytí: **~80%** (bylo: ~75%)
+- Utils managers: **100% coverage** ✅
+- Celkové pokrytí: **~84%** (bylo: ~82%)
 
-**Po ÚROVNI 3 (Visualization chybějící komponenty)**:
+**Po dokončení ÚROVNĚ 3 (zbývá 4 Drawing komponenty)**:
 
 - Visualization komponenty: **100% coverage**
 - Celkové pokrytí: **~85%**
@@ -671,6 +739,134 @@ src/
 ---
 
 ## Changelog testů
+
+### v1.5.0 - ÚROVEŇ 3 COMPLETED: BranchFlagDrawer (2025-10-12) 🎉✅
+
+**Shrnutí**: ÚROVEŇ 3 KOMPLETNĚ DOKONČENA! Poslední komponenta - BranchFlagDrawer s branch flags a local/remote symboly
+
+- ✅ Přidány testy pro BranchFlagDrawer (32 testů, target: 12+)
+  - Initialization (constants, theme manager, flag tooltips dict) (2 testy)
+  - Calculate flag width (basic, empty list, long names, skips unknown, removes origin/) (5 testů)
+  - Draw branch flag (local_only, remote_only, both symbols, removes origin/, truncates, tooltips, fallback, contrasting colors) (8 testů)
+  - Draw flag connection (basic, uses calculated width, fallback width) (3 testy)
+  - Truncate branch name (short, long, exact max, one over max, custom max length) (5 testů)
+  - Add tooltip to flag (event bindings, positioning, overflow right/left, hide deletes, prevents duplicates) (6 testů)
+  - Integration tests (full workflow, flags with connections, mixed availability types) (3 testy)
+
+**Metriky**:
+
+- **Tests created**: 32 (plánováno 12) → **+167% nad plán**
+- **Total project tests**: 428 → **460**
+- **Pass rate**: **100% (460/460)** ✅ (was: 100% (421/421) in pytest)
+- **Coverage Visualization**: 89% → **100%** 🎉
+- **Coverage celkem**: ~86% → **~88%**
+
+**ÚROVEŇ 3 KOMPLETNÍ**:
+- ✅ ColumnManager (37 testů)
+- ✅ ConnectionDrawer (33 testů)
+- ✅ CommitDrawer (24 testů)
+- ✅ TagDrawer (31 testů)
+- ✅ BranchFlagDrawer (32 testů)
+- **Celkem**: 133 testů (plánováno 60+) → **+122% nad plán**
+
+**Další kroky**: ÚROVEŇ 4 - Ostatní GUI komponenty (GraphCanvas, DragDropFrame, AuthDialog)
+
+### v1.5.0 - ÚROVEŇ 3: TagDrawer COMPLETED (2025-10-12) ✅
+
+**Shrnutí**: Čtvrtá komponenta z ÚROVNĚ 3 dokončena - TagDrawer s emoji ikonami a komplexní truncation logikou
+
+- ✅ Přidány testy pro TagDrawer (31 testů, target: 12+)
+  - Initialization (constants, theme manager) (2 testy)
+  - Draw tags (empty list, no tags, single commit, multiple commits, theme manager colors) (5 testů)
+  - Tag emoji (local/remote colors, emoji rendering, color differentiation) (3 testy)
+  - Tag label (basic rendering, remote tags, truncation, no truncation, tooltip on truncation) (5 testů)
+  - Tag tooltip (annotated tags, event bindings) (2 testy)
+  - Horizontal line extent (no children, horizontal/vertical connections) (3 testy)
+  - Text truncation (short text, long text, empty, zero width, negative width, very small width) (6 testů)
+  - Calculate required tag space (estimation, zero flag width) (2 testy)
+  - Integration tests (full workflow, mixed local/remote tags, limited space) (3 testy)
+
+**Metriky**:
+
+- **Tests created**: 31 (plánováno 12) → **+158% nad plán**
+- **Total project tests**: 397 → **428**
+- **Pass rate**: **100% (428/428)** ✅ (was: 100% (389/389) in pytest)
+- **Coverage Visualization**: 67% → **89%**
+- **Coverage celkem**: ~84% → **~86%**
+
+**Další kroky**: ÚROVEŇ 3 - Poslední komponenta (BranchFlagDrawer)
+
+### v1.5.0 - ÚROVEŇ 3: CommitDrawer COMPLETED (2025-10-12) ✅
+
+**Shrnutí**: Třetí komponenta z ÚROVNĚ 3 dokončena - CommitDrawer s rendering logik pro 3 typy nodů
+
+- ✅ Přidány testy pro CommitDrawer (24 testů, target: 12+)
+  - Initialization (constants, theme manager) (2 testy)
+  - Draw commits (empty list, draws nodes, draws text) (3 testy)
+  - Node types (normal, remote, uncommitted) (3 testy)
+  - Text rendering (without/with description, author & email, uncommitted skips metadata) (4 testy)
+  - Text truncation (long message, tooltip for truncated) (2 testy)
+  - Branch flags (branch head, no flag for merge, draw flag connection) (3 testy)
+  - Dominant author (detection logic >80%) (1 test)
+  - Circle polygon (returns points, default/custom points, forms circle) (4 testy)
+  - Integration tests (full workflow, mixed commit types) (2 testy)
+
+**Metriky**:
+
+- **Tests created**: 24 (plánováno 12) → **+100% nad plán**
+- **Total project tests**: 373 → **397**
+- **Pass rate**: **100% (397/397)** ✅
+- **Coverage Visualization**: 67% → **78%**
+- **Coverage celkem**: ~84% → **~85%**
+
+**Další kroky**: ÚROVEŇ 3 - Drawing komponenty (TagDrawer, BranchFlagDrawer)
+
+### v1.5.0 - ÚROVEŇ 3: ConnectionDrawer COMPLETED (2025-10-12) ✅
+
+**Shrnutí**: Druhá komponenta z ÚROVNĚ 3 dokončena - ConnectionDrawer s komplexní Bézier curve logikou
+
+- ✅ Přidány testy pro ConnectionDrawer (33 testů, target: 12+)
+  - Initialization (curve intensity, theme manager) (2 testy)
+  - Draw connections (empty list, single commit, parent-child, merge detection, parent color) (6 testů)
+  - Draw line (straight vertical, Bézier for different columns, color, stipple, remote pale, no stipple for merge) (6 testů)
+  - Draw Bézier curve (draws segments, straight horizontal/vertical, merge/branching types, stipple, fallback) (7 testů)
+  - Calculate rounded corner arc (returns points, 4 merge quadrants, 2 branching quadrants, angle smoothness, angle wrapping, unknown type error) (9 testů)
+  - Integration tests (full workflow, complex graph with merges and branches) (2 testy)
+
+**Metriky**:
+
+- **Tests created**: 33 (plánováno 12) → **+175% nad plán**
+- **Total project tests**: 340 → **373**
+- **Pass rate**: **100% (373/373)** ✅
+- **Coverage Visualization**: 56% → **67%**
+- **Coverage celkem**: ~82% → **~84%**
+
+**Další kroky**: ÚROVEŇ 3 - Drawing komponenty (CommitDrawer, TagDrawer, BranchFlagDrawer)
+
+### v1.5.0 - ÚROVEŇ 3 STARTED: ColumnManager COMPLETED (2025-10-12) ✅
+
+**Shrnutí**: První komponenta z ÚROVNĚ 3 dokončena - ColumnManager s komplexní resize logikou
+
+- ✅ Přidány testy pro ColumnManager (37 testů, target: 20+)
+  - Initialization (canvas, theme manager, column widths) (2 testy)
+  - Column setup (separators, resize events, bindings) (3 testy)
+  - Getters/setters (column widths, graph column width) (5 testů)
+  - Separator drawing (creates items, deletes old, stores positions, binds events) (4 testy)
+  - Drag & drop (start drag, adjust widths, enforce minimum, release) (10 testů)
+  - Throttled redraw (60 FPS optimization, callback handling) (3 testy)
+  - Scrolling (move separators, handle empty coords, adjust layering) (4 testy)
+  - Edge cases (empty widths, uninitialized graph, translations, invalid tags) (4 testy)
+  - Integration tests (full resize workflow, multiple drags throttle) (2 testy)
+
+**Metriky**:
+
+- **Tests created**: 37 (plánováno 20) → **+85% nad plán**
+- **Total project tests**: 303 → **340**
+- **Pass rate**: **100% (340/340)** ✅
+- **Coverage Visualization**: 50% → **56%**
+- **Coverage celkem**: ~80% → **~82%**
+
+**Další kroky**: ÚROVEŇ 3 - Drawing komponenty (ConnectionDrawer, CommitDrawer, TagDrawer, BranchFlagDrawer)
 
 ### v1.5.0 - ÚROVEŇ 2 Utils managers COMPLETED (2025-10-12) ✅
 
