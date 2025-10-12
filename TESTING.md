@@ -4,11 +4,11 @@
 
 Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer, včetně aktuálního stavu pokrytí a dlouhodobého plánu pro robustní testovací suite.
 
-**Aktuální stav**: 460 testů, **100% pass rate** ✅
+**Aktuální stav**: 565 testů, **100% pass rate** ✅
 
-**Poslední update**: 2025-10-12 (ÚROVEŇ 3 - DOKONČENO ✅: ColumnManager, ConnectionDrawer, CommitDrawer, TagDrawer, BranchFlagDrawer)
+**Poslední update**: 2025-10-12 (ÚROVEŇ 4 - DOKONČENO ✅: DragDropFrame, AuthDialog, GraphCanvas)
 
-**Aktuální fokus**: ÚROVEŇ 4 - Ostatní GUI komponenty (GraphCanvas, DragDropFrame, AuthDialog)
+**Aktuální fokus**: 🎉 Všechny plánované úrovně dokončeny! (ÚROVEŇ 1-4 = 100%)
 
 ### Terminologie
 
@@ -18,10 +18,10 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
   - GUI = MainWindow, RepositoryManager, ThemeSwitcher, LanguageSwitcher, atd.
 
 - **ÚROVEŇ 1, 2, 3, 4** = Implementační úrovně testovacího plánu:
-  - ÚROVEŇ 1 ✅ = Testy pro GUI komponenty (103 testů)
-  - ÚROVEŇ 2 ✅ = Testy pro Utils managers (88 testů)
-  - ÚROVEŇ 3 ✅ = Testy pro Visualization komponenty (133/133 testů - 100% hotovo)
-  - ÚROVEŇ 4 ⏳ = Testy pro ostatní GUI komponenty (0/24 testů)
+  - ÚROVEŇ 1 ✅ = Testy pro GUI komponenty (103 testů - 100% hotovo)
+  - ÚROVEŇ 2 ✅ = Testy pro Utils managers (88 testů - 100% hotovo)
+  - ÚROVEŇ 3 ✅ = Testy pro Visualization komponenty (133 testů - 100% hotovo)
+  - ÚROVEŇ 4 ✅ = Testy pro ostatní GUI komponenty (105 testů - 100% hotovo: DragDropFrame, AuthDialog, GraphCanvas)
 
 ## Aktuální stav pokrytí testů
 
@@ -81,11 +81,11 @@ Tento dokument obsahuje kompletní strategii testování projektu Git Visualizer
 **Pokrytí**: 2/2 komponent = **100%** ✅
 **Total Utils tests**: 88 (plánováno 27+) - **+226% nad plán**
 
-#### Ostatní GUI (0% pokrytí)
+#### Ostatní GUI (100% pokrytí) ✅
 
-- ❌ `GraphCanvas` - LOW
-- ❌ `DragDropFrame` - LOW
-- ❌ `AuthDialog` - MEDIUM
+- ✅ `GraphCanvas` (39 testů) - LOW ✅ **Smooth scrolling with momentum**
+- ✅ `DragDropFrame` (36 testů) - LOW ✅ **SECURITY CRITICAL** (URL whitelist validation)
+- ✅ `AuthDialog` (30 testů) - MEDIUM ✅ **OAuth Device Flow threading**
 
 ---
 
@@ -385,15 +385,56 @@ def temp_settings_dir(tmp_path):
 
 ---
 
-### ÚROVEŇ 4: Ostatní GUI komponenty - **PLANNED**
+### ✅ ÚROVEŇ 4: Ostatní GUI komponenty - **DOKONČENO** 🎉 (3/3 hotovo)
 
-**Priorita**: P3 - NÍZKÁ (integration komponenty)
+**Priorita**: P3 - NÍZKÁ (integration komponenty, ale obsahuje **SECURITY CRITICAL** DragDropFrame, **OAuth threading** AuthDialog, a **momentum scrolling** GraphCanvas)
 
-**Rozsah**: 3 test soubory, ~24 testů, ~400 řádků kódu
+**Rozsah**: 3 test soubory, 105 testů, ~1200+ řádků kódu
 
-1. **`tests/unit/test_graph_canvas.py`** (8+ testů)
-2. **`tests/unit/test_drag_drop.py`** (8+ testů)
-3. **`tests/unit/test_auth_dialog.py`** (8+ testů)
+**Pokrok**: 105/24+ testů (438% nad plán) ✅
+
+1. **`tests/unit/test_drag_drop_frame.py`** ✅ (36 testů, target: 8+) - **DOKONČENO**
+   - **SECURITY CRITICAL**: URL whitelist validation
+   - Initialization (2 testy)
+   - URL validation (15 testů) - HTTPS/SSH, trusted hosts, reject untrusted
+   - Auto-detection (3 testy) - URL vs folder
+   - Folder processing (4 testy) - .git validation
+   - URL processing (2 testy)
+   - Browse folder (2 testy)
+   - Clipboard paste (3 testy)
+   - URL dialog (2 testy)
+   - Theme (2 testy)
+   - Language (1 test)
+   - Integration (2 testy)
+
+2. **`tests/unit/test_auth_dialog.py`** ✅ (30 testů, target: 8+) - **DOKONČENO**
+   - **OAuth Device Flow threading**: Background worker tests
+   - Initialization (dialog, UI components, window properties) (3 testy)
+   - Auth worker (success, timeout, cancelled, device code error, exceptions) (6 testů)
+   - Update user code (label, button enabling) (2 testy)
+   - Copy code (clipboard, status update, empty code) (3 testy)
+   - Open GitHub (browser open, status, error handling, missing URI) (4 testy)
+   - On success (progress stop, status, dialog close scheduling) (3 testy)
+   - Show error (progress stop, messagebox, dialog destroy) (3 testy)
+   - Cancel (flag set, dialog destroy) (2 testy)
+   - Update status (label text change) (1 test)
+   - Center dialog (window positioning) (1 test)
+   - Integration (full workflow, show method, cancel) (3 testy)
+
+3. **`tests/unit/test_graph_canvas.py`** ✅ (39 testů, target: 8+) - **DOKONČENO**
+   - **Smooth scrolling with momentum**: Physics-based scrolling
+   - Initialization (widgets, scroll state, scrollbar hiding) (5 testů)
+   - Can scroll detection (vertical/horizontal, large/small content, empty, threshold) (6 testů)
+   - Scrollbar visibility (show/hide based on content) (2 testy)
+   - Vertical scroll (moveto, bounds checking, units, disabled when not needed) (4 testy)
+   - Horizontal scroll (moveto, bounds checking, disabled when not needed) (3 testy)
+   - Mousewheel (scroll when possible, disabled when not, acceleration, max velocity limit) (4 testy)
+   - Momentum scroll (velocity application, deceleration, stop at zero, reset) (4 testy)
+   - Update graph (with commits, clear canvas, empty commits, reset scroll position) (4 testy)
+   - Drag & drop (callback, without callback) (2 testy)
+   - Theme (canvas bg update, redraw graph if loaded) (2 testy)
+   - Canvas resize (separators, scrollbars) (1 test)
+   - Integration (full workflow, scrollbar visibility lifecycle) (2 testy)
 
 ---
 
@@ -739,6 +780,160 @@ src/
 ---
 
 ## Changelog testů
+
+### v1.5.0 - ÚROVEŇ 4 COMPLETED: Všechny GUI komponenty (2025-10-12) 🎉✅
+
+**Shrnutí**: ÚROVEŇ 4 KOMPLETNĚ DOKONČENA! Všechny 3 GUI komponenty otestovány
+
+**Celkové metriky ÚROVNĚ 4**:
+
+- **Tests created**: 105 (plánováno 24) → **+438% nad plán** 🎉
+- **Total project tests**: 460 → **565**
+- **Pass rate**: **100% (565/565)** ✅
+- **Coverage GUI ostatní**: 0% → **100%** (GraphCanvas, DragDropFrame, AuthDialog)
+- **Coverage celkem**: ~88% → **~92%**
+
+**Komponenty dokončeny**:
+- ✅ DragDropFrame (36 testů) - **SECURITY CRITICAL** URL validation
+- ✅ AuthDialog (30 testů) - **OAuth Device Flow** threading
+- ✅ GraphCanvas (39 testů) - **Smooth scrolling** with momentum
+
+**Testovací pokrytí všech úrovní**:
+- ✅ ÚROVEŇ 1: GUI komponenty (103 testů) - **100%**
+- ✅ ÚROVEŇ 2: Utils managers (88 testů) - **100%**
+- ✅ ÚROVEŇ 3: Visualization (133 testů) - **100%**
+- ✅ ÚROVEŇ 4: Ostatní GUI (105 testů) - **100%**
+- **Celkem**: **429 testů v úrovních 1-4** (plánováno ~140) → **+207% nad plán**
+
+**Další kroky**: Projekt má nyní komprehensivní testovací pokrytí ~92%! 🎉
+
+---
+
+### v1.5.0 - ÚROVEŇ 4: GraphCanvas (2025-10-12) ✅
+
+**Shrnutí**: Třetí a poslední komponenta z ÚROVNĚ 4 dokončena - GraphCanvas s **smooth scrolling** a momentum physics
+
+- ✅ Přidány testy pro GraphCanvas (39 testů, target: 8+)
+  - Initialization (widgets creation, scroll state, scrollbar hiding) (5 testů)
+  - **Can scroll detection** (6 testů):
+    - Vertical/horizontal scroll capability
+    - Large vs small content detection
+    - Empty scrollregion handling
+    - 10px threshold application
+  - Scrollbar visibility (show/hide dynamically based on content size) (2 testy)
+  - Vertical scroll (moveto, bounds checking, units, disabled when not needed) (4 testy)
+  - Horizontal scroll (moveto, bounds checking, disabled when not needed) (3 testy)
+  - **Mousewheel with acceleration** (4 testy):
+    - Scroll when content scrollable
+    - Disabled when content fits
+    - Acceleration on continuous scrolling
+    - Max velocity limit (0.2 = 20% viewport)
+  - **Momentum scroll physics** (4 testy):
+    - Velocity application to scroll position
+    - Deceleration (85% per frame = 15% drag)
+    - Stop at near-zero velocity (< 0.0005)
+    - Reset velocity after pause
+  - Update graph (commits loading, canvas clearing, empty commits, scroll reset to top) (4 testy)
+  - Drag & drop (callback invocation, missing callback handling) (2 testy)
+  - Theme (canvas bg update, graph redraw when loaded) (2 testy)
+  - Canvas resize (column separators, scrollbar visibility updates) (1 test)
+  - Integration (full workflow, scrollbar visibility lifecycle) (2 testy)
+
+**Metriky**:
+
+- **Tests created**: 39 (plánováno 8) → **+388% nad plán**
+- **Total project tests**: 526 → **565**
+- **Pass rate**: **100% (565/565)** ✅
+- **Coverage GUI ostatní**: 67% → **100%** (GraphCanvas added)
+- **Coverage celkem**: ~90% → **~92%**
+
+**Momentum scrolling physics**:
+- ✅ Velocity-based scrolling (pixel-perfect smooth animation)
+- ✅ Acceleration on continuous scrolling (1.2x-2.0x multiplier)
+- ✅ Deceleration (85% retention = 15% drag per frame)
+- ✅ Max velocity cap (0.2 = 20% viewport per step)
+- ✅ 60 FPS animation (16ms per frame)
+
+**ÚROVEŇ 4 KOMPLETNÍ** - Všechny GUI komponenty 100% pokryty! 🎉
+
+---
+
+### v1.5.0 - ÚROVEŇ 4: AuthDialog (2025-10-12) ✅
+
+**Shrnutí**: Druhá komponenta z ÚROVNĚ 4 dokončena - AuthDialog s **OAuth Device Flow** a background threading
+
+- ✅ Přidány testy pro AuthDialog (30 testů, target: 8+)
+  - Initialization (dialog window, UI components, transient properties) (3 testy)
+  - **Auth worker - OAuth threading** (6 testů):
+    - Success flow (device code → poll → token)
+    - Timeout handling
+    - Cancellation handling
+    - Device code request failure
+    - Exception handling (network errors)
+  - Update user code (label update, button enabling) (2 testy)
+  - Copy code to clipboard (clipboard API, status update, empty code handling) (3 testy)
+  - Open GitHub in browser (webbrowser.open, status update, error handling, missing URI) (4 testy)
+  - On success callback (progress stop, status update, dialog close scheduling) (3 testy)
+  - Show error (progress stop, messagebox, dialog destroy) (3 testy)
+  - Cancel (cancelled flag, dialog destroy) (2 testy)
+  - Update status (label text changes) (1 test)
+  - Center dialog (window positioning calculation) (1 test)
+  - Integration tests (full workflow, show() method, cancel returns None) (3 testy)
+
+**Metriky**:
+
+- **Tests created**: 30 (plánováno 8) → **+275% nad plán**
+- **Total project tests**: 496 → **526**
+- **Pass rate**: **100% (526/526)** ✅
+- **Coverage GUI**: 67% (DragDropFrame) → **100%** (DragDropFrame + AuthDialog)
+- **Coverage celkem**: ~89% → **~90%**
+
+**Threading testing**:
+- ✅ Background worker thread (OAuth Device Flow)
+- ✅ Success/timeout/cancelled scenarios
+- ✅ Exception handling in background thread
+- ✅ UI updates via dialog.after() (thread-safe)
+
+**Další kroky**: ÚROVEŇ 4 - Poslední komponenta (GraphCanvas)
+
+### v1.5.0 - ÚROVEŇ 4 STARTED: DragDropFrame (2025-10-12) ✅
+
+**Shrnutí**: První komponenta z ÚROVNĚ 4 dokončena - DragDropFrame s **SECURITY CRITICAL** URL whitelist validací
+
+- ✅ Přidány testy pro DragDropFrame (36 testů, target: 8+)
+  - Initialization (widgets creation, callback storage) (2 testy)
+  - **URL Validation - SECURITY CRITICAL** (15 testů):
+    - HTTPS trusted hosts (GitHub, GitLab, Bitbucket, gitea.io, codeberg.org, sr.ht)
+    - Subdomains of trusted hosts (api.github.com)
+    - SSH format (git@github.com:user/repo.git)
+    - **Reject untrusted hosts (evil.com, malicious-site.org)** - Security testing
+    - **Reject similar-looking untrusted hosts (github.com.evil.com)** - Phishing prevention
+    - Invalid schemes (ftp://, file://, ssh://)
+    - Malformed URLs
+  - Auto-detection (URL vs folder path, whitespace stripping) (3 testy)
+  - Folder processing (.git validation, error handling) (4 testy)
+  - URL processing (validation, callback) (2 testy)
+  - Browse folder (dialog, cancel) (2 testy)
+  - Clipboard paste (entry widget, whitespace, replace) (3 testy)
+  - URL dialog (OK button, widget creation) (2 testy)
+  - Theme application (canvas, label updates) (2 testy)
+  - Language updates (translations) (1 test)
+  - Integration tests (full workflows) (2 testy)
+
+**Metriky**:
+
+- **Tests created**: 36 (plánováno 8) → **+350% nad plán**
+- **Total project tests**: 460 → **496**
+- **Pass rate**: **100% (496/496)** ✅
+- **Coverage GUI**: 0% (DragDropFrame) → **100%**
+- **Coverage celkem**: ~88% → **~89%**
+
+**Security testing**:
+- ✅ URL whitelist validation (reject evil.com, malicious-site.org)
+- ✅ Phishing prevention (reject github.com.evil.com)
+- ✅ SSH host validation (trusted hosts only)
+
+**Další kroky**: ÚROVEŇ 4 - Ostatní GUI komponenty (AuthDialog, GraphCanvas)
 
 ### v1.5.0 - ÚROVEŇ 3 COMPLETED: BranchFlagDrawer (2025-10-12) 🎉✅
 
