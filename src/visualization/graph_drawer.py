@@ -1,10 +1,9 @@
+"""GraphDrawer - orchestrator for graph rendering components."""
+
 import tkinter as tk
-from typing import List, Dict, Tuple
-import math
-from collections import Counter
+from typing import List, Dict
 from utils.data_structures import Commit
 from utils.logging_config import get_logger
-from utils.translations import t
 from utils.theme_manager import get_theme_manager
 from utils.constants import (
     NODE_RADIUS, LINE_WIDTH, FONT_SIZE, SEPARATOR_HEIGHT,
@@ -12,398 +11,168 @@ from utils.constants import (
     HEADER_HEIGHT, BASE_MARGIN, BRANCH_LANE_SPACING
 )
 
+# Import all drawing and UI components
+from visualization.drawing import (
+    ConnectionDrawer,
+    CommitDrawer,
+    TagDrawer,
+    BranchFlagDrawer
+)
+from visualization.ui import (
+    ColumnManager,
+    TooltipManager,
+    TextFormatter
+)
+from visualization.colors import make_color_pale
+
 logger = get_logger(__name__)
 
 
 class GraphDrawer:
+    """Main orchestrator for graph rendering - delegates to specialized components."""
+
     def __init__(self):
         self.node_radius = NODE_RADIUS
         self.line_width = LINE_WIDTH
         self.font_size = FONT_SIZE
         self.column_widths = {}
-        self.tooltip = None
-        self.branch_lanes = {}  # Uložit lanes pro výpočet pozice tabulky
-        self.scaling_factor = 1.0
-        self.max_description_length = 50  # Základní délka
+        self.branch_lanes = {}  # Store lanes for calculating table position
+        self.curve_intensity = 0.8  # Intensity of curve rounding (0-1)
 
-        # Interaktivní změna šířky sloupců
-        self.column_separators = {}  # pozice separátorů {column_name: x_position}
-        self.dragging_separator = None  # název sloupce jehož separátor se táhne
-        self.drag_start_x = 0
-        self.drag_redraw_scheduled = False  # Flag pro throttling překreslování během drag
-        self.on_resize_callback = None  # Callback volaný po změně šířky sloupce
+        # Layout constants - unified margin system
+        self.HEADER_HEIGHT = HEADER_HEIGHT  # Header/separator height
+        self.BASE_MARGIN = BASE_MARGIN    # Base margin (same as header height)
+        self.BRANCH_SPACING = BRANCH_LANE_SPACING # Distance between branches (lanes)
 
-        # Šířka grafického sloupce (Branch/Commit)
-        self.graph_column_width = None  # Bude vypočítána dynamicky
-
-        self.curve_intensity = 0.8  # Intenzita zakřivení pro rounded corners (0-1)
-
-        # Layout konstanty - jednotný systém marginů
-        self.HEADER_HEIGHT = HEADER_HEIGHT  # Výška záhlaví/separátoru
-        self.BASE_MARGIN = BASE_MARGIN    # Základní margin (stejný jako výška záhlaví)
-        self.BRANCH_SPACING = BRANCH_LANE_SPACING # Vzdálenost mezi větvemi (lanes)
-
-        # Starý název pro zpětnou kompatibilitu
+        # Old name for backward compatibility
         self.separator_height = self.HEADER_HEIGHT
-        self.user_column_widths = {}  # uživatelem nastavené šířky
 
-    def _create_circle_polygon(self, x: int, y: int, radius: int, num_points: int = 20) -> List[float]:
-        """Vytvoří body pro kruhový polygon (pro stipple support na Windows)."""
-        points = []
-        for i in range(num_points):
-            angle = 2 * math.pi * i / num_points
-            px = x + radius * math.cos(angle)
-            py = y + radius * math.sin(angle)
-            points.extend([px, py])
-        return points
+        # Component instances - lazy initialized
+        self.connection_drawer = None
+        self.commit_drawer = None
+        self.tag_drawer = None
+        self.branch_flag_drawer = None
+        self.column_manager = None
+        self.tooltip_manager = None
+        self.text_formatter = None
 
-    def reset(self):
-        """Resetuje stav GraphDrawer pro nový repozitář."""
-        # Reset šířek sloupců - uživatelem nastavené i vypočítané
-        self.graph_column_width = None
-        self.user_column_widths = {}
-        self.column_widths = {}
-
-        # Reset cached hodnot pro výpočet šířek
+        # Cached values for width calculations
         self.flag_width = None
         self.required_tag_space = None
 
-        # Reset interaktivních funkcí
-        self.dragging_separator = None
-        self.drag_start_x = 0
-        self.column_separators = {}
+    def reset(self):
+        """Resets GraphDrawer state for new repository."""
+        # Reset column widths - user-set and calculated
+        if self.column_manager:
+            self.column_manager.graph_column_width = None
+            self.column_manager.user_column_widths = {}
+        self.column_widths = {}
+
+        # Reset cached values for width calculations
+        self.flag_width = None
+        self.required_tag_space = None
+
+        # Reset interactive functions
+        if self.column_manager:
+            self.column_manager.dragging_separator = None
+            self.column_manager.drag_start_x = 0
+            self.column_manager.column_separators = {}
+
+        # Hide tooltip
+        if self.tooltip_manager:
+            self.tooltip_manager.hide_tooltip()
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
+        """Main entry point - orchestrates entire graph rendering.
+
+        Delegates to individual components in this order:
+        1. ConnectionDrawer - connections
+        2. CommitDrawer - commit nodes
+        3. TagDrawer - tags
+        4. BranchFlagDrawer - branch flags
+        5. ColumnManager - separators
+
+        Args:
+            canvas: Canvas to draw on
+            commits: List of commits to draw
+        """
         if not commits:
             return
 
-        # Uložit commity pro případné překreslení
+        # Save commits for potential redraw
         self._current_commits = commits
 
-        # Detekovat DPI škálování
-        self._detect_scaling_factor(canvas)
+        # Initialize components if needed
+        if not self.connection_drawer:
+            self._initialize_components(canvas)
 
-        # Upravit description_short podle škálování
-        self._adjust_descriptions_for_scaling(commits)
+        # Detect DPI scaling
+        self.text_formatter.detect_scaling_factor()
 
-        # Vypočítat flag_width před ostatními výpočty, které ho používají
-        self._calculate_flag_width(canvas, commits)
-        # Uložit informace o lanes pro výpočet pozice tabulky
+        # Adjust description_short according to scaling
+        self.text_formatter.adjust_descriptions_for_scaling(commits)
+
+        # Calculate flag_width before other calculations that use it
+        self.flag_width = self.branch_flag_drawer.calculate_flag_width(commits)
+
+        # Update lanes information for calculating table position
         self._update_branch_lanes(commits)
+
+        # Calculate column widths
         self._calculate_column_widths(canvas, commits)
-        self._calculate_required_tag_space(canvas, commits)
-        self._draw_connections(canvas, commits)
-        self._draw_commits(canvas, commits)
-        self._draw_tags(canvas, commits)
-        self._draw_column_separators(canvas)
 
-    def _draw_connections(self, canvas: tk.Canvas, commits: List[Commit]):
-        commit_positions = {commit.hash: (commit.x, commit.y) for commit in commits}
-        commit_info = {commit.hash: commit for commit in commits}
+        # Calculate required tag space
+        self._calculate_required_tag_space()
 
-        for commit in commits:
-            if commit.parents:
-                child_pos = commit_positions.get(commit.hash)
-                if child_pos:
-                    # Detekovat merge commit (více parentů)
-                    is_merge_commit = len(commit.parents) >= 2
+        # Get table start position for use by drawing components
+        table_start_x = self._get_table_start_position()
 
-                    for parent_index, parent_hash in enumerate(commit.parents):
-                        parent_pos = commit_positions.get(parent_hash)
-                        if parent_pos:
-                            # Použít remote status a uncommitted status dítěte pro kreslení spojnice
-                            # Start from parent, draw to child
-                            is_uncommitted = getattr(commit, 'is_uncommitted', False)
+        # Delegate drawing to components
+        self.connection_drawer.draw_connections(commits, self._make_color_pale)
 
-                            # Zjistit typ spojení
-                            parent_commit = commit_info.get(parent_hash)
+        self.commit_drawer.draw_commits(
+            commits,
+            self.column_widths,
+            self.tooltip_manager.show_tooltip,
+            self.tooltip_manager.hide_tooltip,
+            self.text_formatter.truncate_text_to_width,
+            table_start_x,
+            self._make_color_pale,
+            self.branch_flag_drawer,
+            self.branch_flag_drawer.draw_flag_connection
+        )
 
-                            # Branchování: parent a child v různých větvích (ale ne merge connection)
-                            is_branching = parent_commit and parent_commit.branch != commit.branch and not is_merge_commit
+        self.tag_drawer.draw_tags(
+            commits,
+            table_start_x,
+            self.tooltip_manager.show_tooltip,
+            self.tooltip_manager.hide_tooltip
+        )
 
-                            # Merge connection: druhý+ parent merge commitu
-                            is_merge_connection = is_merge_commit and parent_index > 0
+        self.column_manager.setup_column_separators(self.column_widths, table_start_x)
 
-                            # Pro merge connections použít barvu parenta (mergované větve), ne child (merge commitu)
-                            if is_merge_connection:
-                                line_color = parent_commit.branch_color if parent_commit else commit.branch_color
-                            else:
-                                line_color = commit.branch_color
+    def _initialize_components(self, canvas: tk.Canvas):
+        """Initializes all drawing and UI components.
 
-                            self._draw_line(canvas, parent_pos, child_pos, line_color, commit.is_remote, is_uncommitted, is_merge_connection, is_branching)
-
-    def _draw_line(self, canvas: tk.Canvas, start: Tuple[int, int], end: Tuple[int, int], color: str, is_remote: bool = False, is_uncommitted: bool = False, is_merge_connection: bool = False, is_branching: bool = False):
-        start_x, start_y = start
-        end_x, end_y = end
-
-        # Určit barvu a stipple pattern pro spojnice
-        if is_uncommitted:
-            line_color = color  # Plná barva větve pro WIP commity
-            stipple_pattern = 'gray50'  # Stejné šrafování jako WIP kroužek
-        elif is_merge_connection:
-            line_color = color  # Použít barvu jak je (už je mdlá z parenta, nepřidávat další vyblednutí)
-            stipple_pattern = None
-        elif is_remote:
-            line_color = self._make_color_pale(color)  # Bledší barva pro remote
-            stipple_pattern = None
-        else:
-            line_color = color  # Normální barva pro lokální commity
-            stipple_pattern = None
-
-        # Pokud jsou commity v různých sloupcích (větvení), kreslíme hladkou křivku
-        if start_x != end_x:
-            self._draw_bezier_curve(canvas, start_x, start_y, end_x, end_y, line_color, stipple_pattern, is_merge_connection, is_branching)
-        else:
-            # Přímá svislá linka pro commity ve stejném sloupci
-            line_kwargs = {
-                'fill': line_color,
-                'width': self.line_width
-            }
-            if stipple_pattern:
-                line_kwargs['stipple'] = stipple_pattern
-
-            canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
-
-    def _draw_bezier_curve(self, canvas: tk.Canvas, start_x: int, start_y: int, end_x: int, end_y: int, color: str, stipple_pattern=None, is_merge_connection: bool = False, is_branching: bool = False):
-        """Vykreslí hladké L-shaped spojení se zaoblenými rohy.
-
-        Pro merge connections: vodorovná část ve výšce end (merge commit)
-        Pro branchování: vodorovná část ve výšce start (parent commit)
-        Pro normální spojení: přímá nebo minimální oblouk
+        Args:
+            canvas: Canvas to use for components
         """
-
-        # Vzdálenosti SE ZNAMÉNKEM pro určení směru
-        dx_signed = end_x - start_x  # Kladné = doprava, záporné = doleva
-        dy_signed = end_y - start_y  # Kladné = dolů, záporné = nahoru
-        dx = abs(dx_signed)
-        dy = abs(dy_signed)
-
-        # Speciální případ: vertikální nebo horizontální přímá linka
-        if dx == 0 or dy == 0:
-            line_kwargs = {
-                'fill': color,
-                'width': self.line_width
-            }
-            if stipple_pattern:
-                line_kwargs['stipple'] = stipple_pattern
-            canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
-            return
-
-        # Rádius zaoblení - malý, aby křivka zůstala v bounds
-        radius = min(dx, dy, 20) * self.curve_intensity  # Max 20px radius
-        radius = max(3, min(radius, 15))  # Limit mezi 3-15px
-
-        # Určit směr spojení podle pozic (4 kvadranty)
-        # Kvadrant 1: doprava nahoru (dx>0, dy<0)
-        # Kvadrant 2: doleva nahoru (dx<0, dy<0)
-        # Kvadrant 3: doleva dolů (dx<0, dy>0)
-        # Kvadrant 4: doprava dolů (dx>0, dy>0)
-
-        # Určit pozici rohu podle typu spojení
-        if is_merge_connection:
-            # Merge: vodorovná část ve výšce end (merge commit)
-            corner_y = end_y
-            corner_x = start_x
-        else:  # is_branching
-            # Branchování: vodorovná část ve výšce start (parent commit)
-            corner_y = start_y
-            corner_x = end_x
-
-        # Určit typ oblouku podle směru
-        if dx_signed > 0 and dy_signed > 0:
-            # Doprava dolů
-            arc_type = "right_down"
-        elif dx_signed > 0 and dy_signed < 0:
-            # Doprava nahoru
-            arc_type = "right_up"
-        elif dx_signed < 0 and dy_signed > 0:
-            # Doleva dolů
-            arc_type = "left_down"
-        else:  # dx_signed < 0 and dy_signed < 0
-            # Doleva nahoru
-            arc_type = "left_up"
-
-        # Vykreslení podle arc_type
-        line_kwargs = {
-            'fill': color,
-            'width': self.line_width
-        }
-        if stipple_pattern:
-            line_kwargs['stipple'] = stipple_pattern
-
-        # 1) První úsek (od start k rohu - radius)
-        if is_merge_connection:
-            # Merge: vertikální první úsek
-            if arc_type == "right_down":
-                if dy > radius:
-                    canvas.create_line(start_x, start_y, start_x, corner_y - radius, **line_kwargs)
-            elif arc_type == "right_up":
-                if dy > radius:
-                    canvas.create_line(start_x, start_y, start_x, corner_y + radius, **line_kwargs)
-            elif arc_type == "left_down":
-                if dy > radius:
-                    canvas.create_line(start_x, start_y, start_x, corner_y - radius, **line_kwargs)
-            elif arc_type == "left_up":
-                if dy > radius:
-                    canvas.create_line(start_x, start_y, start_x, corner_y + radius, **line_kwargs)
-        else:
-            # Branchování: horizontální první úsek
-            if arc_type == "right_down":
-                if dx > radius:
-                    canvas.create_line(start_x, start_y, corner_x - radius, corner_y, **line_kwargs)
-            elif arc_type == "right_up":
-                if dx > radius:
-                    canvas.create_line(start_x, start_y, corner_x - radius, corner_y, **line_kwargs)
-            elif arc_type == "left_down":
-                if dx > radius:
-                    canvas.create_line(start_x, start_y, corner_x + radius, corner_y, **line_kwargs)
-            elif arc_type == "left_up":
-                if dx > radius:
-                    canvas.create_line(start_x, start_y, corner_x + radius, corner_y, **line_kwargs)
-
-        # 2) Rounded corner
-        if dx > radius and dy > radius:
-            corner_points = self._calculate_rounded_corner_arc(
-                start_x, start_y, end_x, end_y,
-                corner_x, corner_y,
-                radius,
-                arc_type=arc_type,
-                is_merge=is_merge_connection
-            )
-
-            if len(corner_points) > 2:
-                corner_kwargs = {
-                    'fill': color,
-                    'width': self.line_width,
-                    'smooth': True
-                }
-                if stipple_pattern:
-                    corner_kwargs['stipple'] = stipple_pattern
-                canvas.create_line(corner_points, **corner_kwargs)
-
-        # 3) Poslední úsek (od rohu + radius k end)
-        if is_merge_connection:
-            # Merge: horizontální poslední úsek
-            if arc_type == "right_down":
-                if dx > radius:
-                    canvas.create_line(corner_x + radius, corner_y, end_x, end_y, **line_kwargs)
-            elif arc_type == "right_up":
-                if dx > radius:
-                    canvas.create_line(corner_x + radius, corner_y, end_x, end_y, **line_kwargs)
-            elif arc_type == "left_down":
-                if dx > radius:
-                    canvas.create_line(corner_x - radius, corner_y, end_x, end_y, **line_kwargs)
-            elif arc_type == "left_up":
-                if dx > radius:
-                    canvas.create_line(corner_x - radius, corner_y, end_x, end_y, **line_kwargs)
-        else:
-            # Branchování: vertikální poslední úsek
-            if arc_type == "right_down":
-                if dy > radius:
-                    canvas.create_line(corner_x, corner_y + radius, end_x, end_y, **line_kwargs)
-            elif arc_type == "right_up":
-                if dy > radius:
-                    canvas.create_line(corner_x, corner_y - radius, end_x, end_y, **line_kwargs)
-            elif arc_type == "left_down":
-                if dy > radius:
-                    canvas.create_line(corner_x, corner_y + radius, end_x, end_y, **line_kwargs)
-            elif arc_type == "left_up":
-                if dy > radius:
-                    canvas.create_line(corner_x, corner_y - radius, end_x, end_y, **line_kwargs)
-
-        # Pro velmi krátké vzdálenosti - fallback na simple line
-        if dx <= radius or dy <= radius:
-            canvas.create_line(start_x, start_y, end_x, end_y, **line_kwargs)
-
-    def _calculate_rounded_corner_arc(self, start_x: int, start_y: int, end_x: int, end_y: int, corner_x: int, corner_y: int, radius: int, arc_type: str = "right_down", is_merge: bool = False):
-        """Vypočítá body pro zaoblený roh pomocí circular arc podle typu"""
-        import math
-        points = []
-        steps = 8
-
-        # Nové arc_types podle směru (4 kvadranty)
-        if is_merge:
-            # Merge: vertical→horizontal, interpolace od horizontálního k vertikálnímu bodu
-            if arc_type == "right_down":
-                arc_center_x = corner_x + radius
-                arc_center_y = corner_y - radius
-                start_angle = math.pi / 2  # 90° - horizontální bod (dole)
-                end_angle = math.pi  # 180° - vertikální bod (vlevo)
-            elif arc_type == "right_up":
-                arc_center_x = corner_x + radius
-                arc_center_y = corner_y + radius
-                start_angle = 3 * math.pi / 2  # 270° - horizontální bod (nahoře)
-                end_angle = math.pi  # 180° - vertikální bod (vlevo)
-            elif arc_type == "left_down":
-                arc_center_x = corner_x - radius
-                arc_center_y = corner_y - radius
-                start_angle = math.pi / 2  # 90° - horizontální bod (dole)
-                end_angle = 2 * math.pi  # 360° - vertikální bod (vpravo)
-            elif arc_type == "left_up":
-                arc_center_x = corner_x - radius
-                arc_center_y = corner_y + radius
-                start_angle = 3 * math.pi / 2  # 270° - horizontální bod (nahoře)
-                end_angle = 2 * math.pi  # 360° - vertikální bod (vpravo)
-        else:
-            # Branchování: horizontal→vertical, arc center posunut dovnitř L-shape
-            if arc_type == "right_down":
-                arc_center_x = corner_x - radius
-                arc_center_y = corner_y + radius
-                start_angle = 3 * math.pi / 2  # 270° - shora
-                end_angle = 2 * math.pi  # 360°/0° - doprava
-            elif arc_type == "right_up":
-                arc_center_x = corner_x - radius
-                arc_center_y = corner_y - radius
-                start_angle = math.pi / 2  # 90° - zdola
-                end_angle = 0  # 0° - doprava
-            elif arc_type == "left_down":
-                arc_center_x = corner_x + radius
-                arc_center_y = corner_y + radius
-                start_angle = 3 * math.pi / 2  # 270° - shora
-                end_angle = math.pi  # 180° - doleva
-            elif arc_type == "left_up":
-                arc_center_x = corner_x + radius
-                arc_center_y = corner_y - radius
-                start_angle = math.pi / 2  # 90° - zdola
-                end_angle = math.pi  # 180° - doleva
-            # Zpětná kompatibilita se starými názvy
-            elif arc_type == "branching":
-                arc_center_x = corner_x - radius
-                arc_center_y = corner_y - radius
-                start_angle = 0
-                end_angle = math.pi / 2
-            elif arc_type == "merge":
-                arc_center_x = corner_x - radius
-                arc_center_y = corner_y + radius
-                start_angle = 3 * math.pi / 2
-                end_angle = 2 * math.pi
-            else:
-                raise ValueError(f"Neznámý arc_type: {arc_type}")
-
-        # Zajistit že interpolace jde krátkou cestou po kružnici
-        angle_diff = end_angle - start_angle
-        if angle_diff < 0 and abs(angle_diff) > math.pi:
-            # Přidat 2π k end_angle pro interpolaci přes 360°/0°
-            end_angle += 2 * math.pi
-        elif angle_diff > 0 and angle_diff > math.pi:
-            # Odečíst 2π od end_angle
-            end_angle -= 2 * math.pi
-
-        for i in range(steps + 1):
-            # Interpolace mezi start_angle a end_angle (krátkou cestou)
-            angle = start_angle + (i / steps) * (end_angle - start_angle)
-
-            # Vypočítat bod na kružnici relative k arc centru
-            x = arc_center_x + radius * math.cos(angle)
-            y = arc_center_y + radius * math.sin(angle)
-
-            points.extend([int(x), int(y)])
-
-        return points
-
+        self.connection_drawer = ConnectionDrawer(canvas)
+        self.commit_drawer = CommitDrawer(canvas)
+        self.tag_drawer = TagDrawer(canvas)
+        self.branch_flag_drawer = BranchFlagDrawer(canvas)
+        self.column_manager = ColumnManager(canvas)
+        self.tooltip_manager = TooltipManager()
+        self.text_formatter = TextFormatter(canvas)
 
     def _calculate_column_widths(self, canvas: tk.Canvas, commits: List[Commit]):
-        # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
+        """Calculates column widths based on content.
+
+        Args:
+            canvas: Canvas to measure text on
+            commits: List of commits
+        """
+        # Use standard font - scaling is handled by text length, not font size
         font = ('Arial', self.font_size)
 
         max_message_width = 0
@@ -412,34 +181,35 @@ class GraphDrawer:
         max_email_width = 0
         max_date_width = 0
 
-        # Definovat maximální šířky podle DPI škálování
-        if self.scaling_factor <= 1.0:
-            max_allowed_message_width = 800  # Zvětšeno pro lepší využití prostoru
+        # Define maximum widths according to DPI scaling
+        scaling_factor = self.text_formatter.scaling_factor
+        if scaling_factor <= 1.0:
+            max_allowed_message_width = 800  # Increased for better space utilization
             max_allowed_author_width = 250
             max_allowed_email_width = 300
-        elif self.scaling_factor <= 1.25:
-            max_allowed_message_width = 700  # 125% škálování
+        elif scaling_factor <= 1.25:
+            max_allowed_message_width = 700  # 125% scaling
             max_allowed_author_width = 220
             max_allowed_email_width = 280
-        elif self.scaling_factor <= 1.5:
-            max_allowed_message_width = 600  # 150% škálování
+        elif scaling_factor <= 1.5:
+            max_allowed_message_width = 600  # 150% scaling
             max_allowed_author_width = 200
             max_allowed_email_width = 250
         else:
-            max_allowed_message_width = 500  # 200%+ škálování
+            max_allowed_message_width = 500  # 200%+ scaling
             max_allowed_author_width = 180
             max_allowed_email_width = 220
 
         for commit in commits:
-            # Kombinovaná šířka message + description s mezerou
+            # Combined width message + description with space
             message_width = canvas.tk.call("font", "measure", font, commit.message)
             if commit.description_short:
                 desc_width = canvas.tk.call("font", "measure", font, commit.description_short)
-                combined_width = message_width + 20 + desc_width  # 20px mezera
+                combined_width = message_width + 20 + desc_width  # 20px space
             else:
                 combined_width = message_width
 
-            # Omezit šířku podle škálovacího faktoru
+            # Limit width according to scaling factor
             combined_width = min(combined_width, max_allowed_message_width)
             max_message_width = max(max_message_width, combined_width)
 
@@ -454,1388 +224,115 @@ class GraphDrawer:
             date_width = canvas.tk.call("font", "measure", font, commit.date_short)
             max_date_width = max(max_date_width, date_width)
 
-        # Použít uživatelem nastavené šířky nebo vypočítané
+        # Use user-set widths or calculated
+        user_widths = self.column_manager.get_user_column_widths()
         self.column_widths = {
-            'message': self.user_column_widths.get('message', max_message_width + 20),
-            'author': self.user_column_widths.get('author', max_author_width + 20),
-            'email': self.user_column_widths.get('email', max_email_width + 20),
-            'date': self.user_column_widths.get('date', max_date_width + 20)
+            'message': user_widths.get('message', max_message_width + 20),
+            'author': user_widths.get('author', max_author_width + 20),
+            'email': user_widths.get('email', max_email_width + 20),
+            'date': user_widths.get('date', max_date_width + 20)
         }
 
-    def _calculate_flag_width(self, canvas: tk.Canvas, commits: List[Commit]):
-        """Vypočítá jednotnou šířku vlaječek podle nejdelšího názvu větve s místem pro symboly."""
-        font = ('Arial', 8, 'bold')  # Font používaný pro vlaječky (aktualizován na správnou velikost)
-        max_text_width = 0
-
-        # Najít všechny unikátní názvy větví pro výpočet šířky
-        unique_branches = set()
-        for commit in commits:
-            if commit.branch == 'unknown':
-                continue  # Přeskočit unknown větve
-
-            branch_name = commit.branch
-            is_remote = commit.is_remote
-
-            # Upravit název větve pro remote větve
-            display_name = branch_name
-            if is_remote and branch_name.startswith('origin/'):
-                display_name = branch_name[7:]  # Odstranit "origin/"
-
-            # Zkrátit název pro výpočet šířky
-            truncated_name = self._truncate_branch_name(display_name)
-            unique_branches.add(truncated_name)
-
-        # Najít nejdelší název větve
-        for display_name in unique_branches:
-            # Změřit šířku čistého textu názvu větve
-            try:
-                text_width = canvas.tk.call("font", "measure", font, display_name)
-                max_text_width = max(max_text_width, text_width)
-            except Exception as e:
-                logger.warning(f"Failed to measure text width for branch {display_name}: {e}")
-                # Fallback pro případ chyby
-                max_text_width = max(max_text_width, len(display_name) * 6)
-
-        # Výpočet celkové šířky vlaječky:
-        # - Symboly na krajích: 12px (vlevo) + 12px (vpravo) = 24px
-        # - Padding mezi symboly a textem: 12px (vlevo) + 12px (vpravo) = 24px (zvětšeno pro lepší rozestupy)
-        # - Šířka textu: max_text_width
-        symbol_space = 24  # Místo pro symboly na krajích
-        padding = 24       # Padding mezi symboly a textem (zvětšeno z 16 na 24)
-
-        self.flag_width = symbol_space + padding + max_text_width
-
-        # Minimální šířka 90px (aby se vešly symboly s větším paddingem), maximální rozumná šířka 120px (sníženo)
-        self.flag_width = max(90, min(self.flag_width, 120))
-
-    def _calculate_required_tag_space(self, canvas: tk.Canvas, commits: List[Commit]):
-        """Odhadne prostor potřebný pro tagy (zjednodušená verze - nyní počítáme dynamicky)."""
-        # Fixní odhad prostoru pro tagy - skutečný prostor se počítá dynamicky v _draw_tags
-        # Tento odhad slouží pouze pro výpočet celkové šířky grafického sloupce
-        flag_width = getattr(self, 'flag_width', 80)
-        self.required_tag_space = flag_width + self.BASE_MARGIN
+    def _calculate_required_tag_space(self):
+        """Estimates space needed for tags (simplified version - now calculated dynamically)."""
+        # Fixed estimate of space for tags - real space is calculated dynamically in draw_tags
+        # This estimate serves only for calculating total graph column width
+        self.required_tag_space = self.tag_drawer.calculate_required_tag_space(self.flag_width)
 
     def _calculate_graph_column_width(self) -> int:
-        """Vypočítá šířku grafického sloupce (Branch/Commit)."""
-        if self.graph_column_width is not None:
-            # Použít uživatelem nastavenou šířku
-            return self.graph_column_width
+        """Calculates width of graph column (Branch/Commit).
 
-        # Vypočítat automatickou šířku na základě obsahu
-        flag_width = getattr(self, 'flag_width', 80)
-        required_tag_space = getattr(self, 'required_tag_space', flag_width + self.BASE_MARGIN)
+        Returns:
+            Calculated graph column width
+        """
+        graph_width = self.column_manager.get_graph_column_width()
+        if graph_width is not None:
+            # Use user-set width
+            return graph_width
 
-        # Najít nejpravější commit (nejvíce vpravo vykreslená větev)
+        # Calculate automatic width based on content
+        flag_width = self.flag_width if self.flag_width else 80
+        required_tag_space = self.required_tag_space if self.required_tag_space else flag_width + self.BASE_MARGIN
+
+        # Find rightmost commit (most right drawn branch)
         max_commit_x = 0
         if hasattr(self, '_current_commits') and self._current_commits:
             max_commit_x = max((commit.x for commit in self._current_commits), default=0)
 
-        # Šířka podle nejpravější větve: pozice + mezera na jednu větev + prostor pro tagy
-        # Mezera = BRANCH_SPACING (20px) - tak velká, aby se do ní vešla ještě jedna větev
-        # Prostor pro tagy: node_radius (konec node) + malá mezera + rozumný prostor pro tag
-        tag_reserve = self.node_radius + 15 + 50  # 8px (node) + 15px (mezera) + 50px (tag emoji+text)
+        # Width according to rightmost branch: position + space for one branch + space for tags
+        # Space = BRANCH_SPACING (20px) - big enough to fit another branch
+        # Space for tags: node_radius (end node) + small space + reasonable space for tag
+        tag_reserve = self.node_radius + 15 + 50  # 8px (node) + 15px (space) + 50px (tag emoji+text)
         width_based_on_branches = max_commit_x + self.BRANCH_SPACING + tag_reserve
 
-        # Minimální šířka: margin + vlaječky + margin + tagy (původní výpočet)
+        # Minimum width: margin + flags + margin + tags (original calculation)
         min_width = self.BASE_MARGIN + flag_width + self.BASE_MARGIN + required_tag_space
 
-        # Použít větší z obou
+        # Use larger of the two
         auto_width = max(width_based_on_branches, min_width)
         return auto_width
 
-    def _draw_commits(self, canvas: tk.Canvas, commits: List[Commit]):
-        # Použít standardní font - škálování řešíme délkou textu, ne velikostí fontu
-        font = ('Arial', self.font_size)
-
-        # Zkontrolovat, zda máme nějaké branch head commity
-        has_branch_heads = any(commit.is_branch_head for commit in commits)
-
-        if has_branch_heads:
-            # Nová logika - použít branch head commity
-            branch_head_commits = {}  # branch_name -> {'local': commit, 'remote': commit, 'both': commit}
-
-            for commit in commits:
-                if commit.is_branch_head:
-                    clean_branch_name = commit.branch
-                    if commit.branch.startswith('origin/'):
-                        clean_branch_name = commit.branch[7:]  # Odstranit "origin/"
-
-                    if clean_branch_name not in branch_head_commits:
-                        branch_head_commits[clean_branch_name] = {}
-
-                    branch_head_commits[clean_branch_name][commit.branch_head_type] = commit
-        else:
-            # Fallback logika - použít první commit každé větve (původní chování)
-            drawn_branch_flags = set()
-            # Najít posledního commitu každé větve (podle času, ale ignorovat WIP commity)
-            last_commits_by_branch = {}
-            for commit in commits:
-                # Ignorovat WIP commity při hledání posledního skutečného commitu
-                if getattr(commit, 'is_uncommitted', False):
-                    continue
-
-                if commit.branch not in last_commits_by_branch:
-                    last_commits_by_branch[commit.branch] = commit
-                elif commit.date > last_commits_by_branch[commit.branch].date:
-                    last_commits_by_branch[commit.branch] = commit
-
-        tm = get_theme_manager()
-
-        for commit in commits:
-            x, y = commit.x, commit.y
-
-            # Vizuální rozlišení pro uncommitted změny, remote commity, nebo normální
-            if getattr(commit, 'is_uncommitted', False):
-                # WIP commity - šrafovaný polygon v barvě větve s černým obrysem
-                fill_color = commit.branch_color
-                outline_color = tm.get_color('commit_node_outline')
-                stipple_pattern = 'gray50'  # 50% šrafování pro indikaci nehotovosti
-
-                # Vytvořit kruhový polygon místo ovals (stipple nefunguje s ovals na Windows)
-                points = self._create_circle_polygon(x, y, self.node_radius)
-                canvas.create_polygon(
-                    points,
-                    fill=fill_color,
-                    outline=outline_color,
-                    width=1,
-                    stipple=stipple_pattern,
-                    tags=f"node_{commit.hash}"
-                )
-            elif commit.is_remote:
-                # Bledší verze branch_color (50% transparence simulace)
-                fill_color = self._make_color_pale(commit.branch_color)
-                outline_color = tm.get_color('commit_node_outline')
-                canvas.create_oval(
-                    x - self.node_radius, y - self.node_radius,
-                    x + self.node_radius, y + self.node_radius,
-                    fill=fill_color,
-                    outline=outline_color,
-                    width=1,
-                    tags=f"node_{commit.hash}"
-                )
-            else:
-                # Normální commity
-                fill_color = commit.branch_color
-                outline_color = tm.get_color('commit_node_outline')
-                canvas.create_oval(
-                    x - self.node_radius, y - self.node_radius,
-                    x + self.node_radius, y + self.node_radius,
-                    fill=fill_color,
-                    outline=outline_color,
-                    width=1,
-                    tags=f"node_{commit.hash}"
-                )
-
-            # Zobrazit vlaječku podle použitého režimu
-            if has_branch_heads:
-                # Nová logika - zobrazit vlaječku pro branch head commity (ale ne pro virtuální merge větve)
-                if (commit.is_branch_head and commit.branch != 'unknown' and
-                    not commit.branch.startswith('merge-')):
-                    clean_branch_name = commit.branch
-                    if commit.branch.startswith('origin/'):
-                        clean_branch_name = commit.branch[7:]  # Odstranit "origin/"
-
-                    flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
-
-                    # Určit které symboly zobrazit podle branch_head_type
-                    if commit.branch_head_type == "both":
-                        # Zobrazit oba symboly (jako doteď)
-                        branch_avail = "both"
-                    elif commit.branch_head_type == "local":
-                        # Jen symbol počítače
-                        branch_avail = "local_only"
-                    elif commit.branch_head_type == "remote":
-                        # Jen symbol obláčku
-                        branch_avail = "remote_only"
-                    else:
-                        branch_avail = commit.branch_availability
-
-                    self._draw_branch_flag(canvas, x, y, clean_branch_name, flag_color, commit.is_remote, branch_avail)
-
-                    # Vykreslit connection line k vlaječce
-                    connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
-                    self._draw_flag_connection(canvas, x, y, connection_color)
-            else:
-                # Fallback logika - původní chování (ale ne pro WIP a merge commity)
-                if (commit.branch != 'unknown' and
-                    commit.branch not in drawn_branch_flags and
-                    not getattr(commit, 'is_uncommitted', False) and
-                    not commit.branch.startswith('merge-')):
-                    flag_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
-                    self._draw_branch_flag(canvas, x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
-                    drawn_branch_flags.add(commit.branch)
-
-                # Pokud je to posledný commit větve, nakreslit horizontální spojnici k vlaječce (kromě 'unknown', WIP a merge)
-                if (commit.branch != 'unknown' and
-                    commit.branch in last_commits_by_branch and
-                    last_commits_by_branch[commit.branch] == commit and
-                    not getattr(commit, 'is_uncommitted', False) and
-                    not commit.branch.startswith('merge-')):
-                    connection_color = self._make_color_pale(commit.branch_color) if commit.is_remote else commit.branch_color
-                    self._draw_flag_connection(canvas, x, y, connection_color)
-
-            # Pevná pozice pro začátek "tabulky" - za všemi větvemi
-            table_start_x = self._get_table_start_position()
-
-            # Pevné pozice pro tabulkové sloupce
-            text_x = table_start_x
-
-            # Vytvořit kombinovaný text message + description
-            # Určit barvu textu podle typu commitu
-            if getattr(commit, 'is_uncommitted', False):
-                message_color = tm.get_color('commit_text_wip')  # Tmavě šedá pro WIP commity
-            else:
-                message_color = tm.get_color('commit_text')  # Černá pro normální commity
-
-            # Nejprve zkrátit message podle dostupné šířky sloupce
-            if commit.description_short:
-                # S description - rezervovat prostor pro description
-                # Zkusit použít plný message, pokud se vejde
-                full_message_width = canvas.tk.call("font", "measure", font, commit.message)
-                min_desc_space = 100  # Minimální prostor pro description
-
-                # Dostupný prostor pro message je celá šířka sloupce - mezery - minimální prostor pro description
-                available_message_space = self.column_widths['message'] - 40 - min_desc_space
-
-                # Zkrátit message pokud je příliš dlouhý
-                message_to_display = self._truncate_text_to_width(
-                    canvas, font, commit.message, available_message_space
-                )
-
-                # Message v odpovídající barvě
-                message_item = canvas.create_text(
-                    text_x, y,
-                    text=message_to_display,
-                    anchor='w',
-                    font=font,
-                    fill=message_color,
-                    tags=("commit_text", f"msg_{commit.hash}")
-                )
-
-                # Přidat tooltip pokud byl zkrácen
-                if message_to_display != commit.message:
-                    canvas.tag_bind(f"msg_{commit.hash}", "<Enter>",
-                        lambda e, msg=commit.message: self._show_tooltip(e, msg))
-                    canvas.tag_bind(f"msg_{commit.hash}", "<Leave>",
-                        lambda e: self._hide_tooltip())
-
-                # Změřit šířku zobrazovaného message pro pozici description
-                message_width = canvas.tk.call("font", "measure", font, message_to_display)
-                desc_x = text_x + message_width + 20  # 20px mezera pro lepší rozlišení
-
-                # Vypočítat dostupný prostor pro description
-                available_space = self.column_widths['message'] - message_width - 40  # 40px mezery (20 + 20)
-
-                # Zkrátit description aby se vešel do dostupného prostoru
-                description_to_display = self._truncate_text_to_width(
-                    canvas, font, commit.description_short, available_space
-                )
-
-                # Vykreslit description v šedé s tooltip
-                desc_item = canvas.create_text(
-                    desc_x, y,
-                    text=description_to_display,
-                    anchor='w',
-                    font=font,
-                    fill=tm.get_color('description_text'),
-                    tags=("commit_text", f"desc_{commit.hash}")
-                )
-
-                # Přidat event handlers pro tooltip pouze pokud má původní description více obsahu
-                if commit.description and commit.description.strip() != commit.description_short:
-                    canvas.tag_bind(f"desc_{commit.hash}", "<Enter>",
-                        lambda e, desc=commit.description: self._show_tooltip(e, desc))
-                    canvas.tag_bind(f"desc_{commit.hash}", "<Leave>",
-                        lambda e: self._hide_tooltip())
-            else:
-                # Bez description - message může zabrat celou šířku sloupce
-                available_message_space = self.column_widths['message'] - 20  # 20px padding
-
-                # Zkrátit message pokud je příliš dlouhý
-                message_to_display = self._truncate_text_to_width(
-                    canvas, font, commit.message, available_message_space
-                )
-
-                # Message bez description
-                message_item = canvas.create_text(
-                    text_x, y,
-                    text=message_to_display,
-                    anchor='w',
-                    font=font,
-                    fill=message_color,
-                    tags=("commit_text", f"msg_{commit.hash}")
-                )
-
-                # Přidat tooltip pokud byl zkrácen
-                if message_to_display != commit.message:
-                    canvas.tag_bind(f"msg_{commit.hash}", "<Enter>",
-                        lambda e, msg=commit.message: self._show_tooltip(e, msg))
-                    canvas.tag_bind(f"msg_{commit.hash}", "<Leave>",
-                        lambda e: self._hide_tooltip())
-
-            text_x += self.column_widths['message']
-
-            # Author - zarovnaný na střed sloupce (pouze pro normální commity)
-            if not getattr(commit, 'is_uncommitted', False):
-                author_center_x = text_x + self.column_widths['author'] // 2
-
-                # Zkrátit author podle dostupné šířky
-                author_to_display = self._truncate_text_to_width(
-                    canvas, font, commit.author, self.column_widths['author']
-                )
-
-                # Vykreslit s tagem
-                author_item = canvas.create_text(
-                    author_center_x, y,
-                    text=author_to_display,
-                    anchor='center',
-                    font=font,
-                    fill=tm.get_color('author_text'),
-                    tags=("commit_text", f"author_{commit.hash}")
-                )
-
-                # Přidat tooltip pokud byl zkrácen
-                if author_to_display != commit.author:
-                    canvas.tag_bind(f"author_{commit.hash}", "<Enter>",
-                        lambda e, author=commit.author: self._show_tooltip(e, author))
-                    canvas.tag_bind(f"author_{commit.hash}", "<Leave>",
-                        lambda e: self._hide_tooltip())
-            text_x += self.column_widths['author']
-
-            # Email - zarovnaný na střed sloupce (pouze pro normální commity)
-            if not getattr(commit, 'is_uncommitted', False):
-                email_center_x = text_x + self.column_widths['email'] // 2
-
-                # Zkrátit email podle dostupné šířky
-                email_to_display = self._truncate_text_to_width(
-                    canvas, font, commit.author_email, self.column_widths['email']
-                )
-
-                # Vykreslit s tagem
-                email_item = canvas.create_text(
-                    email_center_x, y,
-                    text=email_to_display,
-                    anchor='center',
-                    font=font,
-                    fill=tm.get_color('email_text'),
-                    tags=("commit_text", f"email_{commit.hash}")
-                )
-
-                # Přidat tooltip pokud byl zkrácen
-                if email_to_display != commit.author_email:
-                    canvas.tag_bind(f"email_{commit.hash}", "<Enter>",
-                        lambda e, email=commit.author_email: self._show_tooltip(e, email))
-                    canvas.tag_bind(f"email_{commit.hash}", "<Leave>",
-                        lambda e: self._hide_tooltip())
-            text_x += self.column_widths['email']
-
-            # Date - zarovnaný na střed sloupce (pouze pro normální commity)
-            if not getattr(commit, 'is_uncommitted', False):
-                date_center_x = text_x + self.column_widths['date'] // 2
-                canvas.create_text(
-                    date_center_x, y,
-                    text=commit.date_short,
-                    anchor='center',
-                    font=font,
-                    fill=tm.get_color('date_text'),
-                    tags="commit_text"
-                )
-
-        # Detekovat dominantního autora (>80% commitů)
-        author_counts = Counter(commit.author for commit in commits)
-        total_commits = len(commits)
-        dominant_author = None
-        if author_counts and total_commits > 0:
-            most_common_author, count = author_counts.most_common(1)[0]
-            if count / total_commits > 0.8:
-                dominant_author = most_common_author
-
-        # Přidat tooltips s autorem pouze pro ne-dominantní autory
-        for commit in commits:
-            if commit.author != dominant_author:
-                canvas.tag_bind(f"node_{commit.hash}", "<Enter>",
-                    lambda e, author=commit.author: self._show_tooltip(e, author))
-                canvas.tag_bind(f"node_{commit.hash}", "<Leave>",
-                    lambda e: self._hide_tooltip())
-
-    def _show_tooltip(self, event, description_text: str):
-        """Zobrazí tooltip s kompletním description textem."""
-        if not description_text or not description_text.strip():
-            return
-
-        self._hide_tooltip()
-
-        tm = get_theme_manager()
-
-        # Vytvořit tooltip okno
-        self.tooltip = tk.Toplevel()
-        self.tooltip.wm_overrideredirect(True)
-        self.tooltip.wm_attributes("-topmost", True)
-
-        # Nastavit pozici tooltip okna
-        x = event.x_root + 10
-        y = event.y_root + 10
-        self.tooltip.wm_geometry(f"+{x}+{y}")
-
-        # Vytvořit label s textem
-        label = tk.Label(
-            self.tooltip,
-            text=description_text,
-            background=tm.get_color('tooltip_bg'),
-            foreground=tm.get_color('tooltip_fg'),
-            font=('Arial', 9),
-            wraplength=400,
-            justify="left",
-            relief="solid",
-            borderwidth=1,
-            padx=5,
-            pady=3
-        )
-        label.pack()
-
-    def _hide_tooltip(self):
-        """Skryje tooltip okno."""
-        if self.tooltip:
-            self.tooltip.destroy()
-            self.tooltip = None
-
-    def _draw_branch_flag(self, canvas: tk.Canvas, x: int, y: int, branch_name: str, branch_color: str, is_remote: bool = False, branch_availability: str = "local_only"):
-        """Vykreslí vlaječku s názvem větve a symboly dostupnosti v pevném levém sloupci."""
-        # Použít vypočítanou šířku vlaječky
-        flag_width = getattr(self, 'flag_width', 80)  # Fallback na 80 pokud nebyla vypočítána
-        flag_height = 20
-
-        # Pozice vlaječky - margin zleva stejný jako margin shora (BASE_MARGIN + polovina šířky vlaječky)
-        flag_x = self.BASE_MARGIN + flag_width // 2
-        flag_y = y
-
-        # Jednotné černé rámování (remote status je viditelný z emotikonu)
-        outline_color = 'black'
-
-        # Vytvořit obdélník vlaječky
-        canvas.create_rectangle(
-            flag_x - flag_width // 2, flag_y - flag_height // 2,
-            flag_x + flag_width // 2, flag_y + flag_height // 2,
-            fill=branch_color,
-            outline=outline_color,
-            width=1
-        )
-
-        # Přidat text názvu větve - upravit pro remote větve
-        display_name = branch_name
-        if is_remote and branch_name.startswith('origin/'):
-            # Zobrazit jen část po origin/ ale v jiné barvě
-            display_name = branch_name[7:]  # Odstranit "origin/"
-
-        # Zkrátit název pro zobrazení
-        full_name = display_name  # Uchovat pro tooltip
-        display_name = self._truncate_branch_name(display_name)
-
-        # Určit, které symboly zobrazit podle dostupnosti větve
-        has_local = branch_availability in ["local_only", "both"]
-        has_remote = branch_availability in ["remote_only", "both"]
-
-        local_symbol = "💻"  # Laptop pro lokální
-        remote_symbol = "☁"  # Obrysový oblačk pro remote
-        local_fallback = "PC"
-        remote_fallback = "☁"
-
-        tm = get_theme_manager()
-        emoji_font = ('Segoe UI Emoji', 10)  # Správný font pro emoji
-        text_font = ('Arial', 8, 'bold')     # Font pro text
-
-        # Vypočítat kontrastní barvu textu podle barvy větve (ne podle remote)
-        # Tím zajistíme čitelnost na jakékoliv barvě větve
-        text_color = tm.get_contrasting_text_color(
-            branch_color,
-            dark_color='#000000',
-            light_color='#ffffff'
-        )
-
-        # Obrys musí být opačné barvy než text pro maximální kontrast
-        outline_color = '#ffffff' if text_color == '#000000' else '#000000'
-
-        # Vždy vykreslit název větve na středu s kontrastním obrysem
-        # Nejdříve obrys - vykreslí text posunutý o 1px ve všech směrech
-        for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
-            canvas.create_text(
-                flag_x + dx, flag_y + dy,
-                text=display_name,
-                anchor='center',
-                font=text_font,
-                fill=outline_color
-            )
-
-        # Pak text na vrch v kontrastní barvě
-        text_item = canvas.create_text(
-            flag_x, flag_y,
-            text=display_name,
-            anchor='center',
-            font=text_font,
-            fill=text_color
-        )
-
-        # Přidat tooltip pokud byl text zkrácen
-        if full_name != display_name:
-            self._add_tooltip_to_flag(canvas, text_item, flag_x, flag_y, flag_width, flag_height, full_name)
-
-        # Vykreslit remote symbol vlevo, pokud větev existuje remotely
-        # Symboly používají stejné kontrastní barvy jako text
-        if has_remote:
-            remote_x = flag_x - flag_width // 2 + 12  # 12px od levého okraje vlaječky (zvětšený padding)
-            try:
-                # Nejdříve obrys pro cloud symbol (opačná barva než text)
-                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
-                    canvas.create_text(
-                        remote_x + dx, flag_y - 1 + dy,
-                        text=remote_symbol,
-                        anchor='center',
-                        font=emoji_font,
-                        fill=outline_color
-                    )
-                # Pak symbol na vrch v kontrastní barvě
-                canvas.create_text(
-                    remote_x, flag_y - 1,
-                    text=remote_symbol,
-                    anchor='center',
-                    font=emoji_font,
-                    fill=text_color
-                )
-            except Exception as e:
-                logger.debug(f"Failed to render remote symbol with emoji font: {e}")
-                # Fallback - také s obrysem
-                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
-                    canvas.create_text(
-                        remote_x + dx, flag_y - 1 + dy,
-                        text=remote_fallback,
-                        anchor='center',
-                        font=text_font,
-                        fill=outline_color
-                    )
-                canvas.create_text(
-                    remote_x, flag_y - 1,
-                    text=remote_fallback,
-                    anchor='center',
-                    font=text_font,
-                    fill=text_color
-                )
-
-        # Vykreslit local symbol vpravo, pokud větev existuje lokálně
-        # Symboly používají stejné kontrastní barvy jako text
-        if has_local:
-            local_x = flag_x + flag_width // 2 - 12  # 12px od pravého okraje vlaječky (zvětšený padding)
-            try:
-                # Nejdříve obrys pro laptop symbol (opačná barva než text)
-                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
-                    canvas.create_text(
-                        local_x + dx, flag_y - 1 + dy,
-                        text=local_symbol,
-                        anchor='center',
-                        font=emoji_font,
-                        fill=outline_color
-                    )
-                # Pak symbol na vrch v kontrastní barvě
-                canvas.create_text(
-                    local_x, flag_y - 1,
-                    text=local_symbol,
-                    anchor='center',
-                    font=emoji_font,
-                    fill=text_color
-                )
-            except Exception as e:
-                logger.debug(f"Failed to render local symbol with emoji font: {e}")
-                # Fallback - také s obrysem
-                for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
-                    canvas.create_text(
-                        local_x + dx, flag_y - 1 + dy,
-                        text=local_fallback,
-                        anchor='center',
-                        font=text_font,
-                        fill=outline_color
-                    )
-                canvas.create_text(
-                    local_x, flag_y - 1,
-                    text=local_fallback,
-                    anchor='center',
-                    font=text_font,
-                    fill=text_color
-                )
-
-    def _calculate_horizontal_line_extent(self, commit: Commit, commits: List[Commit]) -> int:
-        """Vypočítá nejdelší dosah horizontální spojnice od daného commitu."""
-        max_extent = commit.x  # Výchozí pozice commitu
-
-        # Vytvořit mapu hash -> commit pro rychlé vyhledání
-        commit_map = {c.hash: c for c in commits}
-
-        # Projít všechny child commity tohoto commitu
-        for other_commit in commits:
-            if commit.hash in other_commit.parents:
-                # Tento commit je parent pro other_commit
-                child_x = other_commit.x
-
-                if child_x != commit.x:  # Pouze horizontální spojnice (větvení)
-                    # Vypočítat dosah horizontální části L-shaped spojnice
-                    dx = abs(child_x - commit.x)
-                    dy = abs(other_commit.y - commit.y)
-
-                    # Radius zaoblení (stejná logika jako v _draw_bezier_curve)
-                    radius = min(dx, dy, 20) * self.curve_intensity
-                    radius = max(3, min(radius, 15))
-
-                    # Horizontální část končí na child_x - radius
-                    # (corner_x = child_x, takže horizontální část končí na corner_x - radius)
-                    horizontal_end = child_x - radius if dx > radius else child_x
-                    max_extent = max(max_extent, horizontal_end)
-
-        return max_extent
-
-    def _draw_tags(self, canvas: tk.Canvas, commits: List[Commit]):
-        """Vykreslí tag emoji a názvy pro commity s tagy."""
-        emoji_font = ('Segoe UI Emoji', 10)  # Font pro emoji
-        text_font = ('Arial', 8, 'bold')     # Font pro názvy tagů
-
-        # Získat pozici začátku tabulky
-        table_start_x = self._get_table_start_position()
-
-        for commit in commits:
-            if not commit.tags:
-                continue
-
-            x, y = commit.x, commit.y
-
-            # Detekovat kolizi s horizontálními spojnicemi a dynamicky posunout tagy
-            horizontal_line_extent = self._calculate_horizontal_line_extent(commit, commits)
-
-            # Standardní pozice pro tagy
-            standard_tag_x = x + self.node_radius + 15  # 15px mezera od kolečka
-
-            # Pokud horizontální spojnice sahá za standardní pozici tagů, posunout tagy
-            if horizontal_line_extent > standard_tag_x:
-                # Posunout tagy za konec nejdelší horizontální spojnice + bezpečná mezera
-                tag_x_start = horizontal_line_extent + 20  # 20px bezpečná mezera
-            else:
-                # Použít standardní pozici
-                tag_x_start = standard_tag_x
-
-            # Spočítat skutečný dostupný prostor pro tagy až do začátku tabulky
-            available_tag_space = table_start_x - tag_x_start - self.BASE_MARGIN
-
-            # Spočítat dostupný prostor pro jednotlivé tagy tohoto commitu
-            tags_total_space = max(0, available_tag_space)  # Zajistit že není negativní
-            tags_count = len(commit.tags)
-
-            if tags_count > 0:
-                # Rezervovat prostor pro emoji a mezery
-                emoji_and_spacing_width = tags_count * 15 + (tags_count - 1) * 20  # emoji + mezery mezi tagy
-                available_text_space = max(0, tags_total_space - emoji_and_spacing_width)
-
-                # Minimální šířka pro text jednoho tagu (aby se vešly alespoň 3 znaky + ellipsis)
-                min_text_width_per_tag = 30
-
-                # Vypočítat maximální šířku textu na tag
-                if available_text_space > 0 and tags_count > 0:
-                    max_text_width_per_tag = max(min_text_width_per_tag, available_text_space // tags_count)
-                else:
-                    max_text_width_per_tag = min_text_width_per_tag
-
-            current_x = tag_x_start
-            for tag in commit.tags:
-                # Vykreslit tag emoji
-                emoji_x = current_x
-                self._draw_tag_emoji(canvas, emoji_x, y, tag.is_remote, emoji_font)
-
-                # Vykreslit název tagu vedle emoji s omezenou šířkou
-                text_x = emoji_x + 15  # 15px mezera za emoji
-                label_width = self._draw_tag_label(canvas, text_x, y, tag.name, tag.is_remote, text_font, max_text_width_per_tag)
-
-                # Přidat tooltip pro anotované tagy
-                if tag.message:
-                    self._add_tag_tooltip(canvas, emoji_x, y, tag.message)
-
-                # Přesunout pozici pro další tag
-                current_x = text_x + label_width + 20  # 20px mezera mezi tagy
-
-    def _draw_tag_emoji(self, canvas: tk.Canvas, x: int, y: int, is_remote: bool, font):
-        """Vykreslí tag emoji 🏷️."""
-        # Tag emoji
-        tag_emoji = "🏷️"
-
-        tm = get_theme_manager()
-        # Barevné rozlišení - pro remote tagy použít šedší barvu
-        if is_remote:
-            # Pro remote použít světlejší/menší emoji nebo jiný approach
-            text_color = tm.get_color('tag_emoji_remote')
-        else:
-            text_color = tm.get_color('tag_emoji_local')
-
-        canvas.create_text(
-            x, y - 1,
-            text=tag_emoji,
-            anchor='center',
-            font=font,
-            fill=text_color,
-            tags="tag_emoji"
-        )
-
-    def _draw_tag_label(self, canvas: tk.Canvas, x: int, y: int, tag_name: str, is_remote: bool, font, available_width: int = None):
-        """Vykreslí label s názvem tagu a vrátí šířku textu."""
-        display_name = tag_name
-        needs_tooltip = False
-
-        # Zkrátit název pokud je příliš dlouhý
-        if available_width and available_width > 0:
-            full_width = canvas.tk.call("font", "measure", font, tag_name)
-            if full_width > available_width:
-                # Název je příliš dlouhý, zkrátit ho
-                display_name = self._truncate_text_to_width(canvas, font, tag_name, available_width)
-                needs_tooltip = True
-
-        tm = get_theme_manager()
-        # Barvy textu - konzistentnější s emoji
-        text_color = tm.get_color('tag_text_remote') if is_remote else tm.get_color('tag_text_local')
-
-        text_item = canvas.create_text(
-            x, y,
-            text=display_name,
-            anchor='w',  # Zarovnat vlevo místo na střed
-            font=font,
-            fill=text_color,
-            tags="tag_label"
-        )
-
-        # Přidat tooltip pokud byl text zkrácen
-        if needs_tooltip:
-            canvas.tag_bind(text_item, "<Enter>",
-                lambda e, full_name=tag_name: self._show_tooltip(e, full_name))
-            canvas.tag_bind(text_item, "<Leave>",
-                lambda e: self._hide_tooltip())
-
-        # Vrátit šířku zobrazovaného textu pro kalkulaci pozice dalšího tagu
-        text_width = canvas.tk.call("font", "measure", font, display_name)
-        return text_width
-
-    def _add_tag_tooltip(self, canvas: tk.Canvas, x: int, y: int, message: str):
-        """Přidá tooltip pro anotované tagy."""
-        # Vytvořit neviditelnou oblast pro tooltip
-        tooltip_area = canvas.create_oval(
-            x - 12, y - 12, x + 12, y + 12,
-            fill='',
-            outline='',
-            tags="tag_tooltip_area"
-        )
-
-        # Bindovat tooltip events
-        canvas.tag_bind(tooltip_area, "<Enter>",
-            lambda e, msg=message: self._show_tooltip(e, msg))
-        canvas.tag_bind(tooltip_area, "<Leave>",
-            lambda e: self._hide_tooltip())
-
     def _update_branch_lanes(self, commits: List[Commit]):
-        """Aktualizuje informace o lanes pro výpočet pozice tabulky."""
+        """Updates lanes information for calculating table position.
+
+        Args:
+            commits: List of commits
+        """
         self.branch_lanes = {}
-        flag_width = getattr(self, 'flag_width', 80)
-        # Spočítat pozici prvního commitu (lane 0)
-        first_commit_x = self.BASE_MARGIN + flag_width + self.BASE_MARGIN  # vlaječka + rozestup
+        flag_width = self.flag_width if self.flag_width else 80
+        # Calculate position of first commit (lane 0)
+        first_commit_x = self.BASE_MARGIN + flag_width + self.BASE_MARGIN  # flag + spacing
 
         for commit in commits:
             branch_lane = (commit.x - first_commit_x) // self.BRANCH_SPACING
             self.branch_lanes[commit.branch] = branch_lane
 
     def _get_table_start_position(self) -> int:
-        """Vrátí X pozici kde začíná tabulka (za všemi větvemi)."""
-        # Použít celkovou šířku grafického sloupce
+        """Returns X position where table starts (behind all branches).
+
+        Returns:
+            X position where table starts
+        """
+        # Use total graph column width
         graph_column_width = self._calculate_graph_column_width()
         return graph_column_width
 
-    def _draw_flag_connection(self, canvas: tk.Canvas, commit_x: int, commit_y: int, branch_color: str):
-        """Vykreslí horizontální spojnici od commitu k vlaječce."""
-        # Použít vypočítanou šířku vlaječky
-        flag_width = getattr(self, 'flag_width', 80)
-
-        # Pozice vlaječky (konzistentní s _draw_branch_flag)
-        flag_x = self.BASE_MARGIN + flag_width // 2
-
-        # Horizontální linka od commitu k vlaječce
-        canvas.create_line(
-            flag_x + flag_width // 2 + 1, commit_y,  # Od pravého okraje vlaječky + 1px mimo orámování
-            commit_x - self.node_radius, commit_y,  # K levému okraji commitu
-            fill=branch_color,
-            width=self.line_width
-        )
-
-    def _detect_scaling_factor(self, canvas: tk.Canvas):
-        """Detekuje DPI škálovací faktor Windows."""
-        try:
-            dpi = canvas.winfo_fpixels('1i')
-            self.scaling_factor = dpi / 96  # 96 je standardní DPI
-        except Exception as e:
-            logger.warning(f"Failed to detect DPI scaling factor: {e}")
-            self.scaling_factor = 1.0  # Fallback
-
-    def _adjust_descriptions_for_scaling(self, commits: List[Commit]):
-        """Upraví délku description_short podle DPI škálování."""
-        # Vypočítat cílovou délku podle škálování
-        if self.scaling_factor <= 1.0:
-            target_length = 120  # Zvětšeno pro lepší využití prostoru
-        elif self.scaling_factor <= 1.25:
-            target_length = 100  # 125% škálování
-        elif self.scaling_factor <= 1.5:
-            target_length = 80  # 150% škálování
-        else:
-            target_length = 60  # 200%+ škálování
-
-        self.max_description_length = target_length
-
-        # Upravit description_short pro všechny commity podle správné logiky
-        for commit in commits:
-            commit.description_short = self._truncate_description_for_dpi(commit.description, target_length)
-
-    def _truncate_description_for_dpi(self, description: str, max_length: int) -> str:
-        """Zkrátí description podle specifikace s ohledem na DPI škálování."""
-        if not description:
-            return ""
-
-        # Vzít jen první řádek
-        first_line = description.split('\n')[0].strip()
-        has_more_lines = '\n' in description
-
-        # Určit, jestli potřebujeme vynechávku
-        needs_ellipsis = False
-
-        if has_more_lines:
-            # Pokud má více řádků, vždycky potřebujeme vynechávku
-            needs_ellipsis = True
-        elif len(first_line) > max_length:
-            # Pokud je první řádek moc dlouhý
-            needs_ellipsis = True
-        elif first_line.endswith(':'):
-            # Pokud řádek končí dvojtečkou, také potřebujeme vynechávku
-            needs_ellipsis = True
-
-        # Zkrátit text pokud je potřeba a přidat vynechávku
-        if needs_ellipsis:
-            if first_line.endswith(':'):
-                # Pokud končí dvojtečkou, nahradit ji třemi tečkami
-                # ale ověřit, že se vejde do limitu
-                potential_result = first_line[:-1] + '...'
-                if len(potential_result) > max_length:
-                    # Zkrátit ještě více, aby se vešla vynechávka
-                    first_line = first_line[:max_length-3] + '...'
-                else:
-                    first_line = potential_result
-            elif len(first_line) > max_length:
-                # Normální zkrácení
-                first_line = first_line[:max_length-3] + '...'
-            else:
-                # Text se vejde, ale má více řádků
-                first_line = first_line + '...'
-
-        return first_line
-
-    def _truncate_text_to_width(self, canvas: tk.Canvas, font, text: str, max_width: int) -> str:
-        """Zkrátí text tak, aby se vešel do zadané šířky v pixelech."""
-        if not text or max_width <= 0:
-            return ""
-
-        # Změřit šířku celého textu
-        text_width = canvas.tk.call("font", "measure", font, text)
-
-        if text_width <= max_width:
-            return text
-
-        # Text je moc široký, zkrátit ho
-        ellipsis_width = canvas.tk.call("font", "measure", font, "...")
-        available_width = max_width - ellipsis_width
-
-        if available_width <= 0:
-            return "..."
-
-        # Binární vyhledávání pro nalezení správné délky
-        left, right = 0, len(text)
-        result = ""
-
-        while left <= right:
-            mid = (left + right) // 2
-            test_text = text[:mid]
-            test_width = canvas.tk.call("font", "measure", font, test_text)
-
-            if test_width <= available_width:
-                result = test_text
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        return result + "..." if result else "..."
-
     def _make_color_pale(self, color: str, blend_type: str = "remote") -> str:
-        """Vytvoří bledší verzi barvy pomocí HSL manipulace."""
-        if not color or color == 'unknown':
-            return '#E0E0E0'
+        """Creates paler version of color using HSL manipulation.
 
-        if color.startswith('#'):
-            try:
-                # Převést hex na RGB
-                hex_color = color.lstrip('#')
-                if len(hex_color) == 6:
-                    r = int(hex_color[0:2], 16) / 255.0
-                    g = int(hex_color[2:4], 16) / 255.0
-                    b = int(hex_color[4:6], 16) / 255.0
+        This is a convenience wrapper around the make_color_pale utility function.
 
-                    # Převést RGB na HSL
-                    import colorsys
-                    h, l, s = colorsys.rgb_to_hls(r, g, b)
+        Args:
+            color: Color to make pale
+            blend_type: Type of blending ("remote" or "merge")
 
-                    # Aplikovat vyblednutí podle typu
-                    if blend_type == "remote":
-                        # Remote: mírnější vyblednutí pro zachování rozlišitelnosti
-                        s = s * 0.8  # Snížit sytost na 80% originální (65% z 80%)
-                        l = min(0.9, l + 0.15)  # Zvýšit lightness o 15% (cca 65%)
-                    elif blend_type == "merge":
-                        # Merge: výrazné vyblednutí - nejméně saturované ze všech
-                        s = s * 0.6  # Snížit sytost na 60% originální (méně než remote)
-                        l = min(0.85, l + 0.20)  # Výrazně zvýšit lightness o 20%
-                    else:
-                        # Fallback na remote chování
-                        s = s * 0.8
-                        l = min(0.9, l + 0.15)
-
-                    # Převést zpět na RGB
-                    r, g, b = colorsys.hls_to_rgb(h, l, s)
-
-                    # Převést na hex
-                    r = int(r * 255)
-                    g = int(g * 255)
-                    b = int(b * 255)
-
-                    return f'#{r:02x}{g:02x}{b:02x}'
-            except Exception as e:
-                logger.warning(f"Failed to make color {color} pale: {e}")
-                pass
-
-        # Pro pojmenované barvy - jednoduchá mapování
-        color_map = {
-            'red': '#FFB3B3',
-            'blue': '#B3B3FF',
-            'green': '#B3FFB3',
-            'orange': '#FFE0B3',
-            'purple': '#E0B3FF',
-            'brown': '#D9C6B3',
-            'pink': '#FFB3E0',
-            'gray': '#D9D9D9',
-            'cyan': '#B3FFFF',
-            'yellow': '#FFFFE0'
-        }
-
-        return color_map.get(color.lower(), '#E0E0E0')
-
-    def _truncate_branch_name(self, branch_name: str, max_length: int = 12) -> str:
-        """Zkrátí název větve pokud je příliš dlouhý."""
-        if len(branch_name) <= max_length:
-            return branch_name
-        return branch_name[:max_length-3] + "..."
-
-    def _add_tooltip_to_flag(self, canvas, flag_item, flag_x, flag_y, flag_width, flag_height, full_name):
-        """Přidá tooltip funkcionalitu k vlaječce."""
-        tooltip_tag = None
-
-        def show_tooltip(event):
-            nonlocal tooltip_tag
-            if tooltip_tag:
-                return
-
-            # Vytvořit unikátní tag pro tento tooltip
-            tooltip_tag = f"tooltip_{id(flag_item)}_{id(event)}"
-
-            # Vypočítat dynamickou šířku podle délky textu
-            # Přibližně 6px na znak + padding
-            text_width = len(full_name) * 6 + 20
-            tooltip_height = 20
-
-            # Určit pozici tooltipu
-            tooltip_top_y = flag_y + flag_height // 2 + 5
-            tooltip_bottom_y = tooltip_top_y + tooltip_height
-
-            # Určit horizontální pozici - defaultně vycentrováno
-            tooltip_left_x = flag_x - text_width // 2
-            tooltip_right_x = flag_x + text_width // 2
-
-            # Získat šířku canvasu
-            canvas_width = canvas.winfo_width()
-
-            # Kontrola přetečení vpravo
-            if tooltip_right_x > canvas_width:
-                # Posunout doleva tak, aby pravý okraj byl na canvas_width
-                offset = tooltip_right_x - canvas_width
-                tooltip_left_x -= offset
-                tooltip_right_x -= offset
-
-            # Kontrola přetečení vlevo
-            if tooltip_left_x < 0:
-                # Posunout doprava tak, aby levý okraj byl na 0
-                offset = -tooltip_left_x
-                tooltip_left_x += offset
-                tooltip_right_x += offset
-
-            # Vypočítat centrum pro text
-            tooltip_center_x = (tooltip_left_x + tooltip_right_x) // 2
-
-            tm = get_theme_manager()
-
-            # Vytvořit tooltip okno s tagem
-            canvas.create_rectangle(
-                tooltip_left_x, tooltip_top_y,
-                tooltip_right_x, tooltip_bottom_y,
-                fill=tm.get_color('tag_tooltip_bg'), outline=tm.get_color('commit_node_outline'), width=1,
-                tags=tooltip_tag
-            )
-
-            canvas.create_text(
-                tooltip_center_x, tooltip_top_y + tooltip_height // 2,
-                text=full_name,
-                anchor='center',
-                font=('Arial', 8),
-                fill=tm.get_color('tooltip_fg'),
-                tags=tooltip_tag
-            )
-
-        def hide_tooltip(event):
-            nonlocal tooltip_tag
-            if tooltip_tag:
-                canvas.delete(tooltip_tag)
-                tooltip_tag = None
-
-        # Bind eventi k celé oblasti vlaječky
-        canvas.tag_bind(flag_item, '<Enter>', show_tooltip)
-        canvas.tag_bind(flag_item, '<Leave>', hide_tooltip)
-
-    def _move_separators_to_scroll_position(self, canvas: tk.Canvas, new_y: float):
-        """Přesune existující separátory na novou Y pozici při scrollování."""
-        # Najít všechny objekty se separátory
-        separator_items = canvas.find_withtag("column_separator")
-        header_items = canvas.find_withtag("column_header")
-
-        for item in separator_items + header_items:
-            # Získat současné souřadnice
-            coords = canvas.coords(item)
-            if not coords:
-                continue
-
-            # Určit typ objektu podle tagů
-            tags = canvas.gettags(item)
-
-            if "column_bg_" in str(tags) or "graph_header_bg" in tags:
-                # Pro pozadí záhlaví - obdélník
-                canvas.coords(item, coords[0], new_y, coords[2], new_y + 25)
-            elif "graph_header_text" in tags:
-                # Pro text grafického záhlaví - centred vertically
-                canvas.coords(item, coords[0], new_y + 12)
-            elif "header_text_" in str(tags):
-                # Pro text záhlaví - centred vertically
-                canvas.coords(item, coords[0], new_y + 12)
-            elif "column_header" in tags and len(coords) == 2:
-                # Pro starý formát text záhlaví
-                canvas.coords(item, coords[0], new_y + 12)
-            elif len(coords) == 4:  # Obdélník nebo čára (pozadí separátoru, klikací oblast, nebo separátor)
-                # Pro obdélník i čáru změnit Y1 a Y2
-                canvas.coords(item, coords[0], new_y, coords[2], new_y + self.separator_height)
-
-        # Zajistit správné vrstvení: pozadí záhlaví dolů, separátory nahoru, text záhlaví na vrch
-        canvas.tag_lower("graph_header_bg")   # Pozadí grafického záhlaví dolů
-        for column in ['message', 'author', 'email', 'date']:
-            try:
-                canvas.tag_lower(f"column_bg_{column}")  # Pozadí jednotlivých sloupců dolů
-            except Exception as e:
-                logger.debug(f"Failed to lower column background {column}: {e}")
-                pass
-        canvas.tag_raise("column_separator")  # Separátory nahoru (aby byly klikatelné)
-        canvas.tag_raise("column_header")      # Text záhlaví na vrch
-
-    def _draw_column_separators(self, canvas: tk.Canvas):
-        """Vykreslí interaktivní separátory sloupců na horním okraji."""
-        tm = get_theme_manager()
-        table_start_x = self._get_table_start_position()
-
-        # Záhlaví musí být vždy na vrchu viditelné oblasti (bez mezery)
-        # canvasy(0) převede window souřadnici 0 na canvas souřadnici
-        scroll_top = canvas.canvasy(0)
-        separator_y = scroll_top  # záhlaví vždy na vrchu viditelné oblasti
-
-        # Vždy vymazat staré separátory a popisky a vykreslit znovu
-        canvas.delete("column_separator")
-        canvas.delete("column_header")
-
-        current_x = table_start_x
-
-        # Názvy sloupců (s překladem)
-        column_names = {
-            'message': t('header_message'),
-            'author': t('header_author'),
-            'email': 'Email',  # Email není lokalizován
-            'date': t('header_date')
-        }
-
-        columns = ['message', 'author', 'email', 'date']
-
-        # NEJPRVE vykreslit separátor před prvním textovým sloupcem (Branch/Commit | Message)
-        graph_separator_x = table_start_x
-
-        # Pozadí separátoru pro grafický sloupec
-        canvas.create_rectangle(
-            graph_separator_x - 5, separator_y,
-            graph_separator_x + 5, separator_y + self.HEADER_HEIGHT,
-            outline='',
-            fill=tm.get_color('separator_bg'),
-            tags=("column_separator", "sep_graph_bg")
-        )
-
-        # Samotný separátor pro grafický sloupec
-        canvas.create_line(
-            graph_separator_x, separator_y,
-            graph_separator_x, separator_y + self.HEADER_HEIGHT,
-            width=3,
-            fill=tm.get_color('separator'),
-            tags=("column_separator", "sep_graph"),
-            activefill=tm.get_color('separator_active')
-        )
-
-        # Uložit pozici separátoru pro grafický sloupec
-        self.column_separators['graph'] = graph_separator_x
-
-        # Přidat interaktivitu pro grafický separátor
-        area_id = canvas.create_rectangle(
-            graph_separator_x - 5, separator_y,
-            graph_separator_x + 5, separator_y + self.HEADER_HEIGHT,
-            outline='',
-            fill='',
-            tags=("column_separator", "sep_graph_area")
-        )
-
-        # Event handlers pro grafický separátor
-        canvas.tag_bind("sep_graph", '<Button-1>', lambda e: self._start_drag(e, 'graph'))
-        canvas.tag_bind("sep_graph_area", '<Button-1>', lambda e: self._start_drag(e, 'graph'))
-        canvas.tag_bind("sep_graph_bg", '<Button-1>', lambda e: self._start_drag(e, 'graph'))
-
-        for tag in ["sep_graph", "sep_graph_area", "sep_graph_bg"]:
-            canvas.tag_bind(tag, '<Enter>', lambda e: canvas.config(cursor='sb_h_double_arrow'))
-            canvas.tag_bind(tag, '<Leave>', lambda e: canvas.config(cursor='') if not self.dragging_separator else None)
-
-        # POTOM vykreslit separátory mezi textovými sloupci (aby byly pod pozadím)
-        temp_current_x = table_start_x
-        for i, column in enumerate(columns):
-            temp_current_x += self.column_widths[column]
-
-            # Vykreslit separátor (kromě posledního sloupce)
-            if i < len(columns) - 1:
-                # Pozadí separátoru (tmavě šedé, dobře viditelné)
-                background_id = canvas.create_rectangle(
-                    temp_current_x - 5, separator_y,
-                    temp_current_x + 5, separator_y + self.separator_height,
-                    outline='',
-                    fill=tm.get_color('separator_bg'),
-                    tags=("column_separator", f"sep_{column}_bg")
-                )
-
-                # Samotný separátor (tmavý)
-                separator_id = canvas.create_line(
-                    temp_current_x, separator_y,
-                    temp_current_x, separator_y + self.separator_height,
-                    width=3,
-                    fill=tm.get_color('separator'),
-                    tags=("column_separator", f"sep_{column}"),
-                    activefill=tm.get_color('separator_active')
-                )
-
-                # Uložit pozici separátoru
-                self.column_separators[column] = temp_current_x
-
-                # Přidat neviditelnou oblast pro lepší zachytávání myši
-                area_id = canvas.create_rectangle(
-                    temp_current_x - 5, separator_y,
-                    temp_current_x + 5, separator_y + self.separator_height,
-                    outline='',
-                    fill='',
-                    tags=("column_separator", f"sep_{column}_area")
-                )
-
-                # Zabindovat kliknutí přímo na separátor a oblast
-                def make_handler(col):
-                    return lambda e: self._start_drag(e, col)
-
-                canvas.tag_bind(f"sep_{column}", '<Button-1>', make_handler(column))
-                canvas.tag_bind(f"sep_{column}_area", '<Button-1>', make_handler(column))
-                canvas.tag_bind(f"sep_{column}_bg", '<Button-1>', make_handler(column))
-
-                # Přidat cursor events pro všechny části separátoru
-                def set_cursor_enter(e):
-                    canvas.config(cursor='sb_h_double_arrow')
-                def set_cursor_leave(e):
-                    if not self.dragging_separator:
-                        canvas.config(cursor='')
-
-                canvas.tag_bind(f"sep_{column}", '<Enter>', set_cursor_enter)
-                canvas.tag_bind(f"sep_{column}", '<Leave>', set_cursor_leave)
-                canvas.tag_bind(f"sep_{column}_area", '<Enter>', set_cursor_enter)
-                canvas.tag_bind(f"sep_{column}_area", '<Leave>', set_cursor_leave)
-                canvas.tag_bind(f"sep_{column}_bg", '<Enter>', set_cursor_enter)
-                canvas.tag_bind(f"sep_{column}_bg", '<Leave>', set_cursor_leave)
-
-        # POTOM vykreslit pozadí (s výřezy pro separátory)
-        # Pozadí pro grafický sloupec - s výřezem pro separátor
-        graph_column_bg = canvas.create_rectangle(
-            0, separator_y,
-            table_start_x - 5, separator_y + 25,  # -5 pro výřez separátoru
-            outline='',
-            fill=tm.get_color('header_bg'),
-            tags=("column_header", "graph_header_bg")
-        )
-
-        # Záhlaví pro grafický sloupec
-        graph_header_x = table_start_x // 2
-        graph_header_text = canvas.create_text(
-            graph_header_x, separator_y + 12,
-            text=t('header_branch'),
-            anchor='center',
-            font=('Arial', 8, 'bold'),
-            fill=tm.get_color('header_text'),
-            tags=("column_header", "graph_header_text")
-        )
-
-        # Pozadí a text pro textové sloupce (s mezerami pro separátory)
-        for i, column in enumerate(columns):
-
-            # Vykreslit pozadí pro tento sloupec (s výřezem pro separátory)
-            if i < len(columns) - 1:
-                # Ne poslední sloupec - nechat mezeru pro separátor
-                column_bg = canvas.create_rectangle(
-                    current_x, separator_y,
-                    current_x + self.column_widths[column] - 5, separator_y + 25,  # -5 pro mezeru
-                    outline='',
-                    fill=tm.get_color('header_bg'),
-                    tags=("column_header", f"column_bg_{column}")
-                )
-            else:
-                # Poslední sloupec - bez mezery
-                column_bg = canvas.create_rectangle(
-                    current_x, separator_y,
-                    current_x + self.column_widths[column], separator_y + 25,
-                    outline='',
-                    fill=tm.get_color('header_bg'),
-                    tags=("column_header", f"column_bg_{column}")
-                )
-
-            # Vykreslit popisek sloupce
-            header_x = current_x + self.column_widths[column] // 2
-            header_text = canvas.create_text(
-                header_x, separator_y + 12,
-                text=column_names[column],
-                anchor='center',
-                font=('Arial', 8, 'bold'),
-                fill=tm.get_color('header_text'),
-                tags=("column_header", f"header_text_{column}")
-            )
-
-            current_x += self.column_widths[column]
-
-        # Vyplnit zbývající prostor vpravo až do konce viditelného okna
-        viewport_width = canvas.winfo_width()
-        if viewport_width > 1:  # winfo_width vrací 1 pokud ještě není inicializováno
-            # Získat scroll pozici a vypočítat pravý okraj viditelného viewportu
-            scroll_x_left, scroll_x_right = canvas.xview()
-            scrollregion = canvas.cget('scrollregion').split()
-            if scrollregion and len(scrollregion) == 4:
-                total_width = float(scrollregion[2])
-                right_edge = scroll_x_left * total_width + viewport_width
-            else:
-                right_edge = current_x + viewport_width
-
-            # Vykreslit výplň od konce posledního sloupce až do pravého okraje viewportu
-            if right_edge > current_x:
-                header_fill = canvas.create_rectangle(
-                    current_x, separator_y,
-                    right_edge, separator_y + 25,
-                    outline='',
-                    fill=tm.get_color('header_bg'),
-                    tags=("column_header", "header_fill")
-                )
-
-        # Zajistit správné vrstvení: pozadí záhlaví dolů, separátory nahoru, text záhlaví na vrch
-        canvas.tag_lower("graph_header_bg")   # Pozadí grafického záhlaví dolů
-        for column in ['message', 'author', 'email', 'date']:
-            try:
-                canvas.tag_lower(f"column_bg_{column}")  # Pozadí jednotlivých sloupců dolů
-            except Exception as e:
-                logger.debug(f"Failed to lower column background {column}: {e}")
-                pass
-        canvas.tag_raise("column_separator")  # Separátory nahoru (aby byly klikatelné)
-        canvas.tag_raise("column_header")      # Text záhlaví na vrch
+        Returns:
+            Paler version of color
+        """
+        return make_color_pale(color, blend_type)
 
     def setup_column_resize_events(self, canvas: tk.Canvas, on_resize_callback=None):
-        """Nastaví event handlery pro změnu velikosti sloupců."""
-        self.on_resize_callback = on_resize_callback
+        """Sets up event handlers for column resizing.
 
-        # Místo bindování na celý canvas, zabindujeme přímo na separátory
-        # To se udělá v _draw_column_separators()
-
-        # Pro drag operation potřebujeme globální handlery
-        canvas.bind('<B1-Motion>', self._on_separator_drag)
-        canvas.bind('<ButtonRelease-1>', self._on_separator_release)
-
-    def _start_drag(self, event, column):
-        """Zahájí tažení separátoru pro daný sloupec."""
-        self.dragging_separator = column
-        self.drag_start_x = event.x
-        event.widget.config(cursor='sb_h_double_arrow')
-
-    def _on_separator_drag(self, event):
-        """Táhne separátor a upravuje šířku sloupce."""
-        if not self.dragging_separator:
-            return
-
-        canvas = event.widget
-        delta_x = event.x - self.drag_start_x
-
-        if self.dragging_separator == 'graph':
-            # Speciální zpracování pro grafický sloupec
-            current_width = self._calculate_graph_column_width()
-            new_width = max(100, current_width + delta_x)  # minimální šířka 100px pro grafický sloupec
-
-            # Uložit novou šířku grafického sloupce
-            self.graph_column_width = new_width
-        else:
-            # Standardní zpracování pro textové sloupce
-            current_width = self.column_widths[self.dragging_separator]
-            new_width = max(50, current_width + delta_x)  # minimální šířka 50px
-
-            self.user_column_widths[self.dragging_separator] = new_width
-            self.column_widths[self.dragging_separator] = new_width
-
-        self.drag_start_x = event.x
-
-        # Throttlované překreslování - maximálně každých 16ms (60 FPS)
-        if not self.drag_redraw_scheduled:
-            self.drag_redraw_scheduled = True
-            canvas.after(16, lambda: self._throttled_redraw(canvas))
-
-    def _throttled_redraw(self, canvas: tk.Canvas):
-        """Throttlované překreslení během drag operace."""
-        self.drag_redraw_scheduled = False
-        if self.dragging_separator:  # Pouze pokud stále táhneme
+        Args:
+            canvas: Canvas to bind events to
+            on_resize_callback: Callback called after resize
+        """
+        # Set callback for redrawing after resize
+        def resize_callback():
             self._redraw_with_new_widths(canvas)
+            if on_resize_callback:
+                on_resize_callback()
 
-    def _on_separator_release(self, event):
-        """Ukončí tažení separátoru."""
-        self.dragging_separator = None
-        event.widget.config(cursor='')
-
-        # Finální překreslení po uvolnění (pokud čeká throttlovaný redraw, zrušit ho a provést ihned)
-        self.drag_redraw_scheduled = False
-        self._redraw_with_new_widths(event.widget)
-
+        self.column_manager.setup_resize_events(resize_callback)
 
     def _redraw_with_new_widths(self, canvas: tk.Canvas):
-        """Překreslí graf s novými šířkami sloupců."""
-        # Smazat texty commitů, tagy, separátory a popisky
+        """Redraws graph with new column widths.
+
+        Args:
+            canvas: Canvas to redraw on
+        """
+        # Delete commit texts, tags, separators and labels
         canvas.delete("commit_text")
         canvas.delete("tag_emoji")
         canvas.delete("tag_label")
@@ -1843,47 +340,46 @@ class GraphDrawer:
         canvas.delete("column_separator")
         canvas.delete("column_header")
 
-        # Najít commity z canvasu (pokud jsou tam uložené jako data)
+        # Find commits from canvas (if stored there as data)
         if hasattr(self, '_current_commits') and self._current_commits:
-            # Přepočítat description texty podle nové šířky message sloupce
-            self._recalculate_descriptions_for_width(canvas, self._current_commits)
-            self._draw_commits(canvas, self._current_commits)
-            self._draw_tags(canvas, self._current_commits)
-
-        # Překreslit separátory
-        self._draw_column_separators(canvas)
-
-        # Zavolat callback pro aktualizaci scrollregion a scrollbarů
-        if self.on_resize_callback:
-            self.on_resize_callback()
-
-    def _recalculate_descriptions_for_width(self, canvas: tk.Canvas, commits):
-        """Přepočítá description texty podle aktuální šířky message sloupce."""
-        font = ('Arial', self.font_size)
-
-        for commit in commits:
-            if not commit.description:
-                commit.description_short = ""
-                continue
-
-            # Aplikovat původní logiku zkracování podle DPI škálování
-            commit.description_short = self._truncate_description_for_dpi(
-                commit.description, self.max_description_length
+            # Recalculate description texts according to new message column width
+            self.text_formatter.recalculate_descriptions_for_width(
+                canvas, self._current_commits, self.column_widths
             )
 
-            # Pokud je description prázdný, pokračovat
-            if not commit.description_short:
-                continue
+            # Get table start position
+            table_start_x = self._get_table_start_position()
 
-            # Vypočítat dostupný prostor pro description v message sloupci
-            message_width = canvas.tk.call("font", "measure", font, commit.message)
-            available_space = self.column_widths['message'] - message_width - 40  # 40px mezery
+            # Redraw commits and tags
+            self.commit_drawer.draw_commits(
+                self._current_commits,
+                self.column_widths,
+                self.tooltip_manager.show_tooltip,
+                self.tooltip_manager.hide_tooltip,
+                self.text_formatter.truncate_text_to_width,
+                table_start_x,
+                self._make_color_pale,
+                self.branch_flag_drawer,
+                self.branch_flag_drawer.draw_flag_connection
+            )
 
-            # Zkrátit description aby se vešel do dostupného prostoru
-            if available_space > 0:
-                commit.description_short = self._truncate_text_to_width(
-                    canvas, font, commit.description_short, available_space
-                )
-            else:
-                # Pokud není místo, skrýt description
-                commit.description_short = ""
+            self.tag_drawer.draw_tags(
+                self._current_commits,
+                table_start_x,
+                self.tooltip_manager.show_tooltip,
+                self.tooltip_manager.hide_tooltip
+            )
+
+        # Redraw separators
+        table_start_x = self._get_table_start_position()
+        self.column_manager.setup_column_separators(self.column_widths, table_start_x)
+
+    def move_separators_to_scroll_position(self, canvas: tk.Canvas, new_y: float):
+        """Moves existing separators to new Y position when scrolling.
+
+        Args:
+            canvas: Canvas
+            new_y: New Y position
+        """
+        if self.column_manager:
+            self.column_manager.move_separators_to_scroll_position(new_y)

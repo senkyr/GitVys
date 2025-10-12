@@ -1,3 +1,11 @@
+"""Color utilities for visualization components."""
+
+import colorsys
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
 def hsl_to_hex(h: float, s: float, l: float) -> str:
     """Převede HSL hodnoty na hex barvu."""
     import colorsys
@@ -125,3 +133,78 @@ def normalize_branch_name(branch_name: str) -> str:
     if branch_name.startswith('origin/'):
         return branch_name[7:]  # Odstranit "origin/"
     return branch_name
+
+
+def make_color_pale(color: str, blend_type: str = "remote") -> str:
+    """Creates paler version of color using HSL manipulation.
+
+    Args:
+        color: Color to make pale (hex format like '#FF0000' or named color)
+        blend_type: Type of blending - "remote" for mild fading, "merge" for strong fading
+
+    Returns:
+        Paler version of color in hex format
+
+    Examples:
+        >>> make_color_pale('#FF0000', 'remote')
+        '#ffb3b3'
+        >>> make_color_pale('#0000FF', 'merge')
+        '#b3b3ff'
+    """
+    if not color or color == 'unknown':
+        return '#E0E0E0'
+
+    if color.startswith('#'):
+        try:
+            # Convert hex to RGB
+            hex_color = color.lstrip('#')
+            if len(hex_color) == 6:
+                r = int(hex_color[0:2], 16) / 255.0
+                g = int(hex_color[2:4], 16) / 255.0
+                b = int(hex_color[4:6], 16) / 255.0
+
+                # Convert RGB to HSL
+                h, l, s = colorsys.rgb_to_hls(r, g, b)
+
+                # Apply fading according to type
+                if blend_type == "remote":
+                    # Remote: milder fading to preserve distinguishability
+                    s = s * 0.8  # Reduce saturation to 80% of original (65% from 80%)
+                    l = min(0.9, l + 0.15)  # Increase lightness by 15% (approx 65%)
+                elif blend_type == "merge":
+                    # Merge: strong fading - least saturated of all
+                    s = s * 0.6  # Reduce saturation to 60% of original (less than remote)
+                    l = min(0.85, l + 0.20)  # Significantly increase lightness by 20%
+                else:
+                    # Fallback to remote behavior
+                    s = s * 0.8
+                    l = min(0.9, l + 0.15)
+
+                # Convert back to RGB
+                r, g, b = colorsys.hls_to_rgb(h, l, s)
+
+                # Convert to hex
+                r = int(r * 255)
+                g = int(g * 255)
+                b = int(b * 255)
+
+                return f'#{r:02x}{g:02x}{b:02x}'
+        except Exception as e:
+            logger.warning(f"Failed to make color {color} pale: {e}")
+            pass
+
+    # For named colors - simple mappings
+    color_map = {
+        'red': '#FFB3B3',
+        'blue': '#B3B3FF',
+        'green': '#B3FFB3',
+        'orange': '#FFE0B3',
+        'purple': '#E0B3FF',
+        'brown': '#D9C6B3',
+        'pink': '#FFB3E0',
+        'gray': '#D9D9D9',
+        'cyan': '#B3FFFF',
+        'yellow': '#FFFFE0'
+    }
+
+    return color_map.get(color.lower(), '#E0E0E0')
