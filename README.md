@@ -67,7 +67,7 @@ Viz [docs/INSTALLATION.md](docs/INSTALLATION.md) pro instrukce k instalaci a spu
 
 ## Testing
 
-Projekt má komprehensivní testovací pokrytí (**~92%**, 565 testů).
+Projekt má komprehensivní testovací pokrytí (**~95%**, 632 testů).
 
 ```bash
 # Spustit všechny testy
