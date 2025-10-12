@@ -683,44 +683,44 @@ class GitRepository:
 
 ### Implementační checklist - Fáze 2
 
-- [ ] **Krok 1: Příprava**
-  - [ ] Vytvořit `src/repo/parsers/__init__.py`
-  - [ ] Vytvořit `src/repo/analyzers/__init__.py`
-  - [ ] Commit: "Prepare directory structure for repository refactoring"
+- [x] **Krok 1: Příprava**
+  - [x] Vytvořit `src/repo/parsers/__init__.py`
+  - [x] Vytvořit `src/repo/analyzers/__init__.py`
+  - [x] Commit: "Prepare directory structure for repository refactoring"
 
-- [ ] **Krok 2: CommitParser**
-  - [ ] Vytvořit `src/repo/parsers/commit_parser.py`
-  - [ ] Přesunout parsing metody
-  - [ ] Aktualizovat `repository.py`
-  - [ ] Otestovat parsing commitů
-  - [ ] Commit: "Extract CommitParser from GitRepository"
+- [x] **Krok 2: CommitParser**
+  - [x] Vytvořit `src/repo/parsers/commit_parser.py`
+  - [x] Přesunout parsing metody
+  - [x] Aktualizovat `repository.py`
+  - [x] Otestovat parsing commitů
+  - [x] Commit: "Extract CommitParser from GitRepository"
 
-- [ ] **Krok 3: BranchAnalyzer**
-  - [ ] Vytvořit `src/repo/parsers/branch_analyzer.py`
-  - [ ] Přesunout branch analysis metody
-  - [ ] Aktualizovat `repository.py`
-  - [ ] Otestovat branch detection
-  - [ ] Commit: "Extract BranchAnalyzer from GitRepository"
+- [x] **Krok 3: BranchAnalyzer**
+  - [x] Vytvořit `src/repo/parsers/branch_analyzer.py`
+  - [x] Přesunout branch analysis metody
+  - [x] Aktualizovat `repository.py`
+  - [x] Otestovat branch detection
+  - [x] Commit: "Extract BranchAnalyzer from GitRepository"
 
-- [ ] **Krok 4: TagParser**
-  - [ ] Vytvořit `src/repo/parsers/tag_parser.py`
-  - [ ] Přesunout tag parsing metody
-  - [ ] Aktualizovat `repository.py`
-  - [ ] Otestovat tag parsing
-  - [ ] Commit: "Extract TagParser from GitRepository"
+- [x] **Krok 4: TagParser**
+  - [x] Vytvořit `src/repo/parsers/tag_parser.py`
+  - [x] Přesunout tag parsing metody
+  - [x] Aktualizovat `repository.py`
+  - [x] Otestovat tag parsing
+  - [x] Commit: "Extract TagParser from GitRepository"
 
-- [ ] **Krok 5: MergeDetector**
-  - [ ] Vytvořit `src/repo/analyzers/merge_detector.py`
-  - [ ] Přesunout merge detection metody
-  - [ ] Aktualizovat `repository.py`
-  - [ ] Otestovat merge detection
-  - [ ] Commit: "Extract MergeDetector from GitRepository"
+- [x] **Krok 5: MergeDetector**
+  - [x] Vytvořit `src/repo/analyzers/merge_detector.py`
+  - [x] Přesunout merge detection metody
+  - [x] Aktualizovat `repository.py`
+  - [x] Otestovat merge detection
+  - [x] Commit: "Extract MergeDetector from GitRepository"
 
-- [ ] **Krok 6: Finalizace**
-  - [ ] Aktualizovat `repository.py` jako facade
-  - [ ] Zkontrolovat všechny importy
-  - [ ] Spustit aplikaci a otestovat loading repozitářů
-  - [ ] Commit: "Finalize GitRepository refactoring - now facade only"
+- [x] **Krok 6: Finalizace**
+  - [x] Aktualizovat `repository.py` jako facade
+  - [x] Zkontrolovat všechny importy
+  - [x] Spustit aplikaci a otestovat loading repozitářů
+  - [x] Commit: "Finalize GitRepository refactoring - now facade only"
 
 - [ ] **Krok 7: Dokumentace**
   - [ ] Aktualizovat dokumentaci
