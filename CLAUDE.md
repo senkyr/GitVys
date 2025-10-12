@@ -68,8 +68,14 @@ GitVys/
 │   │   ├── graph_canvas.py # Canvas component for rendering commit graph
 │   │   ├── drag_drop.py   # Drag & drop operations for repository folders
 │   │   └── auth_dialog.py # OAuth authorization dialog
-│   ├── repo/              # Git operations
-│   │   └── repository.py  # GitRepository class (uses GitPython)
+│   ├── repo/              # Git operations (refactored v1.5.0)
+│   │   ├── repository.py  # GitRepository facade (281 lines)
+│   │   ├── parsers/       # Parsing components
+│   │   │   ├── commit_parser.py    # Parses commits from Git repo
+│   │   │   ├── branch_analyzer.py  # Analyzes branches and divergence
+│   │   │   └── tag_parser.py       # Parses Git tags
+│   │   └── analyzers/     # Analysis components
+│   │       └── merge_detector.py   # Detects and styles merge branches
 │   ├── visualization/     # Graph rendering logic (refactored v1.5.0)
 │   │   ├── graph_drawer.py # Main orchestrator (385 lines)
 │   │   ├── layout.py      # Calculates positioning for commits/branches
@@ -104,7 +110,7 @@ GitVys/
 - **Main Entry Point**: `src/main.py` - Simple launcher that initializes the GUI and checks Git availability
 - **Auth Layer**: `src/auth/` directory contains GitHub OAuth authentication (Device Flow)
 - **GUI Layer**: `src/gui/` directory contains all UI components including OAuth dialog
-- **Git Operations**: `src/repo/repository.py` - GitRepository class handles all Git operations using GitPython
+- **Git Operations**: `src/repo/` directory contains Git repository operations (refactored into 5 specialized components in v1.5.0)
 - **Visualization**: `src/visualization/` directory contains graph rendering logic (refactored into 8 specialized components in v1.5.0)
 - **Data Structures**: `src/utils/data_structures.py` - Defines Commit and Branch data classes
 - **Utilities**: `src/utils/` directory contains helper modules (logging, constants)
@@ -236,6 +242,7 @@ The application supports Czech and English languages:
 ### Motivation
 
 The original `graph_drawer.py` had **1889 lines** with multiple responsibilities, causing issues:
+
 - Quickly filled context window when working with AI assistants
 - Difficult maintenance and testing
 - Unclear interfaces between components
@@ -280,6 +287,73 @@ The monolithic file was split into **8 specialized components**:
 3. **Clear responsibilities** - each file has 1-2 well-defined tasks
 4. **Easier maintenance** - changes in one area don't affect others
 5. **Parallel development** - multiple developers can work simultaneously
+
+## Repository Architecture Refactoring (v1.5.0)
+
+### Motivation
+
+The original `repository.py` had **1090 lines** with multiple responsibilities:
+
+- Commit parsing from Git
+- Branch analysis and divergence detection
+- Tag parsing (local and remote)
+- Merge branch detection and styling
+- Uncommitted changes handling
+
+This made it difficult to understand, maintain, and test individual features.
+
+### Solution: Facade Pattern with Specialized Components
+
+The monolithic file was split into **5 specialized components**:
+
+#### Parsing Components (`repo/parsers/`)
+
+1. **CommitParser** (350 lines) - Parses commits from Git repository
+   - Handles local and remote commit parsing
+   - Manages message/name/description truncation
+   - Formats dates (relative, short, full)
+
+2. **BranchAnalyzer** (279 lines) - Analyzes branches and their relationships
+   - Builds commit-to-branch mappings
+   - Detects branch divergence (local vs remote)
+   - Determines branch availability (local_only/remote_only/both)
+
+3. **TagParser** (107 lines) - Parses Git tags
+   - Handles local and remote tags
+   - Builds commit-to-tags mappings
+   - Supports annotated tags with messages
+
+#### Analysis Components (`repo/analyzers/`)
+
+4. **MergeDetector** (355 lines) - Detects and analyzes merge branches
+   - Identifies merge commits (2+ parents)
+   - Traces merge branch commits
+   - Extracts branch names from merge messages
+   - Applies paler colors to merge commits (HSL manipulation)
+
+#### Facade
+
+5. **GitRepository** (281 lines) - Coordinates all components
+   - Delegates to specialized parsers and analyzers
+   - Manages uncommitted changes (WIP commits)
+   - Provides unified API for repository operations
+
+### Results
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Largest file | 1090 lines | 355 lines | **-67%** |
+| Main facade | 1090 lines | 281 lines | **-74%** |
+| Average size | 1090 lines | 274 lines | **-75%** |
+| Context window | 47.8 KB | ~12-16 KB | **-70-75%** |
+
+### Benefits
+
+1. **Modular architecture** - each component has a single, clear responsibility
+2. **Easier testing** - components can be tested in isolation
+3. **Better maintainability** - changes to parsing don't affect analysis
+4. **Cleaner code** - GitRepository is now a simple facade
+5. **Faster development** - work on specific features without loading entire file
 
 ## Theme Management (v1.5.0)
 

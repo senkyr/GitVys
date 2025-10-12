@@ -52,8 +52,16 @@ git-visualizer/
 │   │   ├── graph_canvas.py  # Canvas pro graf s scrollbary
 │   │   ├── drag_drop.py     # Drag & drop pro složky i URL
 │   │   └── auth_dialog.py   # Dialog pro OAuth autorizaci
-│   ├── repo/
-│   │   └── repository.py    # Git operace pomocí GitPython
+│   ├── repo/                # Git operace (refaktorováno v1.5.0)
+│   │   ├── repository.py    # GitRepository facade (281 řádků)
+│   │   ├── parsers/         # Parsing komponenty
+│   │   │   ├── __init__.py
+│   │   │   ├── commit_parser.py    # Parsing commitů
+│   │   │   ├── branch_analyzer.py  # Analýza větví
+│   │   │   └── tag_parser.py       # Parsing tagů
+│   │   └── analyzers/       # Analysis komponenty
+│   │       ├── __init__.py
+│   │       └── merge_detector.py   # Detekce merge větví
 │   ├── visualization/       # Vizualizace grafu (refaktorováno v1.5.0)
 │   │   ├── graph_drawer.py  # Hlavní orchestrátor (385 řádků)
 │   │   ├── layout.py        # Layout s lane recycling
@@ -405,6 +413,7 @@ except Exception as e:
 ### Motivace
 
 Původní `graph_drawer.py` měl **1889 řádků** s mnoha odpovědnostmi, což způsobovalo problémy:
+
 - Rychle zaplněné kontextové okno při práci s AI asistenty
 - Obtížná údržba a testování
 - Nejasné rozhraní mezi komponentami
@@ -483,7 +492,79 @@ Rozdělení monolitického souboru na **8 specializovaných komponent**:
 4. **Snadnější údržba** - změny v jedné oblasti neovlivní ostatní
 5. **Paralelní vývoj** - více vývojářů může pracovat současně
 
-## 7.7. Theme Management (v1.5.0)
+## 7.7. Repository Architecture Refactoring (v1.5.0)
+
+### Motivace
+
+Původní `repository.py` měl **1090 řádků** s mnoha odpovědnostmi:
+
+- Parsing commitů z Git
+- Analýza větví a divergence
+- Parsing tagů (local a remote)
+- Detekce merge větví a styling
+- Správa uncommitted změn
+
+To způsobovalo obtížné porozumění, údržbu a testování jednotlivých funkcí.
+
+### Řešení: Facade Pattern se specializovanými komponentami
+
+Rozdělení monolitického souboru na **5 specializovaných komponent**:
+
+#### Parsing komponenty (`repo/parsers/`)
+
+1. **CommitParser** (350 řádků)
+   - Parsing commitů z Git repozitáře
+   - Handling local a remote commit parsing
+   - Truncation zpráv/jmen/popisů
+   - Formátování dat (relativní, zkrácené, plné)
+
+2. **BranchAnalyzer** (279 řádků)
+   - Analýza větví a jejich vztahů
+   - Vytváření commit-to-branch map
+   - Detekce divergence větví (local vs remote)
+   - Určení dostupnosti větve (local_only/remote_only/both)
+
+3. **TagParser** (107 řádků)
+   - Parsing Git tagů
+   - Handling local a remote tags
+   - Vytváření commit-to-tags map
+   - Podpora anotovaných tagů se zprávami
+
+#### Analysis komponenty (`repo/analyzers/`)
+
+4. **MergeDetector** (355 řádků)
+   - Detekce a analýza merge větví
+   - Identifikace merge commitů (2+ rodiče)
+   - Trasování commitů v merge větvi
+   - Extrakce názvů větví z merge zpráv
+   - Aplikace světlejších barev na merge commity (HSL manipulace)
+
+#### Facade
+
+5. **GitRepository** (281 řádků)
+   - Koordinace všech komponent
+   - Delegace na specializované parsery a analyzéry
+   - Správa uncommitted změn (WIP commits)
+   - Jednotné API pro operace s repozitářem
+
+### Výsledky refaktoringu
+
+| Metrika | Před | Po | Zlepšení |
+|---------|------|-----|----------|
+| Největší soubor | 1090 ř. | 355 ř. | **-67%** |
+| Hlavní facade | 1090 ř. | 281 ř. | **-74%** |
+| Průměrná velikost | 1090 ř. | 274 ř. | **-75%** |
+| Kontextové okno | 47.8 KB | ~12-16 KB | **-70-75%** |
+
+### Benefity
+
+1. **Modulární architektura** - každá komponenta má jednu jasnou odpovědnost
+2. **Snadnější testování** - komponenty lze testovat izolovaně
+3. **Lepší údržba** - změny v parsingu neovlivní analýzu
+4. **Čistší kód** - GitRepository je nyní jednoduchý facade
+5. **Rychlejší vývoj** - práce na konkrétních funkcích bez načítání celého souboru
+
+## 7.8. Theme Management (v1.5.0)
 
 ### Theme systém
 

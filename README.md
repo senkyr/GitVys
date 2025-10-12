@@ -89,8 +89,14 @@ git-visualizer/
 │   │   ├── graph_canvas.py  # Graf komponenta
 │   │   ├── drag_drop.py     # Drag & drop funkcionalita
 │   │   └── auth_dialog.py   # OAuth autorizační dialog
-│   ├── repo/            # Git operace
-│   │   └── repository.py    # Práce s Git repozitářem
+│   ├── repo/            # Git operace (refaktorováno v1.5.0)
+│   │   ├── repository.py    # GitRepository facade (281 ř.)
+│   │   ├── parsers/         # Parsing komponenty
+│   │   │   ├── commit_parser.py    # Parsing commitů
+│   │   │   ├── branch_analyzer.py  # Analýza větví
+│   │   │   └── tag_parser.py       # Parsing tagů
+│   │   └── analyzers/       # Analysis komponenty
+│   │       └── merge_detector.py   # Detekce merge větví
 │   ├── visualization/   # Vizualizace (refaktorováno v1.5.0)
 │   │   ├── graph_drawer.py  # Hlavní orchestrátor (385 ř.)
 │   │   ├── layout.py        # Rozmístění uzlů
