@@ -36,12 +36,14 @@ Projekt měří pokrytí testů třemi způsoby. Pokud spustíte `pytest --cov=s
 **Co měří**: `pytest --cov=src --cov-report=term`
 
 **Zahrnuje**: Všechny soubory v `src/` včetně:
+
 - TCL/TK initialization kód (OS-specific paths)
 - Error handling pro runtime exceptions (nelze simulovat)
 - `__init__.py` soubory (prázdné import moduly)
 - `constants.py` (pouze definice hodnot)
 
 **Proč je nižší**: Některé kódové cesty **fyzicky nelze testovat**:
+
 - TCL/TK OS-specific errors (Windows vs Linux paths)
 - Python interpreter internals
 - Konstanty (nejsou spustitelný kód)
@@ -55,6 +57,7 @@ Projekt měří pokrytí testů třemi způsoby. Pokud spustíte `pytest --cov=s
 **Co měří**: Pokrytí **testovatelné** aplikační logiky
 
 **Zahrnuje** (user-facing funkce):
+
 - ✅ **GUI komponenty** (main_window, theme_switcher, language_switcher, stats_display)
 - ✅ **Repository operations** (cloning, parsing commits, Git operations, OAuth)
 - ✅ **Visualization** (graph drawing, layout calculation, rendering)
@@ -62,6 +65,7 @@ Projekt měří pokrytí testů třemi způsoby. Pokud spustíte `pytest --cov=s
 - ✅ **Utils** (translations, theme management, data structures)
 
 **Vylučuje** (netestovatelné):
+
 - ❌ TCL/TK OS error paths
 - ❌ Init files a constants
 
@@ -103,6 +107,7 @@ Každý modul má specifické pokrytí:
 Pro hodnocení produkční kvality použijte **~95-98% core logic** metriku, která odráží pokrytí user-facing funkcí.
 
 **Příklad výstupu**:
+
 ```bash
 $ pytest --cov=src --cov-report=term
 ...
@@ -1067,12 +1072,14 @@ drawer.draw_graph(canvas, positioned_commits)
 **Refaktorované soubory (8 celkem)**:
 
 **Fáze 1-2** (dokončeno dříve):
+
 - test_drag_drop_frame.py: 15 → 1 test (-14 funkcí)
 - test_theme_manager.py: 7 → 3 testy (-4 funkce)
 - test_colors.py: 17 → 4 testy (-13 funkcí)
 - test_translation_manager.py: 5 → 2 testy (-3 funkce)
 
 **Fáze 3** (nově dokončeno):
+
 - test_github_auth.py: 10 → 2 testy (-8 funkcí, OAuth error handling)
 - test_token_storage.py: 23 → 20 testů (-3 funkce, load/exists scenarios)
 - test_branch_flag_drawer.py: 32 → 25 testů (-7 funkcí, truncation + overflow + width)
@@ -1127,7 +1134,7 @@ def test_truncate_scenarios(name, max_length, expected, description): ...
 
 - ✅ main.py (14 testů) - Entry point, Git detection, startup flow
 - ✅ logging_config.py (13 testů) - OS-specific paths, logger setup
-- ✅ data_structures.py (12 testů) - Dataclass validation, __post_init__ defaults
+- ✅ data_structures.py (12 testů) - Dataclass validation, **post_init** defaults
 
 **Testovací pokrytí všech úrovní**:
 

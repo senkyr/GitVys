@@ -97,20 +97,21 @@ class TestSetupLogging:
         assert mock_handler in logger.handlers
 
     @patch('utils.logging_config.get_log_file_path')
-    @patch('logging.StreamHandler')
-    def test_setup_logging_creates_console_handler(self, mock_stream_handler, mock_get_path):
+    def test_setup_logging_creates_console_handler(self, mock_get_path):
         """Test that setup_logging creates a StreamHandler for stderr."""
         # Arrange
         mock_get_path.return_value = Path('/tmp/test.log')
-        mock_handler = MagicMock()
-        mock_stream_handler.return_value = mock_handler
 
         # Act
         logger = setup_logging()
 
         # Assert
-        mock_stream_handler.assert_called_once_with(sys.stderr)
-        assert mock_handler in logger.handlers
+        # Find console handler (StreamHandler but NOT FileHandler, since FileHandler extends StreamHandler)
+        console_handlers = [h for h in logger.handlers
+                           if isinstance(h, logging.StreamHandler)
+                           and not isinstance(h, logging.FileHandler)]
+        assert len(console_handlers) == 1, "Should have exactly one console StreamHandler"
+        assert console_handlers[0].stream == sys.stderr, "Console handler should write to stderr"
 
     @patch('logging.FileHandler')
     def test_setup_logging_custom_log_file(self, mock_file_handler):
@@ -190,9 +191,11 @@ class TestSetupLogging:
         logger = setup_logging()
 
         # Assert
-        # Find console handler (StreamHandler)
-        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
-        assert len(console_handlers) > 0
+        # Find console handler (StreamHandler but NOT FileHandler, since FileHandler extends StreamHandler)
+        console_handlers = [h for h in logger.handlers
+                           if isinstance(h, logging.StreamHandler)
+                           and not isinstance(h, logging.FileHandler)]
+        assert len(console_handlers) > 0, "Should have at least one console StreamHandler"
         # Console handler should be ERROR level (not same as logger level)
         assert console_handlers[0].level == logging.ERROR
 
