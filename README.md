@@ -42,18 +42,21 @@ Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená předev�
 ## Funkce
 
 - **Drag & drop rozhraní** - jednoduše přetáhni složku repozitáře nebo URL
-- **URL support** - otevření remote repozitářů (GitHub, GitLab, Bitbucket)
-- **Světlý/tmavý režim** - přepínání témat pro pohodlné používání
-- **Vizualizace podobná GitKrakenu** - přehledný graf větví a commitů
-- **Tag podpora** - zobrazení Git tagů s emoji ikonami
+- **URL support** - klonování remote repozitářů (GitHub, GitLab, Bitbucket a další povolené hosty) do dočasné složky s automatickým úklidem
+- **Soukromé GitHub repozitáře** - přihlášení přes GitHub OAuth Device Flow, token se ukládá do `~/.gitvys/`
+- **Dvojjazyčné UI (CS/EN)** - přepínání jazyka přepínačem s vlajkami, volba se ukládá do `~/.gitvys/settings.json`
+- **Světlý/tmavý režim** - přepínání témat (☀️/🌙), volba se ukládá do nastavení
+- **Vizualizace podobná GitKrakenu** - přehledný graf větví a commitů s Bézierovými spojnicemi
+- **Detekce merge větví** - merge commity se kreslí samostatnými, světlejšími větvemi
+- **Tag podpora** - zobrazení Git tagů s emoji ikonami a tooltipy u anotovaných tagů
 - **Remote větve** - načítání remote větví tlačítkem
-- **Interaktivní sloupce** - změna šířky sloupců táhnutím
+- **Interaktivní sloupce** - změna šířky sloupců táhnutím, plovoucí hlavičky při scrollování
 - **Tooltips** - detailní informace při najetí myší
 - **Smooth scrolling** - plynulé scrollování s momentem
-- **Scrollovatelné zobrazení** - procházej historii repozitáře
 - **Barevné rozlišení větví** - každá větev má svou barvu
+- **Detekce Gitu při startu** - upozornění, pokud Git není nainstalovaný
 - **Refresh (F5)** - obnovení repozitáře
-- **Jednoduché spuštění** - samostatný .exe soubor
+- **Jednoduché spuštění** - samostatný .exe soubor (Python zabalený uvnitř)
 
 ## Screenshot
 
@@ -149,6 +152,8 @@ git-visualizer/
 ## Technologie
 
 - **Python 3.8+** - hlavní jazyk
-- **tkinter** - GUI framework
+- **tkinter** - GUI framework (graf se kreslí na tkinter Canvas)
 - **GitPython** - práce s Git repozitáři
-- **Pillow** - vykreslování grafu
+- **Pillow** - práce s obrázky (ikony, vlajky)
+- **tkinterdnd2** - drag & drop funkcionalita
+- **requests** - HTTP komunikace s GitHub API (OAuth)
