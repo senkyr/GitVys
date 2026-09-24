@@ -1,7 +1,9 @@
 """MergeDetector - handles detection and analysis of merge branches."""
 
-import re
 import colorsys
+import heapq
+import re
+from itertools import count
 from typing import List, Dict, Set, Optional
 from git import Repo
 from utils.data_structures import Commit, MergeBranch
@@ -12,13 +14,27 @@ logger = get_logger(__name__)
 
 
 class MergeDetector:
-    """Handles detection and analysis of merge branches."""
+    """Handles detection and analysis of merge branches.
+
+    Vše se počítá v paměti nad už načtenými commity (graf rodičů + data).
+    Dřív se pro každý merge commit spouštěl `git merge-base` a pro každý znovu
+    procházela first-parent linie všech větví přes GitPython, takže repozitář
+    se stovkami mergů se načítal desítky sekund.
+    """
+
+    # Formáty zpráv merge commitů, ze kterých jde vyčíst jméno slučované větve
+    MERGE_MESSAGE_PATTERNS = [
+        r"Merge branch ['\"]([^'\"]+)['\"]",                        # Git standard (i "... into X")
+        r"Merge pull request #\d+ from [^/]+/(\S+)",                 # GitHub
+        r"Merged in ([^\s(]+)",                                      # Bitbucket
+        r"Merge remote-tracking branch ['\"]origin/([^'\"]+)['\"]",  # Remote merge
+    ]
 
     def __init__(self, repo: Repo, commits: List[Commit]):
         """Initialize MergeDetector.
 
         Args:
-            repo: GitPython Repo object
+            repo: GitPython Repo object (používá se jen pro seznam lokálních větví)
             commits: List of all commits
         """
         self.repo = repo
@@ -37,90 +53,116 @@ class MergeDetector:
         commit_map = {commit.hash: commit for commit in self.commits}
 
         # Create used_colors set from existing commits
-        used_colors = set()
-        for commit in self.commits:
-            if commit.branch_color:
-                used_colors.add(commit.branch_color)
+        used_colors = {commit.branch_color for commit in self.commits if commit.branch_color}
 
-        # Extended commit map for full hashes
-        full_hash_map = self.build_full_hash_map()
+        # First-parent linie všech větví (jednou, ne pro každý merge zvlášť)
+        commits_in_branches_with_head = self.get_commits_in_branches_with_head(commit_map)
 
-        # Find merge commits (more than 1 parent)
-        merge_commits = [commit for commit in self.commits if len(commit.parents) >= 2]
-
-        for merge_commit in merge_commits:
+        for merge_commit in self.commits:
+            if len(merge_commit.parents) < 2:
+                continue
             try:
-                if len(merge_commit.parents) < 2:
-                    continue
-
                 # First parent = main branch, second parent = merged branch
                 main_parent_hash = merge_commit.parents[0]
                 merge_parent_hash = merge_commit.parents[1]
 
-                # Find branch point (common ancestor) using GitPython
-                if self.repo and merge_parent_hash in full_hash_map and main_parent_hash in full_hash_map:
-                    try:
-                        full_merge_parent = full_hash_map[merge_parent_hash]
-                        full_main_parent = full_hash_map[main_parent_hash]
+                if merge_parent_hash not in commit_map or main_parent_hash not in commit_map:
+                    continue
 
-                        # Find merge base (common ancestor)
-                        merge_base = self.repo.merge_base(full_merge_parent, full_main_parent)
-                        if merge_base:
-                            branch_point_hash = merge_base[0].hexsha[:8]
+                # Find branch point (common ancestor)
+                branch_point_hash = self.find_merge_base(merge_parent_hash, main_parent_hash, commit_map)
+                if not branch_point_hash:
+                    continue
 
-                            # Trace commits in merge branch
-                            merge_branch_commits = self.trace_merge_branch_commits(
-                                merge_parent_hash, branch_point_hash, commit_map
-                            )
+                # Trace commits in merge branch and drop those on first-parent line of some branch
+                merge_branch_commits = [
+                    c for c in self.trace_merge_branch_commits(merge_parent_hash, branch_point_hash, commit_map)
+                    if c not in commits_in_branches_with_head
+                ]
+                if not merge_branch_commits:
+                    continue
 
-                            # If we found commits in merge branch
-                            if merge_branch_commits:
-                                # Get commits in main line of branches with HEAD
-                                commits_in_branches_with_head = self.get_commits_in_branches_with_head()
+                # Color from merged branch name in commit message; neutral light gray if unknown
+                branch_name = self.extract_branch_name_from_merge(merge_commit)
+                original_color = get_branch_color(branch_name, used_colors) if branch_name else '#999999'
 
-                                # Filter commits - remove those in path to HEAD
-                                filtered_commits = [c for c in merge_branch_commits
-                                                   if c not in commits_in_branches_with_head]
-
-                                # If no commits left after filtering, skip
-                                if not filtered_commits:
-                                    continue
-
-                                merge_branch_commits = filtered_commits
-
-                                # Create virtual branch name
-                                virtual_name = f"merge-{merge_commit.hash}"
-
-                                # Determine original color (from merged branch name in commit message)
-                                original_color = '#666666'  # Default fallback
-
-                                # Try to extract branch name from merge commit message
-                                branch_name = self.extract_branch_name_from_merge(merge_commit, full_hash_map)
-                                if branch_name:
-                                    original_color = get_branch_color(branch_name, used_colors)
-
-                                # Fallback: neutral gray if couldn't detect branch name
-                                if original_color == '#666666':
-                                    original_color = '#999999'  # Neutral light gray for unknown branches
-
-                                merge_branch = MergeBranch(
-                                    branch_point_hash=branch_point_hash,
-                                    merge_point_hash=merge_commit.hash,
-                                    commits_in_branch=merge_branch_commits,
-                                    virtual_branch_name=virtual_name,
-                                    original_color=original_color
-                                )
-
-                                merge_branches.append(merge_branch)
-                    except Exception as e:
-                        # If GitPython approach fails, skip this merge
-                        continue
-
+                merge_branches.append(MergeBranch(
+                    branch_point_hash=branch_point_hash,
+                    merge_point_hash=merge_commit.hash,
+                    commits_in_branch=merge_branch_commits,
+                    virtual_branch_name=f"merge-{merge_commit.hash}",
+                    original_color=original_color
+                ))
             except Exception as e:
-                # If processing this merge commit fails, continue
+                logger.debug(f"Failed to analyze merge commit {merge_commit.hash}: {e}")
                 continue
 
         return merge_branches
+
+    @staticmethod
+    def _timestamp(commit: Optional[Commit]) -> float:
+        try:
+            return commit.date.timestamp()
+        except Exception:
+            return 0.0
+
+    def find_merge_base(self, hash_a: str, hash_b: str, commit_map: Dict[str, Commit]) -> Optional[str]:
+        """Najde nejlepšího společného předka dvou commitů (jako `git merge-base`).
+
+        Algoritmus "paint down to common" z Gitu: z obou commitů se jde po
+        rodičích od nejnovějších, značí se dosažitelnost z A a z B; první commit
+        dosažitelný z obou je merge base. Jakmile ve frontě zbývají jen commity
+        pod nalezeným předkem, hledání končí - neprochází se celá historie.
+
+        Returns:
+            Hash společného předka nebo None (nesouvisející historie)
+        """
+        if hash_a == hash_b:
+            return hash_a
+        if hash_a not in commit_map or hash_b not in commit_map:
+            return None
+
+        FROM_A, FROM_B, STALE = 1, 2, 4
+        flags = {hash_a: FROM_A, hash_b: FROM_B}
+        order = count()
+        heap = []
+        nonstale_in_queue = 0
+
+        def push(commit_hash: str):
+            nonlocal nonstale_in_queue
+            stale = bool(flags[commit_hash] & STALE)
+            if not stale:
+                nonstale_in_queue += 1
+            timestamp = self._timestamp(commit_map.get(commit_hash))
+            heapq.heappush(heap, (-timestamp, next(order), commit_hash, stale))
+
+        push(hash_a)
+        push(hash_b)
+        result = None
+
+        while heap and nonstale_in_queue > 0:
+            _, _, commit_hash, pushed_stale = heapq.heappop(heap)
+            if not pushed_stale:
+                nonstale_in_queue -= 1
+
+            current = flags[commit_hash]
+            if current & (FROM_A | FROM_B) == (FROM_A | FROM_B) and not current & STALE:
+                if result is None:
+                    result = commit_hash
+                current |= STALE
+                flags[commit_hash] = current
+
+            commit = commit_map.get(commit_hash)
+            if not commit:
+                continue
+            for parent_hash in commit.parents:
+                parent_flags = flags.get(parent_hash, 0)
+                if parent_flags & current == current:
+                    continue
+                flags[parent_hash] = parent_flags | current
+                push(parent_hash)
+
+        return result
 
     def apply_merge_branch_styling(self, commits: List[Commit], merge_branches: List[MergeBranch]):
         """Apply styling to commits in merge branches - paler colors, virtual branch names.
@@ -140,78 +182,16 @@ class MergeDetector:
                 if commit_hash not in commit_to_merge_branch:
                     commit_to_merge_branch[commit_hash] = merge_branch
 
-        # Apply styling to commits in merge branches
-        styled_count = 0
         for commit in commits:
             # Don't recolor commit if already remapped to merge branch (first merge wins)
             if commit.hash in commit_to_merge_branch and not getattr(commit, 'is_merge_branch', False):
                 merge_branch = commit_to_merge_branch[commit.hash]
-
-                # Change branch to virtual name
-                old_branch = commit.branch
                 commit.branch = merge_branch.virtual_branch_name
-
-                # Apply paler color (similar to _make_color_pale in graph_drawer)
-                old_color = commit.branch_color
                 commit.branch_color = self.make_color_pale(merge_branch.original_color, blend_type="merge")
-
-                # Mark as merge branch commit (for potential future features)
                 commit.is_merge_branch = True
-                styled_count += 1
-
-    def build_full_hash_map(self) -> Dict[str, str]:
-        """Build map of short hashes to full hashes for GitPython.
-
-        Returns:
-            Dictionary mapping short hash to full hash
-        """
-        full_hash_map = {}
-        if self.repo:
-            try:
-                seen_commits = set()
-
-                # 1. First local branches
-                try:
-                    for head in self.repo.heads:
-                        try:
-                            for commit in self.repo.iter_commits(head):
-                                if commit.hexsha not in seen_commits:
-                                    seen_commits.add(commit.hexsha)
-                                    short_hash = commit.hexsha[:8]
-                                    full_hash_map[short_hash] = commit.hexsha
-                        except Exception as e:
-                            logger.warning(f"Failed to iterate commits for local branch {head.name}: {e}")
-                            continue
-                except Exception as e:
-                    logger.warning(f"Failed to access local branches: {e}")
-
-                # 2. Then remote branches (except /HEAD)
-                try:
-                    if hasattr(self.repo, 'remotes') and self.repo.remotes:
-                        remote_refs = list(self.repo.remote().refs)
-                        for remote_ref in remote_refs:
-                            # Skip HEAD reference
-                            if remote_ref.name.endswith('/HEAD'):
-                                continue
-
-                            try:
-                                for commit in self.repo.iter_commits(remote_ref):
-                                    if commit.hexsha not in seen_commits:
-                                        seen_commits.add(commit.hexsha)
-                                        short_hash = commit.hexsha[:8]
-                                        full_hash_map[short_hash] = commit.hexsha
-                            except Exception as e:
-                                logger.warning(f"Failed to iterate commits for remote ref {remote_ref.name}: {e}")
-                                continue
-                except Exception as e:
-                    logger.debug(f"Failed to access remote refs: {e}")
-
-            except Exception as e:
-                logger.warning(f"Failed to build full hash map: {e}")
-        return full_hash_map
 
     def trace_merge_branch_commits(self, merge_parent_hash: str, branch_point_hash: str,
-                                    commit_map: Dict[str, Commit]) -> List[str]:
+                                   commit_map: Dict[str, Commit]) -> List[str]:
         """Trace backwards commits in merge branch from merge parent to branch point.
 
         Args:
@@ -220,7 +200,7 @@ class MergeDetector:
             commit_map: Map of commit hash to Commit object
 
         Returns:
-            List of commit hashes in merge branch
+            List of commit hashes in merge branch (newest first)
         """
         merge_branch_commits = []
         current = merge_parent_hash
@@ -228,75 +208,64 @@ class MergeDetector:
 
         while current and current != branch_point_hash and current not in visited:
             visited.add(current)
-            if current in commit_map:
-                commit = commit_map[current]
-                merge_branch_commits.append(current)
-                # Continue to first parent (linear path)
-                if commit.parents:
-                    current = commit.parents[0]
-                else:
-                    break
-            else:
+            commit = commit_map.get(current)
+            if not commit:
                 break
+            merge_branch_commits.append(current)
+            # Continue to first parent (linear path)
+            current = commit.parents[0] if commit.parents else None
 
         return merge_branch_commits
 
-    def get_commits_in_branches_with_head(self) -> Set[str]:
-        """Get all commits in main line (first-parent path) of branches with HEAD.
+    def get_commits_in_branches_with_head(self, commit_map: Optional[Dict[str, Commit]] = None) -> Set[str]:
+        """Get all commits in main line (first-parent path) of local branches.
+
+        Args:
+            commit_map: Map hash -> Commit (default: built from self.commits)
 
         Returns:
-            Set of commit hashes in main line
+            Set of commit hashes on first-parent lines of local branch heads
         """
-        commits_in_branches_with_head = set()
-        if self.repo:
-            try:
-                for branch_head in self.repo.heads:
-                    try:
-                        commit = branch_head.commit
-                        while commit:
-                            commits_in_branches_with_head.add(commit.hexsha[:8])
-                            if commit.parents:
-                                commit = commit.parents[0]  # Only first parent
-                            else:
-                                break
-                    except Exception as e:
-                        logger.warning(f"Failed to traverse branch {branch_head.name}: {e}")
-                        continue
-            except Exception as e:
-                logger.warning(f"Failed to get branches with HEAD: {e}")
-        return commits_in_branches_with_head
+        if commit_map is None:
+            commit_map = {commit.hash: commit for commit in self.commits}
 
-    def extract_branch_name_from_merge(self, merge_commit: Commit, full_hash_map: Dict[str, str]) -> Optional[str]:
-        """Extract branch name from merge commit message.
+        result = set()
+        if not self.repo:
+            return result
+        try:
+            heads = list(self.repo.heads)
+        except Exception as e:
+            logger.warning(f"Failed to get branches with HEAD: {e}")
+            return result
+
+        for branch_head in heads:
+            try:
+                current = branch_head.commit.hexsha
+            except Exception as e:
+                logger.warning(f"Failed to resolve branch {getattr(branch_head, 'name', '?')}: {e}")
+                continue
+            # Větve sdílí historii: jakmile narazíme na už viděný commit, zbytek je taky viděný
+            while current and current not in result:
+                result.add(current)
+                commit = commit_map.get(current)
+                current = commit.parents[0] if commit and commit.parents else None
+        return result
+
+    def extract_branch_name_from_merge(self, merge_commit: Commit, full_hash_map: Dict[str, str] = None) -> Optional[str]:
+        """Extract branch name from merge commit message (first line).
 
         Args:
             merge_commit: Merge commit to extract from
-            full_hash_map: Map of short to full hashes
+            full_hash_map: Unused, kept for backward compatibility
 
         Returns:
             Extracted branch name or None
         """
-        try:
-            merge_commit_full_hash = full_hash_map.get(merge_commit.hash)
-            if merge_commit_full_hash and self.repo:
-                merge_commit_obj = self.repo.commit(merge_commit_full_hash)
-                merge_message = merge_commit_obj.message
-
-                # Various merge message formats
-                patterns = [
-                    r"Merge branch ['\"]([^'\"]+)['\"]",           # Git standard
-                    r"Merge branch ['\"]([^'\"]+)['\"] into",      # With target
-                    r"Merge pull request #\d+ from [^/]+/([^\s]+)", # GitHub
-                    r"Merged in ([^\s\(]+)",                       # Bitbucket
-                    r"Merge remote-tracking branch ['\"]origin/([^'\"]+)['\"]", # Remote merge
-                ]
-
-                for pattern in patterns:
-                    match = re.search(pattern, merge_message)
-                    if match:
-                        return match.group(1)
-        except Exception as e:
-            logger.debug(f"Failed to extract branch name from merge commit {merge_commit.hash}: {e}")
+        message = merge_commit.message or ""
+        for pattern in self.MERGE_MESSAGE_PATTERNS:
+            match = re.search(pattern, message)
+            if match:
+                return match.group(1)
         return None
 
     def make_color_pale(self, color: str, blend_type: str = "merge") -> str:
@@ -314,42 +283,27 @@ class MergeDetector:
 
         if color.startswith('#'):
             try:
-                # Convert hex to RGB
                 hex_color = color.lstrip('#')
                 if len(hex_color) == 6:
                     r = int(hex_color[0:2], 16) / 255.0
                     g = int(hex_color[2:4], 16) / 255.0
                     b = int(hex_color[4:6], 16) / 255.0
 
-                    # Convert RGB to HSL
                     h, l, s = colorsys.rgb_to_hls(r, g, b)
 
-                    # Apply fading according to type
                     if blend_type == "remote":
                         # Remote: milder fading to preserve distinguishability
-                        s = s * 0.8  # Reduce saturation to 80% of original
-                        l = min(0.9, l + 0.15)  # Increase lightness by 15%
-                    elif blend_type == "merge":
-                        # Merge: strong fading - least saturated of all
-                        s = s * 0.6  # Reduce saturation to 60% of original (less than remote)
-                        l = min(0.85, l + 0.20)  # Significantly increase lightness by 20%
+                        s = s * 0.8
+                        l = min(0.9, l + 0.15)
                     else:
-                        # Fallback to merge behavior
+                        # Merge (and fallback): strong fading - least saturated of all
                         s = s * 0.6
                         l = min(0.85, l + 0.20)
 
-                    # Convert back to RGB
                     r, g, b = colorsys.hls_to_rgb(h, l, s)
-
-                    # Convert to hex
-                    r = int(r * 255)
-                    g = int(g * 255)
-                    b = int(b * 255)
-
-                    return f'#{r:02x}{g:02x}{b:02x}'
+                    return f'#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}'
             except Exception as e:
                 logger.warning(f"Failed to convert color {color} to pale variant: {e}")
-                pass
 
         # Fallback to light gray
         return "#CCCCCC"

@@ -22,6 +22,63 @@ class CommitParser:
         """
         self.repo = repo
 
+    # Refy pro `git rev-list`: všechny lokální větve, případně i větve remote "origin".
+    LOCAL_REVS = ['--branches']
+    LOCAL_AND_REMOTE_REVS = ['--branches', '--remotes=origin']
+
+    def _iter_unique_commits(self, revs):
+        """Projde commity dosažitelné z `revs` jedním během `git rev-list`.
+
+        Dřív se historie procházela zvlášť pro každou větev (N větví = N-krát
+        celá historie přes GitPython objekty). Jeden rev-list přes všechny
+        větve vrátí každý commit právě jednou.
+        """
+        seen = set()
+        try:
+            for commit in self.repo.iter_commits(revs):
+                if commit.hexsha in seen:
+                    continue
+                seen.add(commit.hexsha)
+                yield commit
+        except Exception as e:
+            logger.warning(f"Failed to iterate commits for {revs}: {e}")
+
+    def _build_commit(self, commit, branch_name: str, branch_colors: Dict[str, str],
+                      used_colors: set, commit_to_tags: Dict[str, List[Tag]],
+                      branch_avail: str, **extra) -> Commit:
+        """Vytvoří datový Commit z GitPython commitu (hash a rodiče jako plné SHA-1)."""
+        if branch_name not in branch_colors:
+            branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
+
+        full_message = commit.message.strip()
+        message_lines = full_message.split('\n', 1)
+        subject = message_lines[0]
+        description = message_lines[1].strip() if len(message_lines) > 1 else ""
+
+        commit_obj = Commit(
+            # Plné hashe: zkrácené 8znakové kolidují u velkých repozitářů
+            # (~50 % pravděpodobnost kolize už kolem 77 000 commitů) a kolize
+            # by v mapách hash -> commit tiše pomíchala graf.
+            hash=commit.hexsha,
+            message=subject,
+            short_message=self.truncate_message(subject, MESSAGE_MAX_LENGTH),
+            author=commit.author.name,
+            author_short=self.truncate_name(commit.author.name),
+            author_email=commit.author.email,
+            date=commit.committed_datetime,
+            date_relative=self.get_relative_date(commit.committed_datetime),
+            date_short=self.get_full_date(commit.committed_datetime),
+            parents=[parent.hexsha for parent in commit.parents],
+            branch=branch_name,
+            branch_color=branch_colors[branch_name],
+            tags=commit_to_tags.get(commit.hexsha, []),
+            branch_availability=branch_avail,
+            **extra
+        )
+        commit_obj.description = description
+        commit_obj.description_short = self.truncate_description(description)
+        return commit_obj
+
     def parse_commits(self, commit_to_branch: Dict[str, str], commit_to_tags: Dict[str, List[Tag]],
                       branch_availability: Dict[str, str], branch_colors: Dict[str, str],
                       used_colors: set) -> List[Commit]:
@@ -38,55 +95,15 @@ class CommitParser:
             List of parsed Commit objects
         """
         commits = []
-        seen_commits = set()
-
-        # Iterate only over local branches
-        for head in self.repo.heads:
+        for commit in self._iter_unique_commits(self.LOCAL_REVS):
             try:
-                for commit in self.repo.iter_commits(head):
-                    if commit.hexsha in seen_commits:
-                        continue
-                    seen_commits.add(commit.hexsha)
-
-                    branch_name = commit_to_branch.get(commit.hexsha, 'unknown')
-
-                    if branch_name not in branch_colors:
-                        branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
-
-                    full_message = commit.message.strip()
-                    message_lines = full_message.split('\n', 1)
-                    subject = message_lines[0]
-                    description = message_lines[1].strip() if len(message_lines) > 1 else ""
-
-                    # Get tags for this commit
-                    commit_tags = commit_to_tags.get(commit.hexsha, [])
-
-                    # Determine branch availability
-                    branch_avail = branch_availability.get(branch_name, 'local_only')
-
-                    commit_obj = Commit(
-                        hash=commit.hexsha[:8],
-                        message=subject,
-                        short_message=self.truncate_message(subject, MESSAGE_MAX_LENGTH),
-                        author=commit.author.name,
-                        author_short=self.truncate_name(commit.author.name),
-                        author_email=commit.author.email,
-                        date=commit.committed_datetime,
-                        date_relative=self.get_relative_date(commit.committed_datetime),
-                        date_short=self.get_full_date(commit.committed_datetime),
-                        parents=[parent.hexsha[:8] for parent in commit.parents],
-                        branch=branch_name,
-                        branch_color=branch_colors[branch_name],
-                        tags=commit_tags,
-                        branch_availability=branch_avail
-                    )
-                    commit_obj.description = description
-                    commit_obj.description_short = self.truncate_description(description)
-                    commits.append(commit_obj)
+                branch_name = commit_to_branch.get(commit.hexsha, 'unknown')
+                commits.append(self._build_commit(
+                    commit, branch_name, branch_colors, used_colors, commit_to_tags,
+                    branch_availability.get(branch_name, 'local_only')
+                ))
             except Exception as e:
-                logger.warning(f"Failed to process commit from branch {head.name}: {e}")
-                continue
-
+                logger.warning(f"Failed to process commit {getattr(commit, 'hexsha', '?')}: {e}")
         return commits
 
     def parse_commits_with_remote(self, local_commit_map: Dict[str, str], remote_commit_map: Dict[str, str],
@@ -107,129 +124,55 @@ class CommitParser:
         Returns:
             List of parsed Commit objects
         """
-        commits = []
-
-        # Collect all branch heads for identification
-        branch_heads = {}  # branch_name -> {'local': commit_hash, 'remote': commit_hash}
+        # branch_name -> (local head sha, remote head sha)
+        branch_heads = {}
         for branch_name, div_info in branch_divergences.items():
-            branch_heads[branch_name] = {
-                'local': div_info.get('local_head'),
-                'remote': div_info.get('remote_head')
-            }
+            local_head = div_info.get('local_head')
+            remote_head = div_info.get('remote_head')
+            branch_heads[branch_name] = (
+                local_head.hexsha if local_head else None,
+                remote_head.hexsha if remote_head else None,
+            )
 
-        # Safely iterate over all commits (local + remote, without broken refs)
-        seen_commits = set()
-        all_commits_to_process = []
+        commits = []
+        for commit in self._iter_unique_commits(self.LOCAL_AND_REMOTE_REVS):
+            try:
+                # Prioritize local branch
+                if commit.hexsha in local_commit_map:
+                    branch_name = local_commit_map[commit.hexsha]
+                    is_remote = False
+                elif commit.hexsha in remote_commit_map:
+                    branch_name = remote_commit_map[commit.hexsha]
+                    is_remote = True
+                else:
+                    branch_name = 'unknown'
+                    is_remote = False
 
-        # 1. First local branches
-        try:
-            for head in self.repo.heads:
-                try:
-                    for commit in self.repo.iter_commits(head):
-                        if commit.hexsha not in seen_commits:
-                            seen_commits.add(commit.hexsha)
-                            all_commits_to_process.append(commit)
-                except Exception as e:
-                    logger.warning(f"Failed to iterate commits for local branch {head.name}: {e}")
-                    continue
-        except Exception as e:
-            logger.warning(f"Failed to access local branches: {e}")
+                # Remote větve mají prefix origin/
+                clean_branch_name = branch_name[7:] if branch_name.startswith('origin/') else branch_name
 
-        # 2. Then remote branches (except /HEAD)
-        try:
-            if hasattr(self.repo, 'remotes') and self.repo.remotes:
-                remote_refs = list(self.repo.remote().refs)
-                for remote_ref in remote_refs:
-                    # Skip HEAD reference
-                    if remote_ref.name.endswith('/HEAD'):
-                        continue
-
-                    try:
-                        for commit in self.repo.iter_commits(remote_ref):
-                            if commit.hexsha not in seen_commits:
-                                seen_commits.add(commit.hexsha)
-                                all_commits_to_process.append(commit)
-                    except Exception as e:
-                        logger.warning(f"Failed to iterate commits for remote ref {remote_ref.name}: {e}")
-                        continue
-        except Exception as e:
-            logger.debug(f"Failed to access remote refs: {e}")
-
-        # 3. Process all found commits
-        for commit in all_commits_to_process:
-            # Prioritize local branch
-            if commit.hexsha in local_commit_map:
-                branch_name = local_commit_map[commit.hexsha]
-                is_remote = False
-            elif commit.hexsha in remote_commit_map:
-                branch_name = remote_commit_map[commit.hexsha]
-                is_remote = True
-            else:
-                branch_name = 'unknown'
-                is_remote = False
-
-            if branch_name not in branch_colors:
-                branch_colors[branch_name] = get_branch_color(branch_name, used_colors)
-
-            full_message = commit.message.strip()
-            message_lines = full_message.split('\n', 1)
-            subject = message_lines[0]
-            description = message_lines[1].strip() if len(message_lines) > 1 else ""
-
-            # Get tags for this commit
-            commit_tags = commit_to_tags.get(commit.hexsha, [])
-
-            # Determine branch availability (for remote branches may have origin/ prefix)
-            clean_branch_name = branch_name
-            if branch_name.startswith('origin/'):
-                clean_branch_name = branch_name[7:]  # Remove "origin/"
-
-            branch_avail = branch_availability.get(clean_branch_name, 'local_only')
-
-            # Determine if this commit is HEAD of some branch
-            is_branch_head = False
-            branch_head_type = "none"
-
-            if clean_branch_name in branch_heads:
-                heads = branch_heads[clean_branch_name]
-                local_head = heads.get('local')
-                remote_head = heads.get('remote')
-
-                is_local_head = local_head and commit.hexsha == local_head.hexsha
-                is_remote_head = remote_head and commit.hexsha == remote_head.hexsha
-
+                # Is this commit HEAD of some branch (local/remote/both)?
+                local_sha, remote_sha = branch_heads.get(clean_branch_name, (None, None))
+                is_local_head = local_sha is not None and commit.hexsha == local_sha
+                is_remote_head = remote_sha is not None and commit.hexsha == remote_sha
                 if is_local_head and is_remote_head:
-                    is_branch_head = True
                     branch_head_type = "both"
                 elif is_local_head:
-                    is_branch_head = True
                     branch_head_type = "local"
                 elif is_remote_head:
-                    is_branch_head = True
                     branch_head_type = "remote"
+                else:
+                    branch_head_type = "none"
 
-            commit_obj = Commit(
-                hash=commit.hexsha[:8],
-                message=subject,
-                short_message=self.truncate_message(subject, MESSAGE_MAX_LENGTH),
-                author=commit.author.name,
-                author_short=self.truncate_name(commit.author.name),
-                author_email=commit.author.email,
-                date=commit.committed_datetime,
-                date_relative=self.get_relative_date(commit.committed_datetime),
-                date_short=self.get_full_date(commit.committed_datetime),
-                parents=[parent.hexsha[:8] for parent in commit.parents],
-                branch=branch_name,
-                branch_color=branch_colors[branch_name],
-                is_remote=is_remote,
-                tags=commit_tags,
-                branch_availability=branch_avail,
-                is_branch_head=is_branch_head,
-                branch_head_type=branch_head_type
-            )
-            commit_obj.description = description
-            commit_obj.description_short = self.truncate_description(description)
-            commits.append(commit_obj)
+                commits.append(self._build_commit(
+                    commit, branch_name, branch_colors, used_colors, commit_to_tags,
+                    branch_availability.get(clean_branch_name, 'local_only'),
+                    is_remote=is_remote,
+                    is_branch_head=branch_head_type != "none",
+                    branch_head_type=branch_head_type,
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to process commit {getattr(commit, 'hexsha', '?')}: {e}")
 
         return commits
 
@@ -314,7 +257,13 @@ class CommitParser:
             Relative date string
         """
         now = datetime.now(timezone.utc)
-        diff = now - date.replace(tzinfo=timezone.utc)
+        # Commit má vlastní časové pásmo (např. +02:00). replace(tzinfo=utc) by
+        # ho zahodilo a posunulo čas o offset; aware datum se jen odečte.
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        diff = now - date
+        if diff.total_seconds() < 0:
+            return "před chvílí"  # Commit z budoucnosti (rozjeté hodiny autora)
 
         if diff.days > 7:
             return f"{diff.days // 7} týdnů"
@@ -347,4 +296,8 @@ class CommitParser:
         Returns:
             Full date string
         """
+        # Časy commitů ze strojů v různých pásmech převést na místní čas
+        # prohlížejícího, jinak by sloupec data neodpovídal pořadí commitů.
+        if date.tzinfo is not None:
+            date = date.astimezone()
         return date.strftime("%d.%m.%Y @ %H:%M")

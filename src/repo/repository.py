@@ -18,6 +18,7 @@ class GitRepository:
         self.commits: List[Commit] = []
         self.branches: Dict[str, Branch] = {}
         self.merge_branches: List[MergeBranch] = []  # Posledně detekované merge větve
+        self.branch_names: set = set()  # Skutečné větve (bez virtuálních merge-*) pro statistiky
 
         # Component instances (initialized in load_repository)
         self.commit_parser: Optional[CommitParser] = None
@@ -47,6 +48,7 @@ class GitRepository:
         commit_to_branch = self.branch_analyzer.build_commit_branch_map()
         commit_to_tags = self.tag_parser.build_commit_tag_map()
         branch_availability = self.branch_analyzer.build_branch_availability_map(include_remote=False)
+        self.branch_names = set(branch_availability)
 
         # Prepare color tracking
         used_colors = set()
@@ -68,7 +70,7 @@ class GitRepository:
         self.merge_branches = merge_branches
         self.merge_detector.apply_merge_branch_styling(all_commits, merge_branches)
 
-        all_commits.sort(key=lambda c: c.date, reverse=True)
+        all_commits.sort(key=lambda c: c.date.timestamp(), reverse=True)
 
         self.commits = all_commits
         return all_commits
@@ -85,6 +87,7 @@ class GitRepository:
 
         # Detect divergences for all branches
         all_branch_names = self.branch_analyzer.get_all_branch_names()
+        self.branch_names = set(all_branch_names)
         branch_divergences = {}
         for branch_name in all_branch_names:
             branch_divergences[branch_name] = self.branch_analyzer.detect_branch_divergence(branch_name)
@@ -110,7 +113,7 @@ class GitRepository:
         self.merge_branches = merge_branches
         self.merge_detector.apply_merge_branch_styling(all_commits, merge_branches)
 
-        all_commits.sort(key=lambda c: c.date, reverse=True)
+        all_commits.sort(key=lambda c: c.date.timestamp(), reverse=True)
 
         self.commits = all_commits
         return all_commits
@@ -253,17 +256,16 @@ class GitRepository:
         if not self.repo or not self.commits:
             return {"authors": 0, "branches": 0, "commits": 0, "tags": 0, "local_tags": 0, "remote_tags": 0}
 
+        # WIP pseudo-commit není commit a nemá autora
+        real_commits = [commit for commit in self.commits if not commit.is_uncommitted]
+
         authors = set()
-        branches = set()
         all_tags = set()
         local_tags = set()
         remote_tags = set()
 
-        for commit in self.commits:
+        for commit in real_commits:
             authors.add(commit.author)
-            branches.add(commit.branch)
-
-            # Spočítat tagy z commitů
             for tag in commit.tags:
                 all_tags.add(tag.name)
                 if tag.is_remote:
@@ -271,10 +273,14 @@ class GitRepository:
                 else:
                     local_tags.add(tag.name)
 
+        # Větve počítat z refů, ne z commit.branch: ten po detekci mergů obsahuje
+        # i virtuální větve "merge-<hash>" a sloučené větve v něm naopak chybí.
+        branches = self.branch_names or {commit.branch for commit in real_commits}
+
         return {
             "authors": len(authors),
             "branches": len(branches),
-            "commits": len(self.commits),
+            "commits": len(real_commits),
             "tags": len(all_tags),
             "local_tags": len(local_tags),
             "remote_tags": len(remote_tags)

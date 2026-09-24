@@ -1,6 +1,7 @@
 """BranchAnalyzer - handles branch analysis and relationship detection."""
 
-from typing import Dict, Set
+import tempfile
+from typing import Dict, List, Set, Tuple
 from git import Repo
 from utils.logging_config import get_logger
 
@@ -18,51 +19,81 @@ class BranchAnalyzer:
         """
         self.repo = repo
 
+    MAIN_BRANCHES = ('main', 'master')
+
+    def _rev_list_new_commits(self, tip: str, exclude) -> list:
+        """Vrátí hashe commitů dosažitelných z `tip`, ale ne z žádného refu v `exclude`.
+
+        Odpovídá `git rev-list tip --not exclude...`; revize se předávají přes
+        stdin, aby příkazová řádka nepřetekla ani u stovek větví.
+        """
+        spec = "".join(f"{line}\n" for line in [tip] + [f"^{ref}" for ref in exclude])
+        with tempfile.TemporaryFile() as stdin:
+            stdin.write(spec.encode('utf-8'))
+            stdin.seek(0)
+            output = self.repo.git.rev_list('--stdin', istream=stdin)
+        return output.split() if output else []
+
+    def _assign_commits_to_refs(self, refs, exclude=(), commit_map=None) -> Dict[str, str]:
+        """Přiřadí commity refům: každý commit dostane první ref (v daném pořadí), ze kterého je dosažitelný.
+
+        Místo průchodu celou historií pro každou větev (N větví × celá historie
+        přes GitPython objekty) se pro každou větev vyžádají jen commity, které
+        ještě nepokrývá žádná dříve zpracovaná větev. Celkový objem dat je tak
+        úměrný počtu commitů, ne počtu větví × commitů.
+
+        Args:
+            refs: Seznam (ref_pro_git, jméno_větve) v pořadí priority
+            exclude: Refy, jejichž commity se nepřiřazují vůbec (např. lokální větve při mapování remote)
+            commit_map: Mapa, do které se přidává (výchozí nová)
+        """
+        commit_map = {} if commit_map is None else commit_map
+        processed = list(exclude)
+        for ref, branch_name in refs:
+            try:
+                for sha in self._rev_list_new_commits(ref, processed):
+                    commit_map.setdefault(sha, branch_name)
+                processed.append(ref)
+            except Exception as e:
+                logger.warning(f"Failed to list commits for branch {branch_name}: {e}")
+        return commit_map
+
+    def _local_refs(self):
+        refs = []
+        for head in self.repo.heads:
+            refs.append((head.path, head.name))
+        # Jen přesná jména main/master mají přednost (ne feature/main)
+        main = [r for r in refs if r[1] in self.MAIN_BRANCHES]
+        return main + [r for r in refs if r[1] not in self.MAIN_BRANCHES]
+
+    def _remote_refs(self):
+        refs = []
+        for remote_ref in self.repo.remote().refs:
+            if remote_ref.name.endswith('/HEAD'):
+                continue
+            refs.append((remote_ref.path, remote_ref.name))
+        main = [r for r in refs if r[1].split('/', 1)[-1] in self.MAIN_BRANCHES]
+        return main + [r for r in refs if r not in main]
+
     def build_commit_branch_map(self) -> Dict[str, str]:
         """Build map of commit_hash -> branch_name for fast lookup.
 
+        Commit patří první větvi, ze které je dosažitelný; main/master mají přednost.
+
         Returns:
-            Dictionary mapping commit hash to branch name
+            Dictionary mapping full commit hash to branch name
         """
-        commit_to_branch = {}
-
         try:
-            # First process main branches with priority
-            main_branches = ['main', 'master']
-            other_branches = []
+            return self._assign_commits_to_refs(self._local_refs())
+        except Exception as e:
+            logger.warning(f"Failed to build commit-branch map: {e}")
+            return {}
 
-            # Work with local heads (branches)
-            for head in self.repo.heads:
-                branch_name = head.name
-                if branch_name in main_branches:
-                    # Process main branches immediately
-                    try:
-                        for commit in self.repo.iter_commits(head):
-                            commit_to_branch[commit.hexsha] = branch_name
-                    except Exception as e:
-                        logger.warning(f"Failed to iterate commits for branch {branch_name}: {e}")
-                        continue
-                else:
-                    other_branches.append((head, branch_name))
-
-            # Then process other branches, but only commits that don't have a branch yet
-            for head, branch_name in other_branches:
-                try:
-                    for commit in self.repo.iter_commits(head):
-                        commit_hash = commit.hexsha
-                        if commit_hash not in commit_to_branch:
-                            commit_to_branch[commit_hash] = branch_name
-                except Exception as e:
-                    logger.warning(f"Failed to iterate commits for branch {branch_name}: {e}")
-                    continue
-
-        except Exception:
-            pass
-
-        return commit_to_branch
-
-    def build_commit_branch_map_with_remote(self) -> tuple[Dict[str, str], Dict[str, str]]:
+    def build_commit_branch_map_with_remote(self) -> Tuple[Dict[str, str], Dict[str, str]]:
         """Build maps of commit_hash -> branch_name for local and remote branches.
+
+        Lokální větve mají přednost; do remote mapy jdou jen commity, které
+        nejsou v žádné lokální větvi (u remote refů má přednost origin/main|master).
 
         Returns:
             Tuple of (local_commit_map, remote_commit_map)
@@ -71,54 +102,21 @@ class BranchAnalyzer:
         remote_commit_map = {}
 
         try:
-            # 1. Prioritize local branches
-            main_branches = ['main', 'master']
-            other_local_branches = []
+            local_refs = self._local_refs()
+            local_commit_map = self._assign_commits_to_refs(local_refs)
 
-            for head in self.repo.heads:
-                branch_name = head.name
-                if branch_name in main_branches:
-                    try:
-                        for commit in self.repo.iter_commits(head):
-                            local_commit_map[commit.hexsha] = branch_name
-                    except Exception as e:
-                        logger.warning(f"Failed to iterate commits for main branch {branch_name}: {e}")
-                        continue
-                else:
-                    other_local_branches.append((head, branch_name))
-
-            for head, branch_name in other_local_branches:
-                try:
-                    for commit in self.repo.iter_commits(head):
-                        if commit.hexsha not in local_commit_map:
-                            local_commit_map[commit.hexsha] = branch_name
-                except Exception as e:
-                    logger.warning(f"Failed to iterate commits for local branch {branch_name}: {e}")
-                    continue
-
-            # 2. Remote branches - only for commits without local branch
             try:
-                remote_refs = list(self.repo.remote().refs)
-                for remote_ref in remote_refs:
-                    # Skip HEAD ref
-                    if remote_ref.name.endswith('/HEAD'):
-                        continue
-
-                    try:
-                        for commit in self.repo.iter_commits(remote_ref):
-                            if commit.hexsha not in local_commit_map:
-                                remote_commit_map[commit.hexsha] = remote_ref.name
-                    except Exception as e:
-                        logger.warning(f"Failed to iterate commits for remote ref {remote_ref.name}: {e}")
-                        continue
+                remote_refs = self._remote_refs()
             except Exception as e:
                 # If remote doesn't exist, continue with local branches only
                 logger.debug(f"Failed to access remote refs: {e}")
-                pass
+                remote_refs = []
 
+            remote_commit_map = self._assign_commits_to_refs(
+                remote_refs, exclude=[ref for ref, _ in local_refs]
+            )
         except Exception as e:
             logger.warning(f"Failed to build commit-branch map with remote: {e}")
-            pass
 
         return local_commit_map, remote_commit_map
 

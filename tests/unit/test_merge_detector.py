@@ -115,23 +115,55 @@ class TestDetectMergeCommits:
         assert len(merge_branches) == 0
 
 
-class TestBuildFullHashMap:
-    """Tests for building full hash map."""
+def _node(hash_, parents, minute):
+    """Minimalni Commit pro testy grafu (cas = minuta od epochy testu)."""
+    return Commit(
+        hash=hash_, message=hash_, short_message=hash_, author="T", author_short="T",
+        author_email="t@example.com",
+        date=datetime(2025, 1, 1, tzinfo=timezone.utc).replace(minute=minute),
+        date_relative="", date_short="", parents=parents, branch="main",
+        branch_color="#3366cc",
+    )
 
-    def test_build_full_hash_map(self, mock_git_repo, mock_git_commits):
-        """Test building short-to-full hash map."""
-        # Setup mock iteration
-        mock_git_repo.iter_commits.return_value = mock_git_commits
 
-        detector = MergeDetector(mock_git_repo, [])
-        hash_map = detector.build_full_hash_map()
+class TestFindMergeBase:
+    """In-memory merge-base (nahrazuje volani `git merge-base` pro kazdy merge)."""
 
-        assert isinstance(hash_map, dict)
-        # Should map short hash to full hash
-        for commit in mock_git_commits:
-            short_hash = commit.hexsha[:8]
-            assert short_hash in hash_map
-            assert hash_map[short_hash] == commit.hexsha
+    def _map(self, *nodes):
+        return {n.hash: n for n in nodes}
+
+    def test_simple_fork(self):
+        # A - B - C (main), B - D (feature)
+        commits = self._map(_node("A", [], 1), _node("B", ["A"], 2),
+                            _node("C", ["B"], 3), _node("D", ["B"], 4))
+        detector = MergeDetector(None, list(commits.values()))
+        assert detector.find_merge_base("C", "D", commits) == "B"
+        assert detector.find_merge_base("D", "C", commits) == "B"
+
+    def test_ancestor_is_its_own_base(self):
+        commits = self._map(_node("A", [], 1), _node("B", ["A"], 2), _node("C", ["B"], 3))
+        detector = MergeDetector(None, list(commits.values()))
+        assert detector.find_merge_base("C", "A", commits) == "A"
+        assert detector.find_merge_base("B", "B", commits) == "B"
+
+    def test_after_previous_merge_uses_latest_common_commit(self):
+        # main: A - B - M1 - E ; feature: A - F1 - F2 ; M1 merges F1 ; F2 continues from F1
+        commits = self._map(
+            _node("A", [], 1), _node("B", ["A"], 2), _node("F1", ["A"], 3),
+            _node("M1", ["B", "F1"], 4), _node("F2", ["F1"], 5), _node("E", ["M1"], 6),
+        )
+        detector = MergeDetector(None, list(commits.values()))
+        assert detector.find_merge_base("E", "F2", commits) == "F1"
+
+    def test_unrelated_histories(self):
+        commits = self._map(_node("A", [], 1), _node("X", [], 2))
+        detector = MergeDetector(None, list(commits.values()))
+        assert detector.find_merge_base("A", "X", commits) is None
+
+    def test_missing_commit(self):
+        commits = self._map(_node("A", [], 1))
+        detector = MergeDetector(None, list(commits.values()))
+        assert detector.find_merge_base("A", "nope", commits) is None
 
 
 class TestTraceMergeBranchCommits:
