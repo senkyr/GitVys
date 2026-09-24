@@ -581,10 +581,8 @@ class TestDominantAuthor:
             mock_callbacks['draw_flag_connection']
         )
 
-        # Should have bound tooltip only for non-dominant author (1 commit)
-        # Check tag_bind calls for node tooltips
-        node_tooltip_calls = [c for c in mock_canvas.tag_bind.call_args_list if 'node_' in str(c[0][0])]
-        assert len(node_tooltip_calls) >= 2  # Enter and Leave for the 1 non-dominant commit
+        # Should have registered node tooltip only for non-dominant author (1 commit)
+        assert list(commit_drawer._node_tooltips.values()) == ['Other Author']
 
 
 # ===== Circle Polygon Tests =====
@@ -701,3 +699,48 @@ class TestCommitDrawerIntegration:
         # Should draw 2 ovals (normal + remote) and 1 polygon (uncommitted)
         assert mock_canvas.create_oval.call_count == 2
         assert mock_canvas.create_polygon.call_count == 1
+
+
+# ===== Redraw Tests =====
+
+class TestTextOnlyRedraw:
+    """Překreslení po změně šířky sloupců nesmí znovu kreslit uzly a vlaječky."""
+
+    def _draw(self, commit_drawer, commits, sample_column_widths, mock_callbacks, flag_drawer, text_only):
+        commit_drawer.draw_commits(
+            commits, sample_column_widths,
+            mock_callbacks['show_tooltip'], mock_callbacks['hide_tooltip'],
+            mock_callbacks['truncate_text'], 100, mock_callbacks['make_color_pale'],
+            flag_drawer, mock_callbacks['draw_flag_connection'], text_only=text_only
+        )
+
+    def test_text_only_skips_nodes_and_flags(self, commit_drawer, mock_canvas, sample_column_widths,
+                                             mock_callbacks, mock_branch_flag_drawer):
+        commit = Commit(
+            hash='abc', message='Msg', short_message='Msg', author='A', author_short='A',
+            author_email='a@test.com', date=datetime(2025, 1, 1), date_relative='', date_short='2025-01-01',
+            parents=[], branch='main', branch_color='#3366cc', x=50, y=50,
+        )
+        self._draw(commit_drawer, [commit], sample_column_widths, mock_callbacks, mock_branch_flag_drawer, False)
+        ovals_after_full = mock_canvas.create_oval.call_count
+        flags_after_full = mock_branch_flag_drawer.draw_branch_flag.call_count
+        texts_after_full = mock_canvas.create_text.call_count
+
+        self._draw(commit_drawer, [commit], sample_column_widths, mock_callbacks, mock_branch_flag_drawer, True)
+
+        assert mock_canvas.create_oval.call_count == ovals_after_full
+        assert mock_branch_flag_drawer.draw_branch_flag.call_count == flags_after_full
+        assert mock_canvas.create_text.call_count > texts_after_full
+
+    def test_tooltip_events_bound_once(self, commit_drawer, mock_canvas, sample_column_widths,
+                                       mock_callbacks, mock_branch_flag_drawer):
+        commit = Commit(
+            hash='abc', message='Msg', short_message='Msg', author='A', author_short='A',
+            author_email='a@test.com', date=datetime(2025, 1, 1), date_relative='', date_short='2025-01-01',
+            parents=[], branch='main', branch_color='#3366cc', x=50, y=50,
+        )
+        for _ in range(5):
+            self._draw(commit_drawer, [commit], sample_column_widths, mock_callbacks, mock_branch_flag_drawer, False)
+
+        # Enter + Leave na sdílený tag, ne nová dvojice lambd pro každou položku a překreslení
+        assert mock_canvas.tag_bind.call_count == 2

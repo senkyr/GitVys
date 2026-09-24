@@ -252,36 +252,13 @@ class GraphCanvas(ttk.Frame):
         self._update_column_separators()
 
     def _get_content_bbox_without_header(self):
-        """Vrátí bbox všech objektů kromě column_header."""
-        all_items = self.canvas.find_all()
+        """Vrátí bbox všech objektů kromě column_header.
 
-        # Filtrovat objekty - vzít jen ty které NEMAJÍ tag "column_header"
-        content_items = []
-        for item in all_items:
-            tags = self.canvas.gettags(item)
-            if "column_header" not in tags:
-                content_items.append(item)
-
-        if not content_items:
-            return None
-
-        # Spočítat společný bbox všech content objektů
-        bboxes = []
-        for item in content_items:
-            item_bbox = self.canvas.bbox(item)
-            if item_bbox:  # Může být None pro neviditelné objekty
-                bboxes.append(item_bbox)
-
-        if not bboxes:
-            return None
-
-        # Najít min/max souřadnice
-        min_x = min(b[0] for b in bboxes)
-        min_y = min(b[1] for b in bboxes)
-        max_x = max(b[2] for b in bboxes)
-        max_y = max(b[3] for b in bboxes)
-
-        return (min_x, min_y, max_x, max_y)
+        Tag výraz "!column_header" (Tk 8.5+) spočítá bbox v jediném volání Tcl.
+        Dřív se volalo gettags + bbox pro každou položku zvlášť, tj. desítky
+        tisíc volání u větších repozitářů při každém překreslení a resize.
+        """
+        return self.canvas.bbox("!column_header") or None
 
     def update_scrollregion_and_scrollbars(self):
         """Aktualizuje scrollregion a viditelnost scrollbarů po změně obsahu."""

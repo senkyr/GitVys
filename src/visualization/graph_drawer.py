@@ -200,11 +200,20 @@ class GraphDrawer:
             max_allowed_author_width = 180
             max_allowed_email_width = 220
 
+        # Autoři, e-maily a formáty data se opakují - každý řetězec měřit jen jednou
+        measured = {}
+
+        def measure(text: str) -> int:
+            width = measured.get(text)
+            if width is None:
+                width = measured[text] = canvas.tk.call("font", "measure", font, text)
+            return width
+
         for commit in commits:
             # Combined width message + description with space
-            message_width = canvas.tk.call("font", "measure", font, commit.message)
+            message_width = measure(commit.message)
             if commit.description_short:
-                desc_width = canvas.tk.call("font", "measure", font, commit.description_short)
+                desc_width = measure(commit.description_short)
                 combined_width = message_width + 20 + desc_width  # 20px space
             else:
                 combined_width = message_width
@@ -213,16 +222,13 @@ class GraphDrawer:
             combined_width = min(combined_width, max_allowed_message_width)
             max_message_width = max(max_message_width, combined_width)
 
-            author_width = canvas.tk.call("font", "measure", font, commit.author)
-            author_width = min(author_width, max_allowed_author_width)
+            author_width = min(measure(commit.author), max_allowed_author_width)
             max_author_width = max(max_author_width, author_width)
 
-            email_width = canvas.tk.call("font", "measure", font, commit.author_email)
-            email_width = min(email_width, max_allowed_email_width)
+            email_width = min(measure(commit.author_email), max_allowed_email_width)
             max_email_width = max(max_email_width, email_width)
 
-            date_width = canvas.tk.call("font", "measure", font, commit.date_short)
-            max_date_width = max(max_date_width, date_width)
+            max_date_width = max(max_date_width, measure(commit.date_short))
 
         # Use user-set widths or calculated
         user_widths = self.column_manager.get_user_column_widths()
@@ -350,7 +356,7 @@ class GraphDrawer:
             # Get table start position
             table_start_x = self._get_table_start_position()
 
-            # Redraw commits and tags
+            # Redraw commit texts and tags (nodes and flags stay - they don't depend on column widths)
             self.commit_drawer.draw_commits(
                 self._current_commits,
                 self.column_widths,
@@ -360,7 +366,8 @@ class GraphDrawer:
                 table_start_x,
                 self._make_color_pale,
                 self.branch_flag_drawer,
-                self.branch_flag_drawer.draw_flag_connection
+                self.branch_flag_drawer.draw_flag_connection,
+                text_only=True
             )
 
             self.tag_drawer.draw_tags(

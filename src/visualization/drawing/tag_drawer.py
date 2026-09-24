@@ -1,7 +1,7 @@
 """TagDrawer - handles drawing Git tags with emoji icons and tooltips."""
 
 import tkinter as tk
-from typing import List, Callable
+from typing import Dict, List, Callable
 from utils.data_structures import Commit
 from utils.constants import NODE_RADIUS, BASE_MARGIN
 from utils.theme_manager import get_theme_manager
@@ -33,6 +33,14 @@ class TagDrawer:
         emoji_font = ('Segoe UI Emoji', 10)  # Font for emoji
         text_font = ('Arial', 8, 'bold')     # Font for tag names
 
+        if not any(commit.tags for commit in commits):
+            return
+
+        # Potomci každého commitu jednou předem - dřív se pro každý otagovaný
+        # commit procházely všechny commity (tagy × commity operací)
+        children = self._build_children_index(commits)
+        commit_map = {c.hash: c for c in commits}
+
         for commit in commits:
             if not commit.tags:
                 continue
@@ -40,7 +48,8 @@ class TagDrawer:
             x, y = commit.x, commit.y
 
             # Detect collision with horizontal connections and dynamically shift tags
-            horizontal_line_extent = self._calculate_horizontal_line_extent(commit, commits)
+            horizontal_line_extent = self._calculate_horizontal_line_extent(
+                commit, commits, children=children, commit_map=commit_map)
 
             # Standard position for tags
             standard_tag_x = x + self.node_radius + 15  # 15px space from circle
@@ -200,41 +209,64 @@ class TagDrawer:
         # This estimate serves only for calculating total graph column width
         return flag_width + self.BASE_MARGIN
 
-    def _calculate_horizontal_line_extent(self, commit: Commit, commits: List[Commit]) -> int:
-        """Calculates longest horizontal connection reach from given commit.
+    @staticmethod
+    def _build_children_index(commits: List[Commit]) -> Dict[str, List[Commit]]:
+        """Mapa hash rodiče -> potomci."""
+        children: Dict[str, List[Commit]] = {}
+        for commit in commits:
+            for parent_hash in commit.parents:
+                children.setdefault(parent_hash, []).append(commit)
+        return children
+
+    @staticmethod
+    def _corner_radius(dx: int, dy: int) -> float:
+        # Same logic as ConnectionDrawer._draw_bezier_curve (curve_intensity 0.8)
+        radius = min(dx, dy, 20) * 0.8
+        return max(3, min(radius, 15))
+
+    def _calculate_horizontal_line_extent(self, commit: Commit, commits: List[Commit],
+                                          children: Dict[str, List[Commit]] = None,
+                                          commit_map: Dict[str, Commit] = None) -> int:
+        """Calculates how far right horizontal connections reach in this commit's row.
+
+        Vodorovné části spojnic (viz ConnectionDrawer) leží v řádku commitu:
+        - u odbočky z tohoto commitu (potomek v jiném sloupci, ne merge hrana)
+          vede čára k potomkovi v řádku rodiče = tohoto commitu;
+        - u merge commitu vede čára od 2.+ rodiče v řádku merge commitu.
 
         Args:
             commit: Commit to calculate extent for
             commits: All commits
+            children: Precomputed parent hash -> children (optional, for speed)
+            commit_map: Precomputed hash -> commit (optional, for speed)
 
         Returns:
             Maximum horizontal extent in pixels
         """
+        if children is None:
+            children = self._build_children_index(commits)
+        if commit_map is None:
+            commit_map = {c.hash: c for c in commits}
+
         max_extent = commit.x  # Default commit position
 
-        # Create map hash -> commit for fast lookup
-        commit_map = {c.hash: c for c in commits}
+        # Branching connections: horizontal part in THIS commit's row, towards the child
+        for child in children.get(commit.hash, []):
+            is_merge_connection = len(child.parents) >= 2 and child.parents.index(commit.hash) > 0
+            if is_merge_connection or child.x == commit.x:
+                continue
+            dx = abs(child.x - commit.x)
+            radius = self._corner_radius(dx, abs(child.y - commit.y))
+            horizontal_end = child.x - radius if dx > radius else child.x
+            max_extent = max(max_extent, horizontal_end)
 
-        # Go through all child commits of this commit
-        for other_commit in commits:
-            if commit.hash in other_commit.parents:
-                # This commit is parent for other_commit
-                child_x = other_commit.x
-
-                if child_x != commit.x:  # Only horizontal connections (branching)
-                    # Calculate reach of horizontal part of L-shaped connection
-                    dx = abs(child_x - commit.x)
-                    dy = abs(other_commit.y - commit.y)
-
-                    # Rounding radius (same logic as in _draw_bezier_curve)
-                    curve_intensity = 0.8  # Should match ConnectionDrawer.curve_intensity
-                    radius = min(dx, dy, 20) * curve_intensity
-                    radius = max(3, min(radius, 15))
-
-                    # Horizontal part ends at child_x - radius
-                    # (corner_x = child_x, so horizontal part ends at corner_x - radius)
-                    horizontal_end = child_x - radius if dx > radius else child_x
-                    max_extent = max(max_extent, horizontal_end)
+        # Merge connections into this commit: horizontal part in this row, from the merged parent
+        if len(commit.parents) >= 2:
+            for parent_hash in commit.parents[1:]:
+                parent = commit_map.get(parent_hash)
+                if parent is None or parent.x <= commit.x:
+                    continue
+                max_extent = max(max_extent, parent.x)
 
         return max_extent
 
