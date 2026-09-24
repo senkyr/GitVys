@@ -207,6 +207,26 @@ class TestFullPipelineOnRealRepo:
         assert stats["branches"] == 2       # main + aaa-old, ne merge-<hash>
         assert stats["tags"] == 1
 
+    def test_uncommitted_changes_are_classified(self, tmp_path):
+        """Neuložená změna sledovaného souboru a nový soubor = 'working', ne 'staged'."""
+        repo = GitRepoBuilder(tmp_path / "wip")
+        repo.commit("first", 1)
+        (repo.path / "file1.txt").write_text("changed but not staged\n")
+        (repo.path / "new.txt").write_text("untracked\n")
+
+        git_repo = GitRepository(str(repo.path))
+        git_repo.load_repository()
+        info = git_repo.get_uncommitted_changes()
+
+        assert info["uncommitted_type"] == "working"
+        assert info["staged_files"] == []
+        assert sorted(info["working_files"]) == ["file1.txt", "new.txt"]
+
+        repo.git("add", "new.txt")
+        info = git_repo.get_uncommitted_changes()
+        assert info["uncommitted_type"] == "both"
+        assert info["staged_files"] == ["new.txt"]
+
     def test_layout_of_real_repo_is_consistent(self, feature_repo):
         repo, _ = feature_repo
         git_repo = GitRepository(str(repo.path))

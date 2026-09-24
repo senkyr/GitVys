@@ -135,11 +135,18 @@ class GitRepository:
             staged_files = []
             working_files = []
 
-            for line in status.strip().split('\n'):
+            # Ne status.strip(): porcelain řádek začíná mezerou (" M soubor"),
+            # strip by u prvního řádku posunul sloupce a změnu vydával za staged
+            for line in status.splitlines():
                 if len(line) >= 3:
                     staged_status = line[0]
                     working_status = line[1]
                     filename = line[3:]
+
+                    if line.startswith('??'):
+                        # Nesledovaný soubor - není ve stage, jen v pracovní složce
+                        working_files.append(filename)
+                        continue
 
                     if staged_status != ' ':
                         staged_files.append(filename)
