@@ -62,7 +62,8 @@ GitVys/
 │   ├── auth/              # GitHub OAuth authentication
 │   │   ├── __init__.py    # Auth module exports
 │   │   ├── github_auth.py # OAuth Device Flow for GitHub
-│   │   └── token_storage.py # Token persistence (~/.gitvys/)
+│   │   ├── token_storage.py # Token persistence (~/.gitvys/, DPAPI on Windows)
+│   │   └── git_credentials.py # URL whitelist, token handoff to git, secret redaction
 │   ├── gui/               # UI components (refactored v1.5.0)
 │   │   ├── main_window.py # Layout manager and window orchestrator (500 lines)
 │   │   ├── repo_manager.py # Repository operations manager (451 lines)
@@ -127,7 +128,6 @@ GitVys/
 
 - **Python 3.8+** with tkinter for GUI
 - **GitPython** for Git repository operations
-- **Pillow** for image processing
 - **tkinterdnd2** for drag & drop functionality
 - **requests** for OAuth HTTP communication with GitHub API
 
@@ -135,8 +135,8 @@ GitVys/
 
 1. User drags Git repository folder OR Git URL into application
 2. For URLs: Repository is cloned to temporary directory with automatic cleanup
-3. GitRepository class loads and parses commit history
-4. GraphLayout calculates positions for commits based on timeline and branches (with lane recycling)
+3. GitRepository class loads and parses commit history (one `git rev-list` over all branches; commit-to-branch assignment via `rev-list tip --not <processed tips>`; merge-base computed in memory)
+4. GraphLayout orders rows like `git log --date-order` (by date, child always above parent) and assigns lanes; a lane stays reserved until the branch's connection lines end (see `GraphLayout._branch_row_spans`)
 5. GraphDrawer renders the visualization on canvas with:
    - Interactive column resizing
    - Tooltips for truncated text
@@ -165,7 +165,7 @@ The main data structures:
 
 **Commit class:**
 
-- Basic Git data (hash, message, author, date, parents)
+- Basic Git data (hash, message, author, date, parents) - `hash` and `parents` are **full 40-char SHA-1** (short hashes collide in large repos)
 - UI-specific data (truncated messages, relative dates, branch colors)
 - Layout data (x/y positions for rendering)
 - Tag information (attached tags with emoji)
@@ -179,7 +179,18 @@ The main data structures:
 
 ### Threading
 
-Repository loading runs in background threads to prevent UI blocking, with results passed back to main thread for display.
+Repository loading, cloning and refresh run in daemon threads (`RepositoryManager`). Rules:
+
+- Worker threads never touch widgets; they hand results to the main thread via `RepositoryManager._post(generation, callback, ...)` (`root.after`).
+- Every operation gets a generation number; results of an operation superseded by a newer one (other repo, close, refresh) are dropped. `self.git_repo` is replaced only in the main thread.
+- The OAuth dialog runs in the main thread; the clone worker waits for it on a `threading.Event`. Closing the dialog sets a stop event that ends polling.
+
+### Security (GitHub token)
+
+- The token never goes into a URL: it is passed to git as `http.https://github.com/.extraHeader` via `GIT_CONFIG_COUNT/KEY/VALUE` env vars (`auth/git_credentials.py`, requires Git 2.31+).
+- The token is used only for `https://github.com` (`can_use_github_token`). URL validation (`is_trusted_git_url`) is enforced in `RepositoryManager`, not only in the drop dialog.
+- Stored token: DPAPI-encrypted on Windows, 0600 file elsewhere; legacy plaintext is migrated on load.
+- Error messages shown to the user or logged go through `redact_secrets`.
 
 ### Error Handling & Logging
 
@@ -187,7 +198,7 @@ The application uses centralized logging for error tracking and debugging:
 
 **Logging System** (`utils/logging_config.py`):
 
-- File logging: `gitvisualizer.log` in current directory
+- File logging: `~/.gitvys/gitvisualizer.log` (in the frozen .exe only when `GITVIS_DEBUG=1`)
 - Log level: WARNING and above for file handler
 - Log level: ERROR and above for console handler
 - Format: `YYYY-MM-DD HH:MM:SS - module - LEVEL - message`
@@ -211,24 +222,24 @@ The application uses centralized logging for error tracking and debugging:
 
 **Refactored Functions**:
 
-- `_detect_merge_branches()` split into helper functions:
-  - `_build_full_hash_map()` - Maps short hashes to full hashes
-  - `_trace_merge_branch_commits()` - Traces commits in merge branch
-  - `_get_commits_in_branches_with_head()` - Gets commits in main line
-  - `_extract_branch_name_from_merge()` - Extracts branch name from merge message
+- `MergeDetector.detect_merge_branches()` uses helpers:
+  - `find_merge_base()` - in-memory merge-base (git's paint-down algorithm)
+  - `trace_merge_branch_commits()` - Traces commits in merge branch
+  - `get_commits_in_branches_with_head()` - First-parent lines of local branches (computed once)
+  - `extract_branch_name_from_merge()` - Extracts branch name from merge message
 
-**URL Security**:
+**URL Security** (`auth/git_credentials.py`):
 
-- Whitelist of trusted Git hosts (GitHub, GitLab, Bitbucket, Codeberg, sr.ht, gitea.io)
-- Validates both HTTP(S) and SSH (git@) URLs
-- Rejects untrusted hosts with logged warning
-- Supports subdomains of trusted hosts
+- Whitelist of trusted Git hosts (GitHub, GitLab, Bitbucket, Codeberg, sr.ht, gitea.io) incl. subdomains
+- Validates HTTP(S) and SSH (`git@host:path`) URLs; rejects credentials embedded in URLs
+- Checked in `RepositoryManager.on_repository_selected` (drops onto the graph canvas bypass `DragDropFrame`)
+
+**Tests**: `tests/integration/test_real_repository.py` builds real repositories with the git CLI; prefer it over GitPython mocks when testing parsing, merge detection or layout.
 
 **Dependencies**:
 
 - Pinned versions in `requirements.txt` for reproducibility:
   - `GitPython==3.1.45`
-  - `Pillow==11.0.0`
   - `tkinterdnd2==0.4.2`
   - `requests==2.32.3`
 - Build dependency (not in requirements.txt):

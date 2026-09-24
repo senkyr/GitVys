@@ -27,7 +27,8 @@ Vytvořit jednoduchou desktop aplikaci pro vizualizaci Git repozitářů určeno
 - **Python 3.8+** - hlavní jazyk
 - **tkinter** - GUI framework (součást Pythonu, jednoduché nasazení)
 - **GitPython** - práce s Git repozitáři
-- **Pillow (PIL)** - vykreslování grafu
+- **tkinterdnd2** - drag & drop (graf se kreslí přímo na tk.Canvas, Pillow se nepoužívá)
+- **requests** - OAuth Device Flow s GitHubem
 - **PyInstaller** - tvorba .exe souboru
 
 ### Alternativní technologie (pro pozdější fáze)

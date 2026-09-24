@@ -1,159 +1,114 @@
 # Git Visualizer
 
-Jednoduchá desktop aplikace pro vizualizaci Git repozitářů určená především pro studenty.
+Desktopová aplikace pro studenty: zobrazí historii Git repozitáře jako graf větví a commitů.
 
 ## Rychlý start
 
-1. Stáhni a spusť `GitVisualizer.exe` (pozor na požadavky)
-2. Přetáhni složku Git repozitáře do aplikace
-3. Prohlížej si historii commitů graficky
+1. Nainstaluj [Git](https://git-scm.com/downloads) (aplikace bez něj nefunguje).
+2. Spusť `GitVisualizer.exe`.
+3. Přetáhni do okna složku s Git repozitářem nebo URL repozitáře, případně použij tlačítka „Otevřít složku“ / „Otevřít URL“.
 
 ## Požadavky
 
-### Pro spuštění aplikace (.exe)
+### Spuštění .exe
 
-- **[Git](https://git-scm.com/downloads)** - nutný pro práci s repozitáři
-- Python **není** potřeba (je zabalený v .exe)
+- **Git** v `PATH`. Pro klonování **soukromých** repozitářů z GitHubu je potřeba Git 2.31 nebo novější (token se předává přes `GIT_CONFIG_COUNT`).
+- Python není potřeba, je zabalený v .exe.
 
-### Pro spuštění ze zdrojového kódu (development)
+### Spuštění ze zdrojového kódu
 
-- **[Python 3.8+](https://www.python.org/downloads/)**
-- **[Git](https://git-scm.com/downloads)**
-- Nainstalovat závislosti z `requirements.txt`:
+- Python 3.8+ (syntaxe ověřená pro 3.8, testy běží na 3.14)
+- Git
 
-  ```bash
-  pip install -r requirements.txt
-  cd src
-  python main.py
-  ```
+```bash
+pip install -r requirements.txt
+python src/main.py
+```
 
-### Pro buildnutí .exe souboru
+### Build .exe
 
-- **[Python 3.8+](https://www.python.org/downloads/)**
-- **PyInstaller**:
+```bash
+build\build-exe.bat
+```
 
-  ```bash
-  pip install pyinstaller
-  ```
-
-- Build skript: `build/build-exe.bat`
-- Build příkaz: `python build/build.py`
+Skript nainstaluje závislosti a PyInstaller a spustí `build/build.py`. Výsledek je v `dist/`. Podrobnosti v [docs/BUILD-INSTRUCTIONS.md](docs/BUILD-INSTRUCTIONS.md).
 
 ## Funkce
 
-- **Drag & drop rozhraní** - jednoduše přetáhni složku repozitáře nebo URL
-- **URL support** - klonování remote repozitářů (GitHub, GitLab, Bitbucket a další povolené hosty) do dočasné složky s automatickým úklidem
-- **Soukromé GitHub repozitáře** - přihlášení přes GitHub OAuth Device Flow, token se ukládá do `~/.gitvys/`
-- **Dvojjazyčné UI (CS/EN)** - přepínání jazyka přepínačem s vlajkami, volba se ukládá do `~/.gitvys/settings.json`
-- **Světlý/tmavý režim** - přepínání témat (☀️/🌙), volba se ukládá do nastavení
-- **Vizualizace podobná GitKrakenu** - přehledný graf větví a commitů s Bézierovými spojnicemi
-- **Detekce merge větví** - merge commity se kreslí samostatnými, světlejšími větvemi
-- **Tag podpora** - zobrazení Git tagů s emoji ikonami a tooltipy u anotovaných tagů
-- **Remote větve** - načítání remote větví tlačítkem
-- **Interaktivní sloupce** - změna šířky sloupců táhnutím, plovoucí hlavičky při scrollování
-- **Tooltips** - detailní informace při najetí myší
-- **Smooth scrolling** - plynulé scrollování s momentem
-- **Barevné rozlišení větví** - každá větev má svou barvu
-- **Detekce Gitu při startu** - upozornění, pokud Git není nainstalovaný
-- **Refresh (F5)** - obnovení repozitáře
-- **Jednoduché spuštění** - samostatný .exe soubor (Python zabalený uvnitř)
+- **Lokální repozitář:** přetažením složky nebo přes dialog.
+- **Repozitář z URL:** HTTPS nebo SSH (`git@host:user/repo.git`) z povolených hostů: GitHub, GitLab, Bitbucket, Codeberg, gitea.io, sr.ht (i jejich subdomény). Klonuje se do dočasné složky, která se smaže při zavření repozitáře nebo aplikace. URL s přihlašovacími údaji (`https://user:heslo@...`) se odmítají.
+- **Soukromé repozitáře na GitHubu:** když klon selže kvůli přihlášení, aplikace otevře přihlášení přes GitHub (OAuth Device Flow). Token:
+  - se používá jen pro `https://github.com`, nikdy pro jiné hosty ani přes `http://`;
+  - se Gitu předává hlavičkou přes proměnné prostředí, takže se neobjeví v URL, v `.git/config` klonu ani v chybových hláškách;
+  - se ukládá do `~/.gitvys/github_token`: na Windows zašifrovaný přes DPAPI (vázaný na účet uživatele), jinde jako soubor s právy 0600;
+  - pokud ho GitHub odmítne (odvolaný, vypršelý), smaže se a aplikace požádá o nové přihlášení.
+- **Graf:** commity seřazené podle času, ale potomek je vždy nad rodičem (jako `git log --date-order`), takže graf nerozbijí ani rozjeté hodiny autora. Každá větev má vlastní barvu a sloupec; sloupce se recyklují, až skončí větev i její spojnice.
+- **Merge větve:** větve, které po sloučení zmizely, se kreslí jako světlejší samostatná odbočka.
+- **Tagy** s emoji ikonou; u anotovaných tagů tooltip se zprávou.
+- **Neuložené změny** (staged/working/untracked) jako pseudo-commit „WIP“ nad aktuální větví.
+- **Remote větve:** tlačítko „Načíst remote“ zobrazí i větve `origin/*`. Pozor: čte je z lokálních remote-tracking refů, **nedělá `git fetch`**; ukáže tedy stav z posledního fetch/pull.
+- **Refresh (F5)** znovu načte repozitář.
+- **Sloupce tabulky** (zpráva, autor, e-mail, datum) jdou roztáhnout tažením oddělovače; tooltipy u zkrácených textů.
+- **Čeština/angličtina** a **světlý/tmavý režim**; volby se ukládají do `~/.gitvys/settings.json`.
+- **Kontrola Gitu při startu** s návodem, když chybí.
 
 ## Screenshot
 
 ![Git Visualizer](docs/screenshot.png)
 
-*Vizualizace Git repozitáře s barevnými větvemi, tagy a commit historií*
-
-## Vývoj
-
-Viz [docs/INSTALLATION.md](docs/INSTALLATION.md) pro instrukce k instalaci a spuštění ze zdrojového kódu.
-
-## Testing
-
-Projekt má komprehensivní testovací pokrytí (623 test funkcí / 713 collected, **~98% core logic**, ~81% overall).
+## Testy
 
 ```bash
-# Spustit všechny testy
-pytest tests/ -v
-
-# Coverage report
-pytest tests/ --cov=src --cov-report=html
+pytest tests/ -q
+pytest tests/ --cov=src --cov-report=html   # coverage (potřebuje pytest-cov)
 ```
 
-Viz [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) pro kompletní testovací strategii.
-
-## Dokumentace
-
-- **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Instalace ze zdrojového kódu a vývoj
-- **[docs/BUILD-INSTRUCTIONS.md](docs/BUILD-INSTRUCTIONS.md)** - Vytvoření .exe pomocí PyInstaller
-- **[docs/DESIGN.md](docs/DESIGN.md)** - Architektura a design projektu
-- **[docs/CHANGELOG.md](docs/CHANGELOG.md)** - Historie verzí a změn
-- **[docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** - Testovací strategie a pokrytí
-- **[CLAUDE.md](CLAUDE.md)** - Instrukce pro Claude Code
-- **[LICENSE.md](LICENSE.md)** - Licence projektu
+Většina testů je jednotková s mocky GitPythonu a tkinteru. `tests/integration/test_real_repository.py` staví skutečné repozitáře přes `git` v dočasné složce a ověřuje celé načtení i vlastnosti grafu (hrany vedou jen dolů, větve se v jednom sloupci nepřekrývají). Testy vytvářejí skrytá okna Tk, takže potřebují funkční tkinter. Strategie testování: [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md).
 
 ## Struktura projektu
 
 ```
-git-visualizer/
-├── src/                 # Zdrojový kód
-│   ├── main.py          # Vstupní bod aplikace
-│   ├── auth/            # GitHub OAuth autentizace
-│   │   ├── __init__.py
-│   │   ├── github_auth.py    # OAuth Device Flow pro GitHub
-│   │   └── token_storage.py  # Ukládání tokenu (~/.gitvys/)
-│   ├── gui/             # GUI komponenty (refaktorováno v1.5.0)
-│   │   ├── main_window.py   # Layout manager (500 ř.)
-│   │   ├── repo_manager.py  # Repository operations (451 ř.)
-│   │   ├── graph_canvas.py  # Graf komponenta
-│   │   ├── drag_drop.py     # Drag & drop funkcionalita
-│   │   ├── auth_dialog.py   # OAuth autorizační dialog
-│   │   └── ui_components/   # UI komponenty
-│   │       ├── language_switcher.py  # Přepínání jazyka
-│   │       ├── theme_switcher.py     # Přepínání tématu
-│   │       └── stats_display.py      # Zobrazení statistik
-│   ├── repo/            # Git operace (refaktorováno v1.5.0)
-│   │   ├── repository.py    # GitRepository facade (281 ř.)
-│   │   ├── parsers/         # Parsing komponenty
-│   │   │   ├── commit_parser.py    # Parsing commitů
-│   │   │   ├── branch_analyzer.py  # Analýza větví
-│   │   │   └── tag_parser.py       # Parsing tagů
-│   │   └── analyzers/       # Analysis komponenty
-│   │       └── merge_detector.py   # Detekce merge větví
-│   ├── visualization/   # Vizualizace (refaktorováno v1.5.0)
-│   │   ├── graph_drawer.py  # Hlavní orchestrátor (385 ř.)
-│   │   ├── layout.py        # Rozmístění uzlů
-│   │   ├── colors.py        # Barevné schéma a utilities
-│   │   ├── drawing/         # Drawing komponenty
-│   │   │   ├── connection_drawer.py  # Spojnice mezi commity
-│   │   │   ├── commit_drawer.py      # Commit nodes
-│   │   │   ├── tag_drawer.py         # Git tagy
-│   │   │   └── branch_flag_drawer.py # Branch flags
-│   │   └── ui/              # UI komponenty
-│   │       ├── column_manager.py     # Column resizing
-│   │       ├── tooltip_manager.py    # Tooltips
-│   │       └── text_formatter.py     # Text handling
-│   └── utils/           # Pomocné utility
-│       ├── data_structures.py # Datové struktury
-│       ├── constants.py       # Konstanty aplikace
-│       ├── logging_config.py  # Centralizované logování
-│       ├── theme_manager.py   # Správa témat (světlý/tmavý režim)
-│       └── translations.py    # Správa překladů (CS/EN)
-├── build/               # Build skripty a assety
-│   ├── build-exe.bat    # Automatizovaný build skript
-│   ├── build.py         # Build skript pro .exe
-│   ├── icon.ico         # Ikona aplikace
-│   └── feather.png      # Zdrojový asset ikony
-├── docs/                # Dokumentace
-├── dist/                # Build výstup (.exe)
-└── [config files]       # setup.py, requirements.txt, atd.
+src/
+├── main.py                   # vstupní bod, kontrola Gitu
+├── auth/
+│   ├── github_auth.py        # OAuth Device Flow (GitHub)
+│   ├── token_storage.py      # uložení tokenu (DPAPI / 0600)
+│   └── git_credentials.py    # whitelist URL, předání tokenu Gitu, čištění tajemství z textů
+├── gui/
+│   ├── main_window.py        # hlavní okno a rozvržení
+│   ├── repo_manager.py       # načítání, klonování, refresh ve vláknech
+│   ├── graph_canvas.py       # canvas s grafem, scrollování
+│   ├── drag_drop.py          # úvodní obrazovka, drag & drop, dialog URL
+│   ├── auth_dialog.py        # dialog přihlášení ke GitHubu
+│   └── ui_components/        # přepínač jazyka a tématu, statistiky
+├── repo/
+│   ├── repository.py         # fasáda GitRepository
+│   ├── parsers/              # commity, přiřazení větví, tagy
+│   └── analyzers/            # detekce merge větví
+├── visualization/
+│   ├── layout.py             # pořadí řádků a přidělení sloupců větvím
+│   ├── graph_drawer.py       # orchestrace kreslení
+│   ├── drawing/              # spojnice, uzly, tagy, vlaječky větví
+│   ├── ui/                   # sloupce, tooltipy, práce s textem
+│   └── colors.py
+└── utils/                    # datové struktury, konstanty, logování, témata, překlady
+build/                        # build skripty (PyInstaller), ikona
+docs/                         # instalace, build, design, changelog, testovací strategie
+tests/                        # unit/ a integration/
 ```
 
 ## Technologie
 
-- **Python 3.8+** - hlavní jazyk
-- **tkinter** - GUI framework (graf se kreslí na tkinter Canvas)
-- **GitPython** - práce s Git repozitáři
-- **Pillow** - práce s obrázky (ikony, vlajky)
-- **tkinterdnd2** - drag & drop funkcionalita
-- **requests** - HTTP komunikace s GitHub API (OAuth)
+- Python + tkinter (graf se kreslí na `tk.Canvas`)
+- GitPython (čtení repozitáře; volá `git`)
+- tkinterdnd2 (drag & drop)
+- requests (komunikace s GitHub OAuth)
+
+## Další dokumentace
+
+- [docs/INSTALLATION.md](docs/INSTALLATION.md) – instalace ze zdrojového kódu
+- [docs/BUILD-INSTRUCTIONS.md](docs/BUILD-INSTRUCTIONS.md) – build .exe
+- [docs/DESIGN.md](docs/DESIGN.md) – architektura
+- [docs/CHANGELOG.md](docs/CHANGELOG.md) – historie verzí
+- [CLAUDE.md](CLAUDE.md) – instrukce pro Claude Code
+- [LICENSE.md](LICENSE.md) – licence

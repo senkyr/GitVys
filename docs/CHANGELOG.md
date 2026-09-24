@@ -4,6 +4,31 @@ Všechny významné změny v tomto projektu.
 
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
+## [Unreleased]
+
+### Security
+
+- GitHub token se už nevkládá do URL klonu (dřív skončil v `.git/config` klonu a v textu chybového dialogu); Gitu se předává hlavičkou přes proměnné prostředí a jen pro `https://github.com`.
+- Token se neposílá na jiné hosty ani přes `http://`; whitelist URL platí i pro text přetažený přímo na graf.
+- Uložený token je na Windows šifrovaný přes DPAPI, jinde v souboru s právy 0600; starý plaintext se převede.
+
+### Fixed
+
+- Graf: potomek je vždy nad rodičem i při rozjetých hodinách autora; větve už nesdílí sloupec se spojnicí jiné větve.
+- Plné SHA-1 místo 8znakových hashů (kolize ve velkých repozitářích).
+- Odvolaný uložený token vede k novému přihlášení místo trvalé chyby klonování.
+- Zavření OAuth dialogu ukončí polling GitHubu.
+- Výsledek pomalého načítání starého repozitáře už nepřepíše graf nově otevřeného.
+- Tlačítko „Načíst remote“ se po chybě znovu povolí.
+- Detekce neuložených změn (první řádek `git status` se špatně parsoval, nesledované soubory se hlásily jako staged).
+- Statistiky nepočítají WIP pseudo-commit ani virtuální merge větve.
+- Změna šířky sloupce už nekreslí uzly a vlaječky znovu přes staré.
+
+### Changed
+
+- Rychlejší načítání velkých repozitářů: jeden průchod historií místo průchodu pro každou větev, merge-base a first-parent linie v paměti, žádné O(n²) při kreslení tagů, tooltipy bez registrace Tcl příkazu pro každou položku.
+- Odstraněna nepoužívaná závislost Pillow.
+
 ## [1.5.0] - 2025-01-12
 
 ### Added

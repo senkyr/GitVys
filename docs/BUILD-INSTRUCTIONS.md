@@ -19,7 +19,7 @@
 - ✅ Automaticky nainstaluje PyInstaller 6.x+ (pokud chybí nebo je starý)
 - ✅ Vymaže předchozí buildy
 - ✅ Vytvoří optimalizovaný .exe soubor (~14MB s plným GUI supportem)
-- ✅ Zahrnuje všechny tkinter, Git a PIL moduly
+- ✅ Zahrnuje všechny tkinter a Git moduly
 - ✅ Otestuje že se .exe spouští
 - ✅ Oznámí kde najdeš výsledek
 
