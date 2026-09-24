@@ -1,6 +1,64 @@
+"""Rozmístění commitů do řádků (osa Y) a větví do sloupců/lanes (osa X)."""
+
+import heapq
+from datetime import datetime, timezone
 from typing import List, Dict, Set
+
 from utils.data_structures import Commit, MergeBranch
 from utils.constants import BRANCH_LANE_SPACING, COMMIT_START_X, COMMIT_VERTICAL_SPACING, COMMIT_START_Y
+
+MAIN_BRANCHES = ('main', 'master')
+
+
+def _timestamp(commit: Commit) -> float:
+    """Čas commitu jako číslo (zvládne aware i naive datetime bez TypeError při porovnání)."""
+    try:
+        return commit.date.timestamp()
+    except Exception:
+        return 0.0
+
+
+def order_commits(commits: List[Commit]) -> List[Commit]:
+    """Seřadí commity od nejnovějšího, ale vždy potomka NAD jeho rodiče.
+
+    Odpovídá `git log --date-order`: primárně podle času commitu, ale
+    commit se vypíše až po všech svých potomcích. Čisté řazení podle data
+    selže, když má autor rozjeté hodiny (běžné u školních PC) nebo když
+    commity vzniknou ve stejné sekundě - rodič se pak ocitne nad potomkem
+    a hrana grafu vede nahoru.
+    """
+    by_hash = {commit.hash: commit for commit in commits}
+    pending_children = {commit.hash: 0 for commit in commits}
+    for commit in commits:
+        for parent_hash in set(commit.parents):
+            if parent_hash in pending_children:
+                pending_children[parent_hash] += 1
+
+    # Halda podle (nejnovější první, původní pořadí jako tiebreak)
+    heap = [(-_timestamp(commit), index, commit.hash)
+            for index, commit in enumerate(commits) if pending_children[commit.hash] == 0]
+    heapq.heapify(heap)
+    index_of = {commit.hash: index for index, commit in enumerate(commits)}
+
+    ordered = []
+    while heap:
+        _, _, commit_hash = heapq.heappop(heap)
+        commit = by_hash[commit_hash]
+        ordered.append(commit)
+        for parent_hash in set(commit.parents):
+            if parent_hash not in pending_children:
+                continue
+            pending_children[parent_hash] -= 1
+            if pending_children[parent_hash] == 0:
+                parent = by_hash[parent_hash]
+                heapq.heappush(heap, (-_timestamp(parent), index_of[parent_hash], parent_hash))
+
+    if len(ordered) != len(commits):
+        # Cyklus v datech (duplicitní hash apod.) - nic neztratit, zbytek podle data
+        seen = {id(commit) for commit in ordered}
+        rest = [commit for commit in commits if id(commit) not in seen]
+        ordered.extend(sorted(rest, key=_timestamp, reverse=True))
+    return ordered
 
 
 class GraphLayout:
@@ -18,37 +76,20 @@ class GraphLayout:
         if not self.commits:
             return []
 
-        # Seřadit podle času globálně - toto určuje Y pozice
-        all_commits = sorted(self.commits, key=lambda c: c.date, reverse=True)
+        # Pořadí řádků: podle času, ale potomek vždy nad rodičem
+        all_commits = order_commits(self.commits)
 
         # Přiřadit lanes větvím s recyklací
         self._assign_lanes_with_recycling(all_commits)
 
-        # Každý commit dostane Y pozici podle svého chronologického pořadí
-        # X pozici podle své větve
+        # Každý commit dostane Y pozici podle svého pořadí, X pozici podle své větve
         for i, commit in enumerate(all_commits):
             branch_lane = self.branch_lanes[commit.branch]
-
-            # X pozice podle lane větve (sloupec) - začátek po vlaječkách, menší rozestupy
             commit.x = branch_lane * self.branch_spacing + self.commit_start_x
-
-            # Y pozice podle chronologického pořadí (řádek)
             commit.y = i * COMMIT_VERTICAL_SPACING + COMMIT_START_Y
-
-            # table_row pro tabulku
             commit.table_row = i
 
         return all_commits
-
-    def _assign_lanes(self, commits: List[Commit]):
-        # Analyzovat parent-child vztahy pro inteligentní umístění větví
-        branch_relationships = self._analyze_branch_relationships(commits)
-
-        # Přidat merge větve do branch relationships
-        self._add_merge_branches_to_relationships(branch_relationships)
-
-        # Přiřadit lanes tak, aby odbočky vedly vždy doprava
-        self._assign_lanes_intelligently(branch_relationships)
 
     def _analyze_branch_relationships(self, commits: List[Commit]) -> Dict[str, Dict]:
         """Analyzuje vztahy mezi větvemi pro optimální layout."""
@@ -75,75 +116,6 @@ class GraphLayout:
 
         return branch_info
 
-    def _assign_lanes_intelligently(self, branch_info: Dict[str, Dict]):
-        """Přiřadí lanes tak, aby odbočky vedly vždy doprava."""
-        # Rozdělit větve na normální a merge větve
-        normal_branches = []
-        merge_branches = []
-
-        for branch_name, info in branch_info.items():
-            if branch_name.startswith('merge-'):
-                merge_branches.append((branch_name, info))
-            else:
-                normal_branches.append((branch_name, info))
-
-        # Seřadit normální větve podle času vytvoření
-        normal_branches_by_time = sorted(normal_branches,
-                                       key=lambda x: x[1]['creation_time'], reverse=True)
-
-        # FÁZE 1: Přiřadit lanes normálním větvím
-        # Začít s main/master větví na pozici 0
-        main_branches = ['main', 'master']
-        main_branch = None
-        for branch_name, _ in normal_branches_by_time:
-            if branch_name.lower() in main_branches:
-                main_branch = branch_name
-                break
-
-        if main_branch:
-            self.branch_lanes[main_branch] = 0
-            self.used_lanes.add(0)
-
-        # Přiřadit lanes postupně normálním větvím
-        for branch_name, info in normal_branches_by_time:
-            if branch_name in self.branch_lanes:
-                continue
-
-            # Najít nejvhodnější pozici pro tuto větev
-            min_lane = 0
-
-            # Pokud má parent větve, musí být vpravo od všech z nich
-            for parent_branch in info['parent_branches']:
-                if parent_branch in self.branch_lanes:
-                    min_lane = max(min_lane, self.branch_lanes[parent_branch] + 1)
-
-            # Najít první volnou pozici od min_lane
-            while min_lane in self.used_lanes:
-                min_lane += 1
-
-            self.branch_lanes[branch_name] = min_lane
-            self.used_lanes.add(min_lane)
-
-        # FÁZE 2: Přiřadit lanes merge větvím (vždy vpravo od parent)
-        merge_branches_by_time = sorted(merge_branches,
-                                      key=lambda x: x[1]['creation_time'], reverse=True)
-
-        for branch_name, info in merge_branches_by_time:
-            # Najít parent větev a nastavit min_lane vpravo od ní
-            min_lane = 1  # Minimálně lane 1 (vpravo od main)
-
-            for parent_branch in info['parent_branches']:
-                if parent_branch in self.branch_lanes:
-                    # Merge větev musí být vpravo od parent větve
-                    min_lane = max(min_lane, self.branch_lanes[parent_branch] + 1)
-
-            # Najít první volnou pozici od min_lane
-            while min_lane in self.used_lanes:
-                min_lane += 1
-
-            self.branch_lanes[branch_name] = min_lane
-            self.used_lanes.add(min_lane)
-
     def _add_merge_branches_to_relationships(self, branch_relationships: Dict[str, Dict]):
         """Přidá merge větve do branch relationships pro správné lane assignment."""
         commit_map = {commit.hash: commit for commit in self.commits}
@@ -151,26 +123,20 @@ class GraphLayout:
         for merge_branch in self.merge_branches:
             virtual_name = merge_branch.virtual_branch_name
 
-            # Najít nejstarší commit v merge branch pro creation_time
+            # Nejstarší commit merge větve (commits_in_branch je od nejnovějšího)
             creation_time = None
             if merge_branch.commits_in_branch:
-                # Vzít nejstarší commit v merge branch
-                oldest_commit_hash = merge_branch.commits_in_branch[-1]  # Předpokládám že jsou seřazené
+                oldest_commit_hash = merge_branch.commits_in_branch[-1]
                 if oldest_commit_hash in commit_map:
                     creation_time = commit_map[oldest_commit_hash].date
-
             if creation_time is None:
-                # Fallback - použít aktuální čas
-                from datetime import datetime, timezone
                 creation_time = datetime.now(timezone.utc)
 
-            # Najít parent branch (větev kde se merge branch odbočil)
+            # Parent branch (větev, kde se merge branch odbočil)
             parent_branches = set()
             if merge_branch.branch_point_hash in commit_map:
-                branch_point_commit = commit_map[merge_branch.branch_point_hash]
-                parent_branches.add(branch_point_commit.branch)
+                parent_branches.add(commit_map[merge_branch.branch_point_hash].branch)
 
-            # Přidat merge branch do relationships
             branch_relationships[virtual_name] = {
                 'first_commit': commit_map.get(merge_branch.commits_in_branch[0]) if merge_branch.commits_in_branch else None,
                 'parent_branches': parent_branches,
@@ -178,7 +144,6 @@ class GraphLayout:
                 'creation_time': creation_time
             }
 
-            # Aktualizovat parent branch aby věděl o child merge branch
             for parent_branch in parent_branches:
                 if parent_branch in branch_relationships:
                     branch_relationships[parent_branch]['child_branches'].add(virtual_name)
@@ -186,87 +151,84 @@ class GraphLayout:
     def get_branch_lane(self, branch_name: str) -> int:
         return self.branch_lanes.get(branch_name, 0)
 
+    @staticmethod
+    def _branch_row_spans(commits: List[Commit]) -> Dict[str, List[int]]:
+        """Pro každou větev vrátí [první řádek, poslední řádek], které zabírá její lane.
+
+        Nestačí řádky vlastních commitů: spojnice se kreslí jako "L"
+        (viz ConnectionDrawer) a svislá část leží v lane jedné z větví:
+        - odbočení (běžná hrana potomek -> rodič z jiné větve): svislá čára
+          v lane POTOMKA od řádku potomka dolů až k řádku rodiče;
+        - merge hrana (2.+ rodič merge commitu): svislá čára v lane RODIČE
+          od řádku rodiče nahoru až k řádku merge commitu.
+        Kdyby se lane uvolnila hned po posledním commitu větve, jiná větev by
+        ji obsadila a její commity by ležely přímo na této čáře.
+        """
+        row = {commit.hash: i for i, commit in enumerate(commits)}
+        by_hash = {commit.hash: commit for commit in commits}
+        spans: Dict[str, List[int]] = {}
+
+        def extend(branch: str, first: int, last: int):
+            span = spans.setdefault(branch, [first, last])
+            span[0] = min(span[0], first)
+            span[1] = max(span[1], last)
+
+        for i, commit in enumerate(commits):
+            extend(commit.branch, i, i)
+
+        for i, commit in enumerate(commits):
+            is_merge_commit = len(commit.parents) >= 2
+            for parent_index, parent_hash in enumerate(commit.parents):
+                parent = by_hash.get(parent_hash)
+                if parent is None or parent.branch == commit.branch:
+                    continue
+                parent_row = row[parent_hash]
+                owner = parent.branch if (is_merge_commit and parent_index > 0) else commit.branch
+                extend(owner, min(i, parent_row), max(i, parent_row))
+
+        return spans
+
     def _assign_lanes_with_recycling(self, commits: List[Commit]):
-        """Přiřadí lanes větvím s recyklací - uvolňuje lanes po skončení větví."""
-        # Analyzovat parent-child vztahy
+        """Přiřadí lanes větvím s recyklací - lane se uvolní, až skončí vše, co v ní vede.
+
+        Args:
+            commits: Commity v pořadí řádků (výstup order_commits)
+        """
         branch_relationships = self._analyze_branch_relationships(commits)
         self._add_merge_branches_to_relationships(branch_relationships)
+        spans = self._branch_row_spans(commits)
 
-        # Vytvořit časovou osu commitů pro sledování, kdy větve končí
-        commit_timeline = sorted(commits, key=lambda c: c.date, reverse=True)
-
-        # Mapa: větev -> index posledního (nejstaršího) commitu této větve
-        branch_last_commit_index = {}
-        for i, commit in enumerate(commit_timeline):
-            branch = commit.branch
-            # Vždy aktualizovat na vyšší index (starší commit)
-            branch_last_commit_index[branch] = max(branch_last_commit_index.get(branch, -1), i)
-
-        # Sledování aktivních lanes v průběhu času
-        active_lanes = {}  # lane_number -> branch_name
-        free_lanes = set()  # Sada volných lane čísel
-        next_lane = 0  # Čítač pro nové lanes
-
-        # Rozdělit větve na normální a merge
-        normal_branches = []
-        merge_branches = []
-        for branch_name, info in branch_relationships.items():
-            if branch_name.startswith('merge-'):
-                merge_branches.append((branch_name, info))
-            else:
-                normal_branches.append((branch_name, info))
-
-        # Seřadit podle času vytvoření
-        normal_branches_by_time = sorted(normal_branches, key=lambda x: x[1]['creation_time'], reverse=True)
-        merge_branches_by_time = sorted(merge_branches, key=lambda x: x[1]['creation_time'], reverse=True)
-
-        # FÁZE 1: Přiřadit main větev na lane 0
-        main_branches = ['main', 'master']
+        # Main/master má vždy lane 0 po celé výšce grafu
         main_branch = None
-        for branch_name, _ in normal_branches_by_time:
-            if branch_name.lower() in main_branches:
-                main_branch = branch_name
+        for commit in commits:
+            if commit.branch.lower() in MAIN_BRANCHES:
+                main_branch = commit.branch
                 break
 
+        lane_busy_until: Dict[int, int] = {}  # lane -> poslední řádek, který je v ní obsazený
         if main_branch:
             self.branch_lanes[main_branch] = 0
-            active_lanes[0] = main_branch
-            next_lane = 1
+            lane_busy_until[0] = float('inf')
 
-        # FÁZE 2: Procházet commity chronologicky a přiřazovat/uvolňovat lanes
-        for i, commit in enumerate(commit_timeline):
-            branch = commit.branch
+        # Větve v pořadí, v jakém se v grafu shora objeví
+        branches_by_start = sorted(spans, key=lambda name: spans[name][0])
 
-            # Pokud tato větev ještě nemá lane, přiřadit ji
-            if branch not in self.branch_lanes:
-                # Zjistit minimální lane (musí být vpravo od parent větví)
-                min_lane = 0
-                branch_info = branch_relationships.get(branch, {})
-                for parent_branch in branch_info.get('parent_branches', []):
-                    if parent_branch in self.branch_lanes:
-                        min_lane = max(min_lane, self.branch_lanes[parent_branch] + 1)
+        for branch in branches_by_start:
+            if branch in self.branch_lanes:
+                continue
+            first_row, last_row = spans[branch]
 
-                # Najít první volnou lane >= min_lane
-                assigned_lane = None
+            # Odbočka musí být vpravo od větví, ze kterých vychází
+            min_lane = 0
+            for parent_branch in branch_relationships.get(branch, {}).get('parent_branches', ()):
+                if parent_branch in self.branch_lanes:
+                    min_lane = max(min_lane, self.branch_lanes[parent_branch] + 1)
 
-                # Zkusit použít recyklovanou lane
-                available_free = sorted([l for l in free_lanes if l >= min_lane])
-                if available_free:
-                    assigned_lane = available_free[0]
-                    free_lanes.remove(assigned_lane)
-                else:
-                    # Žádná volná lane, použít novou
-                    assigned_lane = max(next_lane, min_lane)
-                    next_lane = assigned_lane + 1
+            lane = min_lane
+            while lane_busy_until.get(lane, -1) >= first_row:
+                lane += 1
 
-                self.branch_lanes[branch] = assigned_lane
-                active_lanes[assigned_lane] = branch
+            self.branch_lanes[branch] = lane
+            lane_busy_until[lane] = last_row
 
-            # Pokud je to poslední commit této větve, uvolnit její lane
-            if i == branch_last_commit_index.get(branch, -1):
-                # Větev končí - uvolnit její lane (pokud to není main)
-                if branch != main_branch and branch in self.branch_lanes:
-                    lane = self.branch_lanes[branch]
-                    if lane in active_lanes and active_lanes[lane] == branch:
-                        del active_lanes[lane]
-                        free_lanes.add(lane)
+        self.used_lanes = set(self.branch_lanes.values())
