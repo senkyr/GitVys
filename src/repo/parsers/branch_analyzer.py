@@ -1,7 +1,7 @@
 """BranchAnalyzer - handles branch analysis and relationship detection."""
 
 import tempfile
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Set, Tuple
 from git import Repo
 from utils.logging_config import get_logger
 
