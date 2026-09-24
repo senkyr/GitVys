@@ -95,13 +95,11 @@ def main():
         "--hidden-import=git",
         "--hidden-import=git.exc",
         "--hidden-import=gitdb",
-        "--hidden-import=PIL",
-        "--hidden-import=PIL.Image",
-        "--hidden-import=PIL.ImageTk",
         "--hidden-import=requests",
         "--hidden-import=auth",
         "--hidden-import=auth.github_auth",
         "--hidden-import=auth.token_storage",
+        "--hidden-import=auth.git_credentials",
 
         # Zabalit všechny git dependencies
         "--collect-all=git",

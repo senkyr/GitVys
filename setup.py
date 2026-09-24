@@ -9,7 +9,6 @@ setup(
     package_dir={'': 'src'},
     install_requires=[
         "GitPython==3.1.45",
-        "Pillow==11.0.0",
         "tkinterdnd2==0.4.2",
         "requests==2.32.3"
     ],
