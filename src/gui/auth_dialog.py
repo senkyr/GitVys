@@ -22,6 +22,8 @@ class GitHubAuthDialog:
         self.result_token = None  # Výsledný access token
         self.cancelled = False
         self.github_auth = GitHubAuth()
+        # Nastaví se při zavření dialogu -> pracovní vlákno přestane pollovat GitHub
+        self._stop_event = threading.Event()
 
         # Vytvořit dialog window
         self.dialog = tk.Toplevel(parent)
@@ -30,6 +32,8 @@ class GitHubAuthDialog:
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
+        # Zavření křížkem = zrušení (jinak by vlákno pollovalo dál až 15 minut)
+        self.dialog.protocol("WM_DELETE_WINDOW", self._cancel)
 
         # Centrovať dialog
         self._center_dialog()
@@ -150,44 +154,64 @@ class GitHubAuthDialog:
         thread = threading.Thread(target=self._auth_worker, daemon=True)
         thread.start()
 
+    def _post(self, callback, *args):
+        """Předá callback do hlavního vlákna; po zavření dialogu nic nedělá."""
+        if self._stop_event.is_set():
+            return
+        try:
+            self.dialog.after(0, self._run_if_open, callback, *args)
+        except (tk.TclError, RuntimeError):
+            # Dialog už neexistuje nebo aplikace končí
+            pass
+
+    def _run_if_open(self, callback, *args):
+        if not self._stop_event.is_set():
+            callback(*args)
+
     def _auth_worker(self):
         """Worker thread pro OAuth flow."""
         try:
             # 1. Request device code
-            self.dialog.after(0, self._update_status, t('auth_requesting'))
+            self._post(self._update_status, t('auth_requesting'))
 
             device_data = self.github_auth.request_device_code()
 
             if not device_data:
-                self.dialog.after(0, self._show_error, t('auth_error_code'))
+                self._post(self._show_error, t('auth_error_code'))
                 return
 
             self.device_code = device_data['device_code']
             self.verification_uri = device_data['verification_uri']
             user_code = device_data['user_code']
-            interval = device_data.get('interval', 5)
+            interval = int(device_data.get('interval', 5) or 5)
+            expires_in = int(device_data.get('expires_in', 900) or 900)
 
             # 2. Zobrazit user code
-            self.dialog.after(0, self._update_user_code, user_code)
-            self.dialog.after(0, self._update_status, t('auth_waiting'))
+            self._post(self._update_user_code, user_code)
+            self._post(self._update_status, t('auth_waiting'))
 
-            # 3. Poll pro access token
-            token, status = self.github_auth.poll_for_token(self.device_code, interval)
+            # 3. Poll pro access token (dokud kód platí nebo dokud uživatel dialog nezavře)
+            token, status = self.github_auth.poll_for_token(
+                self.device_code, interval, timeout=expires_in, cancel_event=self._stop_event
+            )
+
+            if self._stop_event.is_set():
+                return  # Dialog byl zavřen - výsledek už nikoho nezajímá
 
             # 4. Zpracovat výsledek
             if status == "success" and token:
                 self.result_token = token
-                self.dialog.after(0, self._on_success)
+                self._post(self._on_success)
             elif status == "timeout":
-                self.dialog.after(0, self._show_error, t('auth_error_timeout'))
+                self._post(self._show_error, t('auth_error_timeout'))
             elif status == "cancelled":
-                self.dialog.after(0, self._show_error, t('auth_error_cancelled'))
+                self._post(self._show_error, t('auth_error_cancelled'))
             else:
-                self.dialog.after(0, self._show_error, t('auth_error_general'))
+                self._post(self._show_error, t('auth_error_general'))
 
         except Exception as e:
             logger.warning(f"Auth worker error: {e}")
-            self.dialog.after(0, self._show_error, t('error') + f": {str(e)}")
+            self._post(self._show_error, t('error') + f": {str(e)}")
 
     def _update_user_code(self, code: str):
         """Aktualizuje zobrazený user code."""
@@ -222,7 +246,7 @@ class GitHubAuthDialog:
         tm = get_theme_manager()
         self.progress.stop()
         self.status_label.config(text=t('auth_success'), foreground=tm.get_color('auth_success_text'))
-        self.dialog.after(1000, self.dialog.destroy)
+        self.dialog.after(1000, self._close)
 
     def _show_error(self, message: str):
         """Zobrazí chybovou zprávu a zavře dialog."""
@@ -230,12 +254,20 @@ class GitHubAuthDialog:
         self.progress.stop()
         self.status_label.config(text="✗ " + t('error'), foreground=tm.get_color('auth_error_text'))
         messagebox.showerror(t('auth_error_title'), message, parent=self.dialog)
-        self.dialog.destroy()
+        self._close()
+
+    def _close(self):
+        """Zavře dialog a ukončí polling v pracovním vlákně."""
+        self._stop_event.set()
+        try:
+            self.dialog.destroy()
+        except tk.TclError:
+            pass
 
     def _cancel(self):
         """Zruší autentizaci."""
         self.cancelled = True
-        self.dialog.destroy()
+        self._close()
 
     def show(self) -> str:
         """

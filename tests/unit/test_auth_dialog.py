@@ -96,7 +96,8 @@ class TestAuthWorker:
         mock_auth_instance.request_device_code.assert_called_once()
 
         # Verify polling called
-        mock_auth_instance.poll_for_token.assert_called_once_with('test_device_code', 5)
+        mock_auth_instance.poll_for_token.assert_called_once_with(
+            'test_device_code', 5, timeout=900, cancel_event=dialog._stop_event)
 
         # Verify result token set
         assert dialog.result_token == 'test_token'

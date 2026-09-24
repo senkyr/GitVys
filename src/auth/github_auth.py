@@ -2,6 +2,7 @@
 GitHub OAuth Device Flow autentizace.
 """
 
+import threading
 import requests
 import time
 from typing import Optional, Dict, Tuple
@@ -57,10 +58,10 @@ class GitHubAuth:
             # Kontrola povinných polí
             required_fields = ['device_code', 'user_code', 'verification_uri', 'interval']
             if not all(field in data for field in required_fields):
-                logger.warning(f"Missing required fields in device code response: {data}")
+                logger.warning(f"Missing required fields in device code response, keys: {sorted(data.keys())}")
                 return None
 
-            logger.info(f"Device code obtained: {data['user_code']}")
+            logger.info("Device code obtained")
             return data
 
         except requests.RequestException as e:
@@ -70,14 +71,16 @@ class GitHubAuth:
             logger.warning(f"Error requesting device code: {e}")
             return None
 
-    def poll_for_token(self, device_code: str, interval: int = 5, timeout: int = 300) -> Tuple[Optional[str], str]:
+    def poll_for_token(self, device_code: str, interval: int = 5, timeout: int = 300,
+                       cancel_event: Optional[threading.Event] = None) -> Tuple[Optional[str], str]:
         """
-        Polluje GitHub API pro access token.
+        Polluje GitHub API pro access token (RFC 8628, kap. 3.4–3.5).
 
         Args:
             device_code: Device code z request_device_code()
-            interval: Interval mezi pokusy v sekundách
-            timeout: Maximální čas čekání v sekundách
+            interval: Interval mezi pokusy v sekundách (GitHub ho může zvýšit přes slow_down)
+            timeout: Maximální čas čekání v sekundách (typicky expires_in z device code)
+            cancel_event: Nastavením eventu se polling okamžitě ukončí (zavřený dialog)
 
         Returns:
             Tuple (access_token, status):
@@ -87,7 +90,17 @@ class GitHubAuth:
         start_time = time.time()
         attempts = 0
 
+        def wait(seconds: float) -> bool:
+            """Počká; vrátí True, pokud mezitím uživatel polling zrušil."""
+            if cancel_event is None:
+                time.sleep(seconds)
+                return False
+            return cancel_event.wait(seconds)
+
         while time.time() - start_time < timeout:
+            if cancel_event is not None and cancel_event.is_set():
+                return None, "cancelled"
+
             attempts += 1
 
             try:
@@ -104,7 +117,8 @@ class GitHubAuth:
 
                 if response.status_code != 200:
                     logger.debug(f"Token polling attempt {attempts}: HTTP {response.status_code}")
-                    time.sleep(interval)
+                    if wait(interval):
+                        return None, "cancelled"
                     continue
 
                 data = response.json()
@@ -116,13 +130,16 @@ class GitHubAuth:
                     if error == "authorization_pending":
                         # Normální stav - uživatel ještě neautorizoval
                         logger.debug(f"Waiting for authorization (attempt {attempts})...")
-                        time.sleep(interval)
+                        if wait(interval):
+                            return None, "cancelled"
                         continue
 
                     elif error == "slow_down":
-                        # GitHub žádá o zpomalení pollingu
-                        logger.debug("Slowing down polling interval")
-                        time.sleep(interval + 5)
+                        # RFC 8628: interval se TRVALE zvyšuje o 5 s (GitHub posílá i nový interval)
+                        interval = max(interval + 5, int(data.get("interval", 0) or 0))
+                        logger.debug(f"Slowing down polling interval to {interval}s")
+                        if wait(interval):
+                            return None, "cancelled"
                         continue
 
                     elif error == "expired_token":
@@ -146,13 +163,15 @@ class GitHubAuth:
                     logger.info("Access token obtained successfully")
                     return token, "success"
 
-                # Neočekávaná odpověď
-                logger.warning(f"Unexpected response: {data}")
-                time.sleep(interval)
+                # Neočekávaná odpověď (bez obsahu - mohla by nést citlivá data)
+                logger.warning(f"Unexpected token response, keys: {sorted(data.keys())}")
+                if wait(interval):
+                    return None, "cancelled"
 
             except requests.RequestException as e:
                 logger.debug(f"Network error during polling (attempt {attempts}): {e}")
-                time.sleep(interval)
+                if wait(interval):
+                    return None, "cancelled"
                 continue
 
             except Exception as e:

@@ -6,6 +6,7 @@ try:
 except ImportError:
     TkinterDnD = None
     DND_FILES = None
+from auth.git_credentials import is_trusted_git_url, looks_like_url
 from utils.logging_config import get_logger
 from utils.translations import t
 from utils.theme_manager import get_theme_manager
@@ -138,65 +139,22 @@ class DragDropFrame(ttk.Frame):
         if data_list:
             data = data_list[0].strip()
 
-            # Auto-detect: URL nebo folder path
-            if self._is_git_url(data):
+            # Auto-detect: URL nebo folder path (neplatnou URL odmítne process_url)
+            if looks_like_url(data):
                 self.process_url(data)
             else:
                 self.process_folder(data)
 
     def _is_git_url(self, text: str) -> bool:
         """
-        Detekuje zda je text Git URL s bezpečnostní validací.
+        Detekuje, zda je text povolená Git URL.
 
-        Podporuje:
-        - HTTP(S) URL z důvěryhodných hostů (GitHub, GitLab, Bitbucket)
-        - Git SSH format (git@host:user/repo.git)
+        Podporuje HTTP(S) a SSH (git@host:user/repo.git) adresy na hostech
+        z ``auth.git_credentials.TRUSTED_GIT_HOSTS`` (včetně subdomén).
+        Stejnou kontrolu dělá i RepositoryManager, sem patří kvůli okamžité
+        chybové hlášce v dialogu.
         """
-        from urllib.parse import urlparse
-        import re
-
-        text = text.strip()
-
-        # Git SSH format: git@github.com:user/repo.git
-        ssh_pattern = r'^git@([\w\.-]+):([\w\-/]+)(\.git)?$'
-        ssh_match = re.match(ssh_pattern, text, re.IGNORECASE)
-        if ssh_match:
-            host = ssh_match.group(1).lower()
-            # Whitelist důvěryhodných SSH hostů
-            trusted_ssh_hosts = {'github.com', 'gitlab.com', 'bitbucket.org'}
-            if host in trusted_ssh_hosts or any(host.endswith(f'.{trusted}') for trusted in trusted_ssh_hosts):
-                return True
-            logger.warning(f"Untrusted SSH host: {host}")
-            return False
-
-        # HTTP(S) URL format s whitelist důvěryhodných hostů
-        try:
-            parsed = urlparse(text)
-
-            # Povolit pouze http a https schéma
-            if parsed.scheme not in ('http', 'https'):
-                logger.debug(f"Invalid URL scheme: {parsed.scheme}")
-                return False
-
-            # Whitelist důvěryhodných hostů
-            trusted_hosts = {
-                'github.com', 'gitlab.com', 'bitbucket.org',
-                'gitea.io', 'codeberg.org', 'sr.ht'  # Další známé Git hosty
-            }
-
-            netloc = parsed.netloc.lower()
-
-            # Exact match nebo subdoména důvěryhodného hostu
-            for trusted_host in trusted_hosts:
-                if netloc == trusted_host or netloc.endswith(f'.{trusted_host}'):
-                    return True
-
-            logger.warning(f"Untrusted Git host: {netloc}")
-            return False
-
-        except Exception as e:
-            logger.warning(f"Failed to parse URL: {e}")
-            return False
+        return is_trusted_git_url(text)
 
     def update_language(self):
         """Update all UI texts when language changes."""
@@ -344,7 +302,7 @@ class DragDropFrame(ttk.Frame):
                 dialog.focus_force()
                 dialog.lift()
 
-        parent.bind('<Button-1>', on_parent_interaction, add='+')
+        parent_click_binding = parent.bind('<Button-1>', on_parent_interaction, add='+')
 
         # Focus monitoring - udržet focus v rámci dialogu
         # Také kontrolovat jestli parent ještě existuje
@@ -378,7 +336,11 @@ class DragDropFrame(ttk.Frame):
 
         # Cleanup
         def cleanup_and_close():
-            parent.unbind('<Button-1>')
+            # Odebrat jen vlastní handler, ne všechny <Button-1> bindingy okna
+            try:
+                parent.unbind('<Button-1>', parent_click_binding)
+            except tk.TclError:
+                pass
             dialog.destroy()
 
         def on_ok():

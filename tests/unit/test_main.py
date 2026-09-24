@@ -35,7 +35,8 @@ class TestCheckGitInstalled:
             ['git', '--version'],
             capture_output=True,
             check=True,
-            timeout=5
+            timeout=5,
+            creationflags=getattr(main.subprocess, 'CREATE_NO_WINDOW', 0)
         )
 
     @patch('subprocess.run')

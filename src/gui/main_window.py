@@ -510,6 +510,12 @@ class MainWindow:
         tm = self.theme_manager
         self.progress.config(value=0, color=tm.get_color('progress_color_success'))
         self.update_status(t('error'))
+
+        # Po chybě načítání remote větví vrátit tlačítko do použitelného stavu
+        # (fetch_remote_data ho před spuštěním vlákna vypíná)
+        button_text = t('fetch_branches') if self.repo_manager.is_cloned_repo else t('fetch_remote')
+        self.fetch_button.config(text=button_text, state="normal")
+
         messagebox.showerror(t('error'), message)
 
     def update_status(self, message: str):

@@ -35,7 +35,7 @@ TRANSLATIONS = {
         'error_cloning': 'Chyba klonování:\n{}',
         'auth_expired': 'Autentizace vypršela nebo byla zrušena',
         'auth_failed': 'Autentizace se nezdařila',
-        'auth_https_only': 'Token autentizace funguje pouze s HTTPS URLs',
+        'auth_https_only': 'Přihlášení přes GitHub je možné jen pro HTTPS adresy na github.com',
 
         # Statistics plurals
         'author_1': 'autor',
@@ -120,7 +120,7 @@ TRANSLATIONS = {
         'error_cloning': 'Cloning error:\n{}',
         'auth_expired': 'Authentication expired or was cancelled',
         'auth_failed': 'Authentication failed',
-        'auth_https_only': 'Token authentication only works with HTTPS URLs',
+        'auth_https_only': 'GitHub sign-in only works with HTTPS URLs on github.com',
 
         # Statistics plurals (English doesn't need complex plurals)
         'author_1': 'author',

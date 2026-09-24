@@ -19,11 +19,14 @@ def check_git_installed():
     """
     try:
         # Zkusit spustit 'git --version'
-        result = subprocess.run(
+        # V .exe bez konzole by `git` jinak na okamžik otevřel prázdné okno konzole
+        creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        subprocess.run(
             ['git', '--version'],
             capture_output=True,
             check=True,
-            timeout=5
+            timeout=5,
+            creationflags=creationflags
         )
         return True
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):

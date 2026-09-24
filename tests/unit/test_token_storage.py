@@ -66,7 +66,33 @@ class TestSaveToken:
         # Verify success
         assert result is True
         assert storage.token_file.exists()
-        assert storage.token_file.read_text() == token
+        assert storage.load_token() == token
+        if os.name == 'nt':
+            # Na Windows je token na disku zašifrovaný (DPAPI), ne čitelný text
+            content = storage.token_file.read_text()
+            assert content.startswith('dpapi:v1:')
+            assert token not in content
+        else:
+            assert storage.token_file.read_text() == token
+
+    @pytest.mark.skipif(os.name != 'nt', reason="DPAPI is Windows-only")
+    def test_legacy_plaintext_token_is_migrated(self, temp_token_storage):
+        """Token uložený starou verzí jako plaintext se načte a přepíše zašifrovaně."""
+        storage = temp_token_storage
+        storage.config_dir.mkdir(parents=True, exist_ok=True)
+        storage.token_file.write_text('gho_legacy_plaintext', encoding='utf-8')
+
+        assert storage.load_token() == 'gho_legacy_plaintext'
+        assert storage.token_file.read_text().startswith('dpapi:v1:')
+        assert storage.load_token() == 'gho_legacy_plaintext'
+
+    def test_save_token_leaves_no_temp_files(self, temp_token_storage):
+        """Atomický zápis nesmí nechat v config složce dočasné soubory."""
+        storage = temp_token_storage
+        storage.save_token('gho_a')
+        storage.save_token('gho_b')
+
+        assert [p.name for p in storage.config_dir.iterdir()] == ['github_token']
 
     def test_save_token_creates_directory(self, temp_token_storage):
         """Test that save_token creates config directory if missing."""
@@ -98,7 +124,7 @@ class TestSaveToken:
 
         # Verify new token overwrote old
         assert result is True
-        assert storage.token_file.read_text() == new_token
+        assert storage.load_token() == new_token
 
     @pytest.mark.skipif(os.name == 'nt', reason="File permissions not enforced on Windows")
     def test_save_token_sets_permissions_linux(self, temp_token_storage):

@@ -12,6 +12,11 @@ from pathlib import Path
 from gui.repo_manager import RepositoryManager
 
 
+def run_posted_immediately(manager):
+    """root.after(0, cb, *args) -> cb(*args) hned (simulace hlavni smycky)."""
+    manager.root.after = MagicMock(side_effect=lambda delay, cb, *args: cb(*args))
+
+
 class TestRepositoryManagerInitialization:
     """Tests for RepositoryManager initialization."""
 
@@ -80,14 +85,12 @@ class TestURLDetection:
 
         assert manager._is_git_url("http://github.com/user/repo.git")
 
-    def test_is_git_url_host_detection(self, mock_parent_window):
-        """Test Git host detection without protocol."""
+    def test_is_git_url_without_scheme_is_path(self, mock_parent_window):
+        """Text bez schematu je lokalni cesta (i kdyz obsahuje jmeno hostu)."""
         manager = RepositoryManager(mock_parent_window)
 
-        # Should detect known Git hosts
-        assert manager._is_git_url("github.com/user/repo")
-        assert manager._is_git_url("gitlab.com/user/repo")
-        assert manager._is_git_url("bitbucket.org/user/repo")
+        assert not manager._is_git_url("github.com/user/repo")
+        assert not manager._is_git_url("C:\\projects\\github.com-mirror")
 
     def test_is_git_url_local_path(self, mock_parent_window):
         """Test local path detection (should return False)."""
@@ -103,10 +106,10 @@ class TestRepositorySelection:
     """Tests for repository selection entry point."""
 
     @patch.object(RepositoryManager, 'load_repository')
-    def test_on_repository_selected_local_path(self, mock_load, mock_parent_window):
+    def test_on_repository_selected_local_path(self, mock_load, mock_parent_window, tmp_path):
         """Test selecting local repository path."""
         manager = RepositoryManager(mock_parent_window)
-        local_path = "C:\\Users\\user\\repo"
+        local_path = str(tmp_path)
 
         manager.on_repository_selected(local_path)
 
@@ -128,6 +131,29 @@ class TestRepositorySelection:
         # Should call clone_repository
         mock_clone.assert_called_once_with(url)
 
+    @patch.object(RepositoryManager, 'clone_repository')
+    def test_on_repository_selected_rejects_untrusted_url(self, mock_clone, mock_parent_window):
+        """URL mimo whitelist se neklonuje (drop na graf obchazi DragDropFrame)."""
+        manager = RepositoryManager(mock_parent_window)
+
+        for url in ["https://evil.example.com/user/repo.git",
+                    "https://github.com.evil.example/user/repo.git",
+                    "https://user:secret@github.com/user/repo.git"]:
+            manager.on_repository_selected(url)
+
+        mock_clone.assert_not_called()
+        assert mock_parent_window.show_error.call_count == 3
+
+    @patch.object(RepositoryManager, 'load_repository')
+    def test_on_repository_selected_rejects_missing_folder(self, mock_load, mock_parent_window, tmp_path):
+        """Neexistujici cesta skonci chybou, nespusti nacitani."""
+        manager = RepositoryManager(mock_parent_window)
+
+        manager.on_repository_selected(str(tmp_path / "does-not-exist"))
+
+        mock_parent_window.show_error.assert_called_once()
+        mock_parent_window.progress.start.assert_not_called()
+
     @patch.object(RepositoryManager, '_cleanup_single_clone')
     @patch.object(RepositoryManager, 'load_repository')
     def test_on_repository_selected_cleans_previous_clone(self, mock_load, mock_cleanup, mock_parent_window, tmp_path):
@@ -146,8 +172,9 @@ class TestRepositorySelection:
         manager.git_repo.repo = MagicMock()
 
         # Select new local repo
-        local_path = "C:\\Users\\user\\new_repo"
-        manager.on_repository_selected(local_path)
+        local_path = tmp_path / "new_repo"
+        local_path.mkdir()
+        manager.on_repository_selected(str(local_path))
 
         # Should have cleaned up previous clone
         mock_cleanup.assert_called_once_with(str(previous_temp))
@@ -212,8 +239,10 @@ class TestCloning:
 
         manager._clone_worker(url, path)
 
-        # Should have called clone_from
-        mock_clone_from.assert_called_once_with(url, path)
+        # Should have called clone_from without credentials
+        mock_clone_from.assert_called_once()
+        assert mock_clone_from.call_args[0] == (url, path)
+        assert mock_clone_from.call_args[1]['env'] == {'GIT_TERMINAL_PROMPT': '0'}
 
     @patch('git.Repo.clone_from')
     @patch.object(RepositoryManager, '_show_auth_dialog_sync')
@@ -230,14 +259,16 @@ class TestCloning:
 
         # Mock auth dialog to return token
         mock_auth_dialog.return_value = "fake_token_123"
-        manager._auth_dialog_result = "fake_token_123"
+        manager.token_storage.load_token = MagicMock(return_value=None)
+        manager.token_storage.save_token = MagicMock()
+        run_posted_immediately(manager)
 
         manager._clone_worker(url, path)
 
-        # Should have shown auth dialog
-        # Note: In actual implementation, dialog is shown via root.after()
-        # We verify that token loading was attempted
-        assert mock_clone_from.call_count >= 1
+        # Dialog shown (in main thread via root.after), clone retried, token saved
+        mock_auth_dialog.assert_called_once()
+        assert mock_clone_from.call_count == 2
+        manager.token_storage.save_token.assert_called_once_with("fake_token_123")
 
     @patch('git.Repo.clone_from')
     def test_clone_worker_retry_with_token(self, mock_clone_from, mock_parent_window):
@@ -258,9 +289,80 @@ class TestCloning:
 
         # Should have retried with token
         assert mock_clone_from.call_count == 2
-        # Second call should have token in URL
-        second_call_url = mock_clone_from.call_args_list[1][0][0]
-        assert "saved_token_456" in second_call_url
+        second_call = mock_clone_from.call_args_list[1]
+        # Token nesmi byt v URL (skoncil by v .git/config a v chybovych hlaskach)
+        assert second_call[0][0] == url
+        # ...ale predava se Gitu hlavickou pres promenne prostredi
+        import base64
+        env = second_call[1]['env']
+        encoded = env['GIT_CONFIG_VALUE_0'].split("Basic ", 1)[1]
+        assert base64.b64decode(encoded).decode().startswith("saved_token_456:")
+        assert env['GIT_CONFIG_KEY_0'] == 'http.https://github.com/.extraHeader'
+
+    @patch('git.Repo.clone_from')
+    @patch.object(RepositoryManager, '_show_auth_dialog_sync')
+    def test_clone_worker_invalid_saved_token_is_replaced(self, mock_auth_dialog, mock_clone_from, mock_parent_window):
+        """Odvolany ulozeny token se smaze a uzivatel dostane OAuth dialog."""
+        manager = RepositoryManager(mock_parent_window)
+        manager.token_storage.load_token = MagicMock(return_value="revoked_token")
+        manager.token_storage.delete_token = MagicMock()
+        manager.token_storage.save_token = MagicMock()
+        mock_auth_dialog.return_value = "fresh_token"
+        run_posted_immediately(manager)
+
+        from git.exc import GitCommandError
+        auth_error = GitCommandError("git clone", 128, stderr="fatal: Authentication failed")
+        mock_clone_from.side_effect = [auth_error, auth_error, MagicMock()]
+
+        manager._clone_worker("https://github.com/user/private.git", "/tmp/test_clone")
+
+        manager.token_storage.delete_token.assert_called_once()
+        mock_auth_dialog.assert_called_once()
+        manager.token_storage.save_token.assert_called_once_with("fresh_token")
+        mock_parent_window.show_error.assert_not_called()
+
+    @patch('git.Repo.clone_from')
+    def test_clone_worker_never_sends_token_to_other_hosts(self, mock_clone_from, mock_parent_window):
+        """Pri chybe autentizace na jinem hostu nez github.com se token nepouzije."""
+        manager = RepositoryManager(mock_parent_window)
+        manager.token_storage.load_token = MagicMock(return_value="github_token")
+        run_posted_immediately(manager)
+
+        from git.exc import GitCommandError
+        mock_clone_from.side_effect = GitCommandError("git clone", 128, stderr="fatal: Authentication failed")
+
+        manager._clone_worker("https://gitlab.com/user/private.git", "/tmp/test_clone")
+
+        assert mock_clone_from.call_count == 1
+        manager.token_storage.load_token.assert_not_called()
+        mock_parent_window.show_error.assert_called_once()
+
+    @patch('git.Repo.clone_from')
+    def test_clone_error_message_is_redacted(self, mock_clone_from, mock_parent_window):
+        """Chybova hlaska nesmi obsahovat token ani udaje z URL."""
+        manager = RepositoryManager(mock_parent_window)
+        run_posted_immediately(manager)
+        mock_clone_from.side_effect = Exception(
+            "Cmd('git') failed: git clone https://gho_abcdefghijklmnopqrstuvwxyz0123@github.com/u/r.git")
+
+        manager._clone_worker("https://github.com/u/r.git", "/tmp/test_clone")
+
+        message = mock_parent_window.show_error.call_args[0][0]
+        assert "gho_abcdefghijklmnopqrstuvwxyz0123" not in message
+
+    def test_stale_result_is_dropped(self, mock_parent_window):
+        """Vysledek operace, kterou predbehla novejsi, se nezobrazi."""
+        manager = RepositoryManager(mock_parent_window)
+        run_posted_immediately(manager)
+        stale = manager._next_generation()
+        manager._next_generation()  # uzivatel mezitim otevrel jiny repozitar
+
+        callback = MagicMock()
+        manager._post(stale, callback, "old result")
+        callback.assert_not_called()
+
+        manager._post(manager._generation, callback, "new result")
+        callback.assert_called_once_with("new result")
 
     @patch('git.Repo.clone_from')
     @patch.object(RepositoryManager, '_cleanup_single_clone')
@@ -322,7 +424,6 @@ class TestAuthentication:
 
             # Should show dialog and return token
             assert token == "test_token_789"
-            assert manager._auth_dialog_result == "test_token_789"
 
     @patch('git.Repo.clone_from')
     def test_clone_with_saved_token(self, mock_clone_from, mock_parent_window):
@@ -347,10 +448,12 @@ class TestAuthentication:
 
     @patch('git.Repo.clone_from')
     def test_clone_saves_token_after_success(self, mock_clone_from, mock_parent_window):
-        """Test that successful auth saves token."""
+        """Test that successful auth with a NEW token saves it."""
         manager = RepositoryManager(mock_parent_window)
         manager.token_storage.save_token = MagicMock()
-        manager.token_storage.load_token = MagicMock(return_value="new_token")
+        manager.token_storage.load_token = MagicMock(return_value=None)
+        manager._show_auth_dialog_sync = MagicMock(return_value="new_token")
+        run_posted_immediately(manager)
 
         url = "https://github.com/user/private-repo.git"
         path = "/tmp/test"
@@ -375,8 +478,7 @@ class TestAuthentication:
         url = "git@github.com:user/repo.git"
         path = "/tmp/test"
 
-        # Mock root.after to verify it's called
-        manager.root.after = MagicMock()
+        run_posted_immediately(manager)
 
         with patch('git.Repo.clone_from') as mock_clone:
             from git.exc import GitCommandError
@@ -384,13 +486,10 @@ class TestAuthentication:
 
             manager._clone_worker(url, path)
 
-            # Should have called error handler (SSH doesn't support token)
-            # Check that root.after was called with show_error
-            assert manager.root.after.called
-            # Verify the call includes show_error function
-            calls_with_show_error = [call for call in manager.root.after.call_args_list
-                                      if len(call[0]) >= 2 and call[0][1] == manager.parent.show_error]
-            assert len(calls_with_show_error) > 0
+            # SSH doesn't support token -> error shown, token never loaded
+            assert mock_clone.call_count == 1
+            manager.token_storage.load_token.assert_not_called()
+            manager.parent.show_error.assert_called_once()
 
 
 class TestTempCleanup:
@@ -499,10 +598,12 @@ class TestRepositoryLoading:
         mock_layout_instance.calculate_positions.return_value = [MagicMock()]
         mock_layout.return_value = mock_layout_instance
 
+        run_posted_immediately(manager)
         manager.load_repository("/path/to/repo")
 
-        # Should have loaded successfully
+        # Should have loaded successfully (git_repo is set in the main thread callback)
         assert manager.git_repo == mock_repo
+        mock_parent_window.show_graph.assert_called_once()
         mock_repo.load_repository.assert_called_once()
         mock_repo.parse_commits.assert_called_once()
 
@@ -511,8 +612,7 @@ class TestRepositoryLoading:
         """Test repository loading failure."""
         manager = RepositoryManager(mock_parent_window)
 
-        # Mock root.after to verify it's called
-        manager.root.after = MagicMock()
+        run_posted_immediately(manager)
 
         # Mock GitRepository to fail
         mock_repo = MagicMock()
@@ -521,13 +621,9 @@ class TestRepositoryLoading:
 
         manager.load_repository("/path/to/invalid/repo")
 
-        # Should have called show_error via root.after
-        # Check that root.after was called with show_error
-        assert manager.root.after.called
-        # Verify the call includes show_error function
-        calls_with_show_error = [call for call in manager.root.after.call_args_list
-                                  if len(call[0]) >= 2 and call[0][1] == manager.parent.show_error]
-        assert len(calls_with_show_error) > 0
+        # Should have shown error in the main thread, repo not taken over
+        mock_parent_window.show_error.assert_called_once()
+        assert manager.git_repo is None
 
     def test_refresh_repository_local(self, mock_parent_window):
         """Test refreshing local repository."""
