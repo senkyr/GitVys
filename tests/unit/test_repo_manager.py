@@ -12,6 +12,15 @@ from pathlib import Path
 from gui.repo_manager import RepositoryManager
 
 
+@pytest.fixture(autouse=True)
+def isolated_temp_dir(tmp_path, monkeypatch):
+    """Dočasné klony testů do tmp_path, ne do systémového temp."""
+    systemp = tmp_path / "systemp"
+    systemp.mkdir()
+    monkeypatch.setattr(tempfile, 'tempdir', str(systemp))
+    return systemp
+
+
 def run_posted_immediately(manager):
     """root.after(0, cb, *args) -> cb(*args) hned (simulace hlavni smycky)."""
     manager.root.after = MagicMock(side_effect=lambda delay, cb, *args: cb(*args))
@@ -34,22 +43,45 @@ class TestRepositoryManagerInitialization:
         assert manager.display_name is None
         assert manager.token_storage is not None
 
-    @patch('gui.repo_manager.glob.glob')
-    @patch('gui.repo_manager.shutil.rmtree')
-    def test_cleanup_old_temp_clones_on_init(self, mock_rmtree, mock_glob, mock_parent_window, tmp_path):
-        """Test cleanup of orphaned temp clones from previous sessions."""
-        # Create fake temp clones
-        fake_temp1 = tmp_path / "gitvys_clone_old1"
-        fake_temp2 = tmp_path / "gitvys_clone_old2"
-        fake_temp1.mkdir()
-        fake_temp2.mkdir()
+    def test_cleanup_old_temp_clones_on_init(self, mock_parent_window, isolated_temp_dir):
+        """Při startu se smažou jen osiřelé složky, ne klony jiné běžící instance."""
+        from gui.temp_clones import TempCloneArea, LOCK_NAME
 
-        mock_glob.return_value = [str(fake_temp1), str(fake_temp2)]
+        # Běžící instance (drží zámek) se svým klonem
+        other_instance = TempCloneArea(str(isolated_temp_dir))
+        other_clone = other_instance.new_clone_dir()
 
+        # Spadlá instance: zámek existuje, ale nikdo ho nedrží
+        crashed = isolated_temp_dir / "gitvys_instance_crashed"
+        (crashed / "clone_x").mkdir(parents=True)
+        (crashed / LOCK_NAME).write_text("99999")
+
+        # Klony staré verze: starý se smaže, čerstvý (možná běžící stará verze) zůstane
+        old_legacy = isolated_temp_dir / "gitvys_clone_old"
+        old_legacy.mkdir()
+        os.utime(old_legacy, (0, 0))
+        fresh_legacy = isolated_temp_dir / "gitvys_clone_fresh"
+        fresh_legacy.mkdir()
+
+        try:
+            manager = RepositoryManager(mock_parent_window)
+
+            assert not crashed.exists()
+            assert not old_legacy.exists()
+            assert fresh_legacy.exists()
+            assert os.path.isdir(other_clone)
+            assert manager.temp_area.instance_dir.exists()
+        finally:
+            other_instance.close()
+
+    def test_exit_cleanup_removes_own_instance_dir(self, mock_parent_window):
         manager = RepositoryManager(mock_parent_window)
+        clone_dir = manager.temp_area.new_clone_dir()
+        manager.temp_clones.append(clone_dir)
 
-        # Should have attempted to cleanup both old temp clones
-        assert mock_rmtree.call_count == 2
+        manager._cleanup_temp_clones()
+
+        assert not manager.temp_area.instance_dir.exists()
 
     @patch('atexit.register')
     def test_atexit_handler_registration(self, mock_atexit, mock_parent_window):
@@ -185,35 +217,27 @@ class TestRepositorySelection:
 class TestCloning:
     """Tests for repository cloning and temp management."""
 
-    @patch('gui.repo_manager.tempfile.mkdtemp')
     @patch('gui.repo_manager.threading.Thread')
-    def test_clone_repository_creates_temp_dir(self, mock_thread, mock_mkdtemp, mock_parent_window, tmp_path):
-        """Test that cloning creates temp directory."""
-        temp_dir = tmp_path / "gitvys_clone_test"
-        temp_dir.mkdir()
-        mock_mkdtemp.return_value = str(temp_dir)
-
+    def test_clone_repository_creates_temp_dir(self, mock_thread, mock_parent_window):
+        """Test that cloning creates temp directory inside this instance's area."""
         manager = RepositoryManager(mock_parent_window)
         url = "https://github.com/user/repo.git"
 
         manager.clone_repository(url)
 
-        # Should create temp directory
-        mock_mkdtemp.assert_called_once()
-        assert str(temp_dir) in manager.temp_clones
+        # Should create temp directory in the instance folder
+        assert len(manager.temp_clones) == 1
+        clone_dir = Path(manager.temp_clones[0])
+        assert clone_dir.is_dir()
+        assert clone_dir.parent == manager.temp_area.instance_dir
 
         # Should start clone thread
         mock_thread.assert_called_once()
         mock_thread.return_value.start.assert_called_once()
 
-    @patch('gui.repo_manager.tempfile.mkdtemp')
     @patch('gui.repo_manager.threading.Thread')
-    def test_clone_repository_extracts_name(self, mock_thread, mock_mkdtemp, mock_parent_window, tmp_path):
+    def test_clone_repository_extracts_name(self, mock_thread, mock_parent_window):
         """Test that cloning extracts repository name from URL."""
-        temp_dir = tmp_path / "gitvys_clone_test"
-        temp_dir.mkdir()
-        mock_mkdtemp.return_value = str(temp_dir)
-
         manager = RepositoryManager(mock_parent_window)
 
         # Test various URL formats
@@ -384,28 +408,20 @@ class TestCloning:
         # (cleanup is called via root.after(0, ...))
         manager.root.after.assert_any_call(0, mock_cleanup, path)
 
-    @patch('gui.repo_manager.tempfile.mkdtemp')
     @patch('gui.repo_manager.threading.Thread')
     @patch.object(RepositoryManager, '_cleanup_single_clone')
-    def test_clone_repository_multiple_sequential(self, mock_cleanup, mock_thread, mock_mkdtemp, mock_parent_window, tmp_path):
+    def test_clone_repository_multiple_sequential(self, mock_cleanup, mock_thread, mock_parent_window):
         """Test cloning multiple repositories sequentially."""
         manager = RepositoryManager(mock_parent_window)
 
-        # First clone
-        temp1 = tmp_path / "clone1"
-        temp1.mkdir()
-        mock_mkdtemp.return_value = str(temp1)
         manager.clone_repository("https://github.com/user/repo1.git")
         first_temp = manager.temp_clones[-1]
 
         # Second clone (should cleanup first)
-        temp2 = tmp_path / "clone2"
-        temp2.mkdir()
-        mock_mkdtemp.return_value = str(temp2)
         manager.clone_repository("https://github.com/user/repo2.git")
 
         # Should have cleaned up first clone
-        mock_cleanup.assert_called()
+        mock_cleanup.assert_any_call(first_temp)
 
 
 class TestAuthentication:
@@ -567,7 +583,7 @@ class TestTempCleanup:
         manager.temp_clones.append(str(temp_clone))
 
         # Mock shutil.rmtree to raise PermissionError
-        with patch('gui.repo_manager.shutil.rmtree') as mock_rmtree:
+        with patch('gui.temp_clones.shutil.rmtree') as mock_rmtree:
             mock_rmtree.side_effect = PermissionError("File is locked")
 
             # Should not crash, just log warning

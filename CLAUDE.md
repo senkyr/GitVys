@@ -148,7 +148,7 @@ GitVys/
 
 - **URL Support**: Clone remote repositories (GitHub, GitLab, Bitbucket) to temp directory
 - **Private Repository Support**: OAuth Device Flow authentication for private GitHub repositories
-- **Temp Clone Management**: Automatic cleanup of cloned repositories with proper Windows file handle management
+- **Temp Clone Management** (`gui/temp_clones.py`): each running instance clones into its own `gitvys_instance_*` temp folder holding a lock file (PID + OS file lock); startup cleanup removes only folders whose lock nobody holds, so clones of another running instance survive
 - **Theme Support**: Light/dark mode with automatic persistence to settings
 - **Multi-language**: Czech/English UI with language switcher
 - **Tags**: Display Git tags with emoji icons (🏷️ normal, 📌 release, 🚀 version) and tooltips for annotated tags

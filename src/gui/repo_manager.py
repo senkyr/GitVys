@@ -8,17 +8,13 @@ repozitáře mohlo přepsat graf nového.
 """
 
 import atexit
-import glob
 import os
-import shutil
-import stat
-import sys
-import tempfile
 import threading
 
 from repo.repository import GitRepository
 from visualization.layout import GraphLayout
 from gui.auth_dialog import GitHubAuthDialog
+from gui.temp_clones import TempCloneArea, rmtree_force
 from auth.token_storage import TokenStorage
 from auth.git_credentials import (
     build_git_auth_env, can_use_github_token, is_trusted_git_url,
@@ -39,32 +35,16 @@ AUTH_ERROR_KEYWORDS = (
 )
 
 
-def _remove_readonly(func, path, _exc):
-    """Error handler pro rmtree: Git na Windows zakládá read-only objekty."""
-    if func in (os.unlink, os.rmdir, os.remove):
-        os.chmod(path, stat.S_IWRITE)
-        func(path)
-    else:
-        raise
-
-
-def _rmtree_force(path: str) -> None:
-    """Smaže strom včetně read-only souborů (onexc od Pythonu 3.12, dřív onerror)."""
-    if sys.version_info >= (3, 12):
-        shutil.rmtree(path, onexc=_remove_readonly)
-    else:
-        shutil.rmtree(path, onerror=_remove_readonly)
-
-
 class RepositoryManager:
     """Component for managing Git repository operations including cloning, loading, and refreshing."""
 
-    def __init__(self, parent_window):
+    def __init__(self, parent_window, temp_base_dir=None):
         """
         Initialize RepositoryManager.
 
         Args:
             parent_window: MainWindow instance
+            temp_base_dir: Kde zakládat dočasné klony (výchozí systémový temp)
         """
         self.parent = parent_window
         self.root = parent_window.root
@@ -79,7 +59,10 @@ class RepositoryManager:
         self.token_storage = TokenStorage()  # GitHub token storage
         self._generation = 0  # Číslo poslední spuštěné operace (viz docstring modulu)
 
-        # Vyčistit staré temp složky z předchozích sessions
+        # Vlastní složka pro klony této instance (se zámkem, viz gui/temp_clones.py)
+        self.temp_area = TempCloneArea(temp_base_dir)
+
+        # Vyčistit osiřelé temp složky z předchozích (spadlých) sessions
         self._cleanup_old_temp_clones()
 
         # Register cleanup handler
@@ -199,7 +182,7 @@ class RepositoryManager:
         self.current_temp_clone = None
 
         # Vytvořit temp složku
-        temp_dir = tempfile.mkdtemp(prefix='gitvys_clone_')
+        temp_dir = self.temp_area.new_clone_dir()
         self.temp_clones.append(temp_dir)
 
         # Extrahovat název repo z URL pro zobrazení
@@ -366,15 +349,14 @@ class RepositoryManager:
                 logger.warning(f"Failed to close GitPython repo: {e}")
 
     def _cleanup_old_temp_clones(self):
-        """Při startu smaže všechny temp složky z předchozích sessions."""
+        """Při startu smaže temp složky instancí, které už neběží.
+
+        Klony jiné běžící instance zůstanou - drží zámek své složky.
+        """
         try:
-            pattern = os.path.join(tempfile.gettempdir(), 'gitvys_clone_*')
-            for old_temp in glob.glob(pattern):
-                try:
-                    if os.path.isdir(old_temp):
-                        _rmtree_force(old_temp)
-                except Exception as e:
-                    logger.warning(f"Failed to cleanup orphaned temp clone {old_temp}: {e}")
+            removed = self.temp_area.cleanup_orphans()
+            if removed:
+                logger.info(f"Removed {removed} orphaned temp clone folder(s)")
         except Exception as e:
             logger.warning(f"Failed to cleanup temp clones: {e}")
 
@@ -387,7 +369,7 @@ class RepositoryManager:
         """
         try:
             if os.path.exists(path):
-                _rmtree_force(path)
+                rmtree_force(path)
             # Odebrat z listu JEN pokud mazání skutečně uspělo
             if not os.path.exists(path) and path in self.temp_clones:
                 self.temp_clones.remove(path)
@@ -402,9 +384,12 @@ class RepositoryManager:
         for temp_dir in list(self.temp_clones):
             try:
                 if os.path.exists(temp_dir):
-                    _rmtree_force(temp_dir)
+                    rmtree_force(temp_dir)
             except Exception as e:
                 logger.warning(f"Failed to cleanup temp clone {temp_dir}: {e}")
+
+        # Uvolnit zámek a smazat složku instance
+        self.temp_area.close()
 
     # ------------------------------------------------------------------
     # Načítání

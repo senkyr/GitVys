@@ -36,7 +36,7 @@ Skript nainstaluje závislosti a PyInstaller a spustí `build/build.py`. Výsled
 ## Funkce
 
 - **Lokální repozitář:** přetažením složky nebo přes dialog.
-- **Repozitář z URL:** HTTPS nebo SSH (`git@host:user/repo.git`) z povolených hostů: GitHub, GitLab, Bitbucket, Codeberg, gitea.io, sr.ht (i jejich subdomény). Klonuje se do dočasné složky, která se smaže při zavření repozitáře nebo aplikace. URL s přihlašovacími údaji (`https://user:heslo@...`) se odmítají.
+- **Repozitář z URL:** HTTPS nebo SSH (`git@host:user/repo.git`) z povolených hostů: GitHub, GitLab, Bitbucket, Codeberg, gitea.io, sr.ht (i jejich subdomény). Klonuje se do dočasné složky (každá spuštěná instance má vlastní `%TEMP%/gitvys_instance_*` se zámkem), která se smaže při zavření repozitáře nebo aplikace. Po pádu aplikace se zbytky uklidí při dalším startu; klony jiné běžící instance zůstanou. URL s přihlašovacími údaji (`https://user:heslo@...`) se odmítají.
 - **Soukromé repozitáře na GitHubu:** když klon selže kvůli přihlášení, aplikace otevře přihlášení přes GitHub (OAuth Device Flow). Token:
   - se používá jen pro `https://github.com`, nikdy pro jiné hosty ani přes `http://`;
   - se Gitu předává hlavičkou přes proměnné prostředí, takže se neobjeví v URL, v `.git/config` klonu ani v chybových hláškách;
