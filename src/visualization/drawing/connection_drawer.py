@@ -21,47 +21,45 @@ class ConnectionDrawer:
         self.node_radius = NODE_RADIUS
         self.curve_intensity = 0.8  # Intensity of curve rounding (0-1)
 
-    def draw_connections(self, commits: List[Commit], make_color_pale_callback) -> None:
+    def draw_connections(self, commits: List[Commit], make_color_pale_callback,
+                         commit_info: Dict[str, Commit] = None) -> None:
         """Draws all connections between commits.
 
         Args:
-            commits: List of commits to draw connections for
+            commits: Commits whose connections (to their parents) should be drawn
             make_color_pale_callback: Function to make colors pale (for remote/merge connections)
+            commit_info: Map hash -> commit for looking up parents (default: built from
+                `commits`). Virtualized rendering passes the full map, because parents
+                of drawn commits often lie outside the drawn slice.
         """
-        commit_positions = {commit.hash: (commit.x, commit.y) for commit in commits}
-        commit_info = {commit.hash: commit for commit in commits}
+        if commit_info is None:
+            commit_info = {commit.hash: commit for commit in commits}
 
         for commit in commits:
-            if commit.parents:
-                child_pos = commit_positions.get(commit.hash)
-                if child_pos:
-                    # Detect merge commit (multiple parents)
-                    is_merge_commit = len(commit.parents) >= 2
+            if not commit.parents:
+                continue
+            child_pos = (commit.x, commit.y)
+            is_merge_commit = len(commit.parents) >= 2  # Multiple parents
+            is_uncommitted = getattr(commit, 'is_uncommitted', False)
 
-                    for parent_index, parent_hash in enumerate(commit.parents):
-                        parent_pos = commit_positions.get(parent_hash)
-                        if parent_pos:
-                            # Use remote status and uncommitted status of child for drawing connection
-                            # Start from parent, draw to child
-                            is_uncommitted = getattr(commit, 'is_uncommitted', False)
+            for parent_index, parent_hash in enumerate(commit.parents):
+                parent_commit = commit_info.get(parent_hash)
+                if parent_commit is None:
+                    continue
+                parent_pos = (parent_commit.x, parent_commit.y)
 
-                            # Determine connection type
-                            parent_commit = commit_info.get(parent_hash)
+                # Branching: parent and child in different branches (but not merge connection)
+                is_branching = parent_commit.branch != commit.branch and not is_merge_commit
 
-                            # Branching: parent and child in different branches (but not merge connection)
-                            is_branching = parent_commit and parent_commit.branch != commit.branch and not is_merge_commit
+                # Merge connection: second+ parent of merge commit
+                is_merge_connection = is_merge_commit and parent_index > 0
 
-                            # Merge connection: second+ parent of merge commit
-                            is_merge_connection = is_merge_commit and parent_index > 0
+                # For merge connections use color of parent (merged branch), not child (merge commit)
+                line_color = parent_commit.branch_color if is_merge_connection else commit.branch_color
 
-                            # For merge connections use color of parent (merged branch), not child (merge commit)
-                            if is_merge_connection:
-                                line_color = parent_commit.branch_color if parent_commit else commit.branch_color
-                            else:
-                                line_color = commit.branch_color
-
-                            self._draw_line(parent_pos, child_pos, line_color, commit.is_remote,
-                                          is_uncommitted, is_merge_connection, is_branching, make_color_pale_callback)
+                # Draw from parent (start) to child (end)
+                self._draw_line(parent_pos, child_pos, line_color, commit.is_remote,
+                                is_uncommitted, is_merge_connection, is_branching, make_color_pale_callback)
 
     def _draw_line(self, start: Tuple[int, int], end: Tuple[int, int], color: str,
                    is_remote: bool = False, is_uncommitted: bool = False,

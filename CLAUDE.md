@@ -137,7 +137,7 @@ GitVys/
 2. For URLs: Repository is cloned to temporary directory with automatic cleanup
 3. GitRepository class loads and parses commit history (one `git rev-list` over all branches; commit-to-branch assignment via `rev-list tip --not <processed tips>`; merge-base computed in memory)
 4. GraphLayout orders rows like `git log --date-order` (by date, child always above parent) and assigns lanes; a lane stays reserved until the branch's connection lines end (see `GraphLayout._branch_row_spans`)
-5. GraphDrawer renders the visualization on canvas with:
+5. GraphDrawer renders the visualization on canvas - **virtualized**: `draw_graph` does global work (column widths, flags, edge index by row blocks), `render_visible` draws only rows around the viewport (one screen above/below) and is re-run from `GraphCanvas._on_yview_changed` when the view leaves the rendered slice. Scrollregion comes from `GraphDrawer.get_content_bounds()`, not from canvas bbox. Drawers take `visible_commits` for the slice but make global decisions (flags, dominant author) over all commits. With:
    - Interactive column resizing
    - Tooltips for truncated text
    - Tag display with emojis

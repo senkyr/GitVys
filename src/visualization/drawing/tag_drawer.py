@@ -21,27 +21,36 @@ class TagDrawer:
 
     def draw_tags(self, commits: List[Commit], table_start_position: int,
                  show_tooltip_callback: Callable,
-                 hide_tooltip_callback: Callable) -> None:
+                 hide_tooltip_callback: Callable,
+                 visible_commits: List[Commit] = None,
+                 children: Dict[str, List[Commit]] = None,
+                 commit_map: Dict[str, Commit] = None) -> None:
         """Draws all tags for commits with tags.
 
         Args:
-            commits: List of commits to draw tags for
+            commits: All commits (for connection geometry)
             table_start_position: X position where table starts
             show_tooltip_callback: Callback to show tooltip
             hide_tooltip_callback: Callback to hide tooltip
+            visible_commits: Commits to actually draw (default: all)
+            children: Precomputed parent hash -> children (optional)
+            commit_map: Precomputed hash -> commit (optional)
         """
         emoji_font = ('Segoe UI Emoji', 10)  # Font for emoji
         text_font = ('Arial', 8, 'bold')     # Font for tag names
 
-        if not any(commit.tags for commit in commits):
+        to_draw = commits if visible_commits is None else visible_commits
+        if not any(commit.tags for commit in to_draw):
             return
 
         # Potomci každého commitu jednou předem - dřív se pro každý otagovaný
         # commit procházely všechny commity (tagy × commity operací)
-        children = self._build_children_index(commits)
-        commit_map = {c.hash: c for c in commits}
+        if children is None:
+            children = self._build_children_index(commits)
+        if commit_map is None:
+            commit_map = {c.hash: c for c in commits}
 
-        for commit in commits:
+        for commit in to_draw:
             if not commit.tags:
                 continue
 

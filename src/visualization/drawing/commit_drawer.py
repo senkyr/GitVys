@@ -67,7 +67,8 @@ class CommitDrawer:
                     make_color_pale_callback: Callable,
                     branch_flag_drawer,
                     draw_flag_connection_callback: Callable,
-                    text_only: bool = False) -> None:
+                    text_only: bool = False,
+                    visible_commits: List[Commit] = None) -> None:
         """Draws all commit nodes with metadata.
 
         Při text_only=True se kreslí jen texty tabulky (překreslení po změně
@@ -85,6 +86,9 @@ class CommitDrawer:
             make_color_pale_callback: Callback to make colors pale
             branch_flag_drawer: BranchFlagDrawer instance to draw branch flags
             draw_flag_connection_callback: Callback to draw flag connections
+            text_only: Draw only table texts (nodes and flags are already on canvas)
+            visible_commits: Commits to actually draw (virtualized rendering). Global
+                decisions (flags, dominant author) are still made over all `commits`.
         """
         # Use standard font - scaling is handled by text length, not font size
         font = ('Arial', self.font_size)
@@ -96,42 +100,17 @@ class CommitDrawer:
         if not text_only:
             self._node_tooltips = {}
 
-        # Check if we have any branch head commits
-        has_branch_heads = any(commit.is_branch_head for commit in commits)
-
-        if has_branch_heads:
-            # New logic - use branch head commits
-            branch_head_commits = {}  # branch_name -> {'local': commit, 'remote': commit, 'both': commit}
-
-            for commit in commits:
-                if commit.is_branch_head:
-                    clean_branch_name = commit.branch
-                    if commit.branch.startswith('origin/'):
-                        clean_branch_name = commit.branch[7:]  # Remove "origin/"
-
-                    if clean_branch_name not in branch_head_commits:
-                        branch_head_commits[clean_branch_name] = {}
-
-                    branch_head_commits[clean_branch_name][commit.branch_head_type] = commit
-        else:
-            # Fallback logic - use first commit of each branch (original behavior)
-            drawn_branch_flags = set()
-            # Find last commit of each branch (by time, but ignore WIP commits)
-            last_commits_by_branch = {}
-            for commit in commits:
-                # Ignore WIP commits when finding last real commit
-                if getattr(commit, 'is_uncommitted', False):
-                    continue
-
-                if commit.branch not in last_commits_by_branch:
-                    last_commits_by_branch[commit.branch] = commit
-                elif commit.date > last_commits_by_branch[commit.branch].date:
-                    last_commits_by_branch[commit.branch] = commit
+        # Rozhodnutí, která závisí na celé historii (ne jen na vykreslovaném výřezu)
+        analysis = self._analyze(commits)
+        has_branch_heads = analysis['has_branch_heads']
+        flag_commit_ids = analysis['flag_commit_ids']
+        connection_commit_ids = analysis['connection_commit_ids']
+        dominant_author = analysis['dominant_author']
 
         tm = get_theme_manager()
         node_items = []  # (commit, id uzlu na canvasu) pro tooltipy s autorem
 
-        for commit in commits:
+        for commit in (commits if visible_commits is None else visible_commits):
             x, y = commit.x, commit.y
 
             if not text_only:
@@ -208,21 +187,13 @@ class CommitDrawer:
                         connection_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
                         draw_flag_connection_callback(x, y, connection_color)
                 else:
-                    # Fallback logic - original behavior (but not for WIP and merge commits)
-                    if (commit.branch != 'unknown' and
-                        commit.branch not in drawn_branch_flags and
-                        not getattr(commit, 'is_uncommitted', False) and
-                        not commit.branch.startswith('merge-')):
+                    # Fallback logic - flag at first commit of each branch (not for WIP and merge commits)
+                    if id(commit) in flag_commit_ids:
                         flag_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
                         branch_flag_drawer.draw_branch_flag(x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
-                        drawn_branch_flags.add(commit.branch)
 
                     # If this is last commit of branch, draw horizontal connection to flag (except 'unknown', WIP and merge)
-                    if (commit.branch != 'unknown' and
-                        commit.branch in last_commits_by_branch and
-                        last_commits_by_branch[commit.branch] == commit and
-                        not getattr(commit, 'is_uncommitted', False) and
-                        not commit.branch.startswith('merge-')):
+                    if id(commit) in connection_commit_ids:
                         connection_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
                         draw_flag_connection_callback(x, y, connection_color)
 
@@ -375,20 +346,61 @@ class CommitDrawer:
                     tags="commit_text"
                 )
 
-        # Detect dominant author (>80% commits)
-        author_counts = Counter(commit.author for commit in commits)
-        total_commits = len(commits)
-        dominant_author = None
-        if author_counts and total_commits > 0:
-            most_common_author, count = author_counts.most_common(1)[0]
-            if count / total_commits > 0.8:
-                dominant_author = most_common_author
-
         # Add tooltips with author only for non-dominant authors
         if not text_only:
             for commit, node_item in node_items:
                 if commit.author and commit.author != dominant_author:
                     self._add_tooltip(node_item, commit.author, is_node=True)
+
+    def _analyze(self, commits: List[Commit]) -> Dict:
+        """Globální rozbor commitů pro kreslení; výsledek se cachuje pro stejný seznam.
+
+        Při virtualizovaném kreslení se draw_commits volá pro každý výřez
+        znovu, ale tato rozhodnutí závisí na celé historii.
+        """
+        cache_key = (id(commits), len(commits))
+        cached = getattr(self, '_analysis_cache', None)
+        if cached and cached[0] == cache_key and cached[1] is commits:
+            return cached[2]
+
+        has_branch_heads = any(commit.is_branch_head for commit in commits)
+
+        flag_commit_ids = set()
+        connection_commit_ids = set()
+        if not has_branch_heads:
+            # Fallback: vlaječka u prvního commitu větve v pořadí řádků,
+            # spojnice k vlaječce u nejnovějšího (podle data) commitu větve
+            flagged_branches = set()
+            last_commits_by_branch = {}
+            for commit in commits:
+                if getattr(commit, 'is_uncommitted', False):
+                    continue
+                if commit.branch == 'unknown' or commit.branch.startswith('merge-'):
+                    continue
+                if commit.branch not in flagged_branches:
+                    flagged_branches.add(commit.branch)
+                    flag_commit_ids.add(id(commit))
+                last = last_commits_by_branch.get(commit.branch)
+                if last is None or commit.date > last.date:
+                    last_commits_by_branch[commit.branch] = commit
+            connection_commit_ids = {id(commit) for commit in last_commits_by_branch.values()}
+
+        # Detect dominant author (>80% commits)
+        dominant_author = None
+        author_counts = Counter(commit.author for commit in commits)
+        if author_counts and commits:
+            most_common_author, count = author_counts.most_common(1)[0]
+            if count / len(commits) > 0.8:
+                dominant_author = most_common_author
+
+        analysis = {
+            'has_branch_heads': has_branch_heads,
+            'flag_commit_ids': flag_commit_ids,
+            'connection_commit_ids': connection_commit_ids,
+            'dominant_author': dominant_author,
+        }
+        self._analysis_cache = (cache_key, commits, analysis)
+        return analysis
 
     def _create_circle_polygon(self, x: int, y: int, radius: int, num_points: int = 20) -> List[float]:
         """Creates points for circular polygon (for stipple support on Windows)."""

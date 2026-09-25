@@ -43,6 +43,7 @@ Skript nainstaluje závislosti a PyInstaller a spustí `build/build.py`. Výsled
   - se ukládá do `~/.gitvys/github_token`: na Windows zašifrovaný přes DPAPI (vázaný na účet uživatele), jinde jako soubor s právy 0600;
   - pokud ho GitHub odmítne (odvolaný, vypršelý), smaže se a aplikace požádá o nové přihlášení.
 - **Graf:** commity seřazené podle času, ale potomek je vždy nad rodičem (jako `git log --date-order`), takže graf nerozbijí ani rozjeté hodiny autora. Každá větev má vlastní barvu a sloupec; sloupce se recyklují, až skončí větev i její spojnice.
+- **Velké repozitáře:** na canvas se kreslí jen řádky kolem viditelné části (při scrollování se dokreslují), takže ani desetitisíce commitů nevytvoří statisíce položek canvasu. Šířky sloupců se nad 2000 commitů odhadují ze šířek znaků.
 - **Merge větve:** větve, které po sloučení zmizely, se kreslí jako světlejší samostatná odbočka.
 - **Tagy** s emoji ikonou; u anotovaných tagů tooltip se zprávou.
 - **Neuložené změny** (staged/working/untracked) jako pseudo-commit „WIP“ nad aktuální větví.
@@ -63,7 +64,7 @@ pytest tests/ -q
 pytest tests/ --cov=src --cov-report=html   # coverage (potřebuje pytest-cov)
 ```
 
-Většina testů je jednotková s mocky GitPythonu a tkinteru. `tests/integration/test_real_repository.py` staví skutečné repozitáře přes `git` v dočasné složce a ověřuje celé načtení i vlastnosti grafu (hrany vedou jen dolů, větve se v jednom sloupci nepřekrývají). Testy vytvářejí skrytá okna Tk, takže potřebují funkční tkinter. Strategie testování: [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md).
+Většina testů je jednotková s mocky GitPythonu a tkinteru. `tests/integration/test_real_repository.py` staví skutečné repozitáře přes `git` v dočasné složce a ověřuje celé načtení i vlastnosti grafu (hrany vedou jen dolů, větve se v jednom sloupci nepřekrývají). `tests/integration/test_large_repository.py` vyrobí přes `git fast-import` repozitář s ~12 000 commity a ověří virtualizované kreslení (běží asi 20 s). Testy vytvářejí skrytá okna Tk, takže potřebují funkční tkinter. Strategie testování: [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md).
 
 ## Struktura projektu
 

@@ -1,14 +1,15 @@
 """GraphDrawer - orchestrator for graph rendering components."""
 
 import tkinter as tk
-from typing import List, Dict
+from bisect import bisect_left, bisect_right
+from typing import List, Dict, Optional, Tuple
 from utils.data_structures import Commit
 from utils.logging_config import get_logger
 from utils.theme_manager import get_theme_manager
 from utils.constants import (
     NODE_RADIUS, LINE_WIDTH, FONT_SIZE, SEPARATOR_HEIGHT,
     MIN_COLUMN_WIDTH_TEXT, MIN_COLUMN_WIDTH_GRAPH,
-    HEADER_HEIGHT, BASE_MARGIN, BRANCH_LANE_SPACING
+    HEADER_HEIGHT, BASE_MARGIN, BRANCH_LANE_SPACING, COMMIT_VERTICAL_SPACING
 )
 
 # Import all drawing and UI components
@@ -26,6 +27,14 @@ from visualization.ui import (
 from visualization.colors import make_color_pale
 
 logger = get_logger(__name__)
+
+# Virtualizace: hrany se indexují po blocích řádků, aby šlo rychle najít
+# spojnice, které procházejí vykreslovaným výřezem.
+EDGE_BLOCK_ROWS = 64
+# Minimální výška výřezu, se kterou se počítá, než je canvas namapovaný
+MIN_VIEWPORT_HEIGHT = 600
+# Do tohoto počtu commitů se šířky textů pro sloupce měří přesně (viz _calculate_column_widths)
+EXACT_MEASURE_LIMIT = 2000
 
 
 class GraphDrawer:
@@ -60,6 +69,16 @@ class GraphDrawer:
         self.flag_width = None
         self.required_tag_space = None
 
+        # Virtualized rendering state (viz draw_graph / render_visible)
+        self._current_commits = None
+        self._rows: List[Commit] = []        # commity seřazené podle y
+        self._row_y: List[int] = []
+        self._commit_map: Dict[str, Commit] = {}
+        self._children: Dict[str, List[Commit]] = {}
+        self._edge_blocks: Dict[int, set] = {}
+        self._rendered_range: Optional[Tuple[float, float]] = None
+        self._needs_description_recalc = False
+
     def reset(self):
         """Resets GraphDrawer state for new repository."""
         # Reset column widths - user-set and calculated
@@ -83,18 +102,17 @@ class GraphDrawer:
             self.tooltip_manager.hide_tooltip()
 
     def draw_graph(self, canvas: tk.Canvas, commits: List[Commit]):
-        """Main entry point - orchestrates entire graph rendering.
+        """Main entry point - prepares the graph and draws the visible part.
 
-        Delegates to individual components in this order:
-        1. ConnectionDrawer - connections
-        2. CommitDrawer - commit nodes
-        3. TagDrawer - tags
-        4. BranchFlagDrawer - branch flags
-        5. ColumnManager - separators
+        Globální výpočty (šířky sloupců, vlaječky, lanes) se dělají nad všemi
+        commity, ale na canvas se kreslí jen řádky kolem viditelné oblasti
+        (render_visible). Dřív se kreslilo všech N commitů (~10 položek na
+        řádek), takže desetitisíce commitů znamenaly statisíce položek canvasu,
+        pomalé načtení, scrollování i překreslování.
 
         Args:
             canvas: Canvas to draw on
-            commits: List of commits to draw
+            commits: List of commits to draw (with layout positions)
         """
         if not commits:
             return
@@ -124,14 +142,79 @@ class GraphDrawer:
         # Calculate required tag space
         self._calculate_required_tag_space()
 
-        # Get table start position for use by drawing components
+        # Indexy pro virtualizované kreslení
+        self._prepare_virtualization(commits)
+        self._needs_description_recalc = False
+
+        self.render_visible(canvas, force=True)
+
+    def _prepare_virtualization(self, commits: List[Commit]):
+        """Seřadí řádky podle y a zaindexuje hrany po blocích řádků."""
+        self._rows = sorted(commits, key=lambda c: c.y)
+        self._row_y = [c.y for c in self._rows]
+        self._commit_map = {c.hash: c for c in self._rows}
+        self._children = TagDrawer._build_children_index(self._rows)
+
+        row_of = {c.hash: i for i, c in enumerate(self._rows)}
+        blocks: Dict[int, set] = {}
+        for i, commit in enumerate(self._rows):
+            for parent_hash in commit.parents:
+                j = row_of.get(parent_hash)
+                if j is None:
+                    continue
+                low, high = (i, j) if i <= j else (j, i)
+                for block in range(low // EDGE_BLOCK_ROWS, high // EDGE_BLOCK_ROWS + 1):
+                    blocks.setdefault(block, set()).add(i)
+        self._edge_blocks = blocks
+        self._rendered_range = None
+
+    def render_visible(self, canvas: tk.Canvas, force: bool = False) -> bool:
+        """Vykreslí řádky kolem viditelné části canvasu (jednu výšku okna nad i pod).
+
+        Volá se po každé změně pohledu (scroll, resize); překresluje se jen
+        tehdy, když viditelná oblast opustí naposledy vykreslený výřez.
+
+        Returns:
+            True, pokud se překreslovalo
+        """
+        if not self._rows:
+            return False
+
+        top = canvas.canvasy(0)
+        height = max(canvas.winfo_height(), 1)
+        bottom = top + height
+        if (not force and self._rendered_range is not None
+                and top >= self._rendered_range[0] and bottom <= self._rendered_range[1]):
+            return False
+
+        margin = max(height, MIN_VIEWPORT_HEIGHT)
+        range_top = top - margin
+        range_bottom = bottom + margin
+        first = bisect_left(self._row_y, range_top - COMMIT_VERTICAL_SPACING)
+        last = bisect_right(self._row_y, range_bottom + COMMIT_VERTICAL_SPACING)
+        visible = self._rows[first:last]
+
+        # Commity, jejichž spojnice procházejí výřezem (i když samy leží mimo)
+        edge_rows = set(range(first, last))
+        if last > first:
+            for block in range(first // EDGE_BLOCK_ROWS, (last - 1) // EDGE_BLOCK_ROWS + 1):
+                edge_rows.update(self._edge_blocks.get(block, ()))
+        edge_children = [self._rows[i] for i in sorted(edge_rows)]
+
+        canvas.delete('all')
+        if self.tooltip_manager:
+            self.tooltip_manager.hide_tooltip()
+
+        if self._needs_description_recalc:
+            self.text_formatter.recalculate_descriptions_for_width(canvas, visible, self.column_widths)
+
         table_start_x = self._get_table_start_position()
 
-        # Delegate drawing to components
-        self.connection_drawer.draw_connections(commits, self._make_color_pale)
+        self.connection_drawer.draw_connections(edge_children, self._make_color_pale,
+                                                commit_info=self._commit_map)
 
         self.commit_drawer.draw_commits(
-            commits,
+            self._current_commits,
             self.column_widths,
             self.tooltip_manager.show_tooltip,
             self.tooltip_manager.hide_tooltip,
@@ -139,17 +222,32 @@ class GraphDrawer:
             table_start_x,
             self._make_color_pale,
             self.branch_flag_drawer,
-            self.branch_flag_drawer.draw_flag_connection
+            self.branch_flag_drawer.draw_flag_connection,
+            visible_commits=visible
         )
 
         self.tag_drawer.draw_tags(
-            commits,
+            self._current_commits,
             table_start_x,
             self.tooltip_manager.show_tooltip,
-            self.tooltip_manager.hide_tooltip
+            self.tooltip_manager.hide_tooltip,
+            visible_commits=visible,
+            children=self._children,
+            commit_map=self._commit_map
         )
 
         self.column_manager.setup_column_separators(self.column_widths, table_start_x)
+
+        self._rendered_range = (range_top, range_bottom)
+        return True
+
+    def get_content_bounds(self) -> Optional[Tuple[int, int, int, int]]:
+        """Rozměry celého (i nevykresleného) obsahu pro scrollregion."""
+        if not self._rows:
+            return None
+        width = self._get_table_start_position() + sum(self.column_widths.values())
+        height = self._row_y[-1] + COMMIT_VERTICAL_SPACING
+        return (0, 0, int(width), int(height))
 
     def _initialize_components(self, canvas: tk.Canvas):
         """Initializes all drawing and UI components.
@@ -202,11 +300,26 @@ class GraphDrawer:
 
         # Autoři, e-maily a formáty data se opakují - každý řetězec měřit jen jednou
         measured = {}
+        char_widths = {}
+        # `font measure` stojí na Windows ~0,3 ms; u desetitisíců commitů by jen
+        # výpočet šířek sloupců trval desítky sekund. Nad limitem se šířka
+        # odhadne součtem šířek znaků (každý znak změřený jednou) - pro šířku
+        # sloupce stačí, přesné zkracování textu se dělá jen u vykreslených řádků.
+        estimate = len(commits) > EXACT_MEASURE_LIMIT
 
         def measure(text: str) -> int:
             width = measured.get(text)
             if width is None:
-                width = measured[text] = canvas.tk.call("font", "measure", font, text)
+                if estimate:
+                    width = 0
+                    for ch in text:
+                        ch_width = char_widths.get(ch)
+                        if ch_width is None:
+                            ch_width = char_widths[ch] = canvas.tk.call("font", "measure", font, ch)
+                        width += ch_width
+                else:
+                    width = canvas.tk.call("font", "measure", font, text)
+                measured[text] = width
             return width
 
         for commit in commits:
@@ -333,53 +446,15 @@ class GraphDrawer:
         self.column_manager.setup_resize_events(resize_callback)
 
     def _redraw_with_new_widths(self, canvas: tk.Canvas):
-        """Redraws graph with new column widths.
+        """Redraws graph with new column widths (only the rendered slice).
 
         Args:
             canvas: Canvas to redraw on
         """
-        # Delete commit texts, tags, separators and labels
-        canvas.delete("commit_text")
-        canvas.delete("tag_emoji")
-        canvas.delete("tag_label")
-        canvas.delete("tag_tooltip_area")
-        canvas.delete("column_separator")
-        canvas.delete("column_header")
-
-        # Find commits from canvas (if stored there as data)
-        if hasattr(self, '_current_commits') and self._current_commits:
-            # Recalculate description texts according to new message column width
-            self.text_formatter.recalculate_descriptions_for_width(
-                canvas, self._current_commits, self.column_widths
-            )
-
-            # Get table start position
-            table_start_x = self._get_table_start_position()
-
-            # Redraw commit texts and tags (nodes and flags stay - they don't depend on column widths)
-            self.commit_drawer.draw_commits(
-                self._current_commits,
-                self.column_widths,
-                self.tooltip_manager.show_tooltip,
-                self.tooltip_manager.hide_tooltip,
-                self.text_formatter.truncate_text_to_width,
-                table_start_x,
-                self._make_color_pale,
-                self.branch_flag_drawer,
-                self.branch_flag_drawer.draw_flag_connection,
-                text_only=True
-            )
-
-            self.tag_drawer.draw_tags(
-                self._current_commits,
-                table_start_x,
-                self.tooltip_manager.show_tooltip,
-                self.tooltip_manager.hide_tooltip
-            )
-
-        # Redraw separators
-        table_start_x = self._get_table_start_position()
-        self.column_manager.setup_column_separators(self.column_widths, table_start_x)
+        # Popisy se přepočítávají pro šířku sloupce jen u vykreslovaných řádků
+        # (dřív u všech commitů při každém snímku tažení oddělovače)
+        self._needs_description_recalc = True
+        self.render_visible(canvas, force=True)
 
     def move_separators_to_scroll_position(self, canvas: tk.Canvas, new_y: float):
         """Moves existing separators to new Y position when scrolling.

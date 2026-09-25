@@ -24,6 +24,9 @@ class GraphCanvas(ttk.Frame):
         self.last_scroll_time = 0  # Čas posledního scroll eventu
         self.scroll_timeout_id = None  # ID timeoutu pro reset velocity
 
+        # Virtualizace: po změně pohledu se (jednou za idle) dokreslí viditelné řádky
+        self._render_pending = None
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -49,7 +52,7 @@ class GraphCanvas(ttk.Frame):
             command=self._on_v_scroll
         )
         self.v_scrollbar.grid(row=0, column=1, sticky='ns')
-        self.canvas.configure(yscrollcommand=self.v_scrollbar.set)
+        self.canvas.configure(yscrollcommand=self._on_yview_changed)
 
         self.h_scrollbar = ttk.Scrollbar(
             self.canvas_frame,
@@ -204,6 +207,34 @@ class GraphCanvas(ttk.Frame):
 
             self.canvas.xview_moveto(new_left)
 
+    def _on_yview_changed(self, first, last):
+        """yscrollcommand: Tk ho volá po každé změně pohledu (scroll, resize, moveto)."""
+        self.v_scrollbar.set(first, last)
+        if self._render_pending is None:
+            self._render_pending = self.after_idle(self._render_visible_rows)
+
+    def _render_visible_rows(self):
+        """Dokreslí řádky kolem viditelné oblasti (graf se kreslí virtualizovaně)."""
+        self._render_pending = None
+        if self.graph_drawer.render_visible(self.canvas):
+            # Po překreslení posadit plovoucí záhlaví na aktuální pozici
+            self._update_column_separators()
+
+    def _apply_scrollregion(self):
+        """Scrollregion podle rozměrů celého grafu, ne jen vykreslených položek."""
+        bounds = self._get_content_bbox_without_header()
+        if bounds:
+            buffer = 20
+            self.canvas.configure(scrollregion=(
+                max(0, bounds[0] - buffer), max(0, bounds[1] - buffer),
+                bounds[2] + buffer, bounds[3] + buffer
+            ))
+        elif self.commits:
+            # Fallback pro případ prázdného obsahu
+            max_x = max(commit.x for commit in self.commits) + 100
+            max_y = max(commit.y for commit in self.commits) + 100
+            self.canvas.configure(scrollregion=(0, 0, max_x, max_y))
+
     def update_graph(self, commits: List[Commit]):
         self.commits = commits
         self.canvas.delete('all')
@@ -211,6 +242,11 @@ class GraphCanvas(ttk.Frame):
         if not commits:
             self._update_scrollbars_visibility()
             return
+
+        # Auto-scroll to top when loading new repository content
+        # (před kreslením - vykresluje se výřez podle aktuální pozice)
+        self.canvas.yview_moveto(0)
+        self.canvas.xview_moveto(0)
 
         self.graph_drawer.draw_graph(self.canvas, commits)
 
@@ -220,62 +256,31 @@ class GraphCanvas(ttk.Frame):
             on_resize_callback=self.update_scrollregion_and_scrollbars
         )
 
-        # Počkat až se vše vykreslí, pak spočítat skutečné rozměry
-        self.canvas.update_idletasks()
-
-        # Použít bbox bez záhlaví pro skutečné rozměry obsahu
-        bbox = self._get_content_bbox_without_header()
-        if bbox:
-            # Přidat malý buffer okolo obsahu
-            buffer = 20
-            scroll_x1 = max(0, bbox[0] - buffer)
-            scroll_y1 = max(0, bbox[1] - buffer)
-            scroll_x2 = bbox[2] + buffer
-            scroll_y2 = bbox[3] + buffer
-            self.canvas.configure(scrollregion=(scroll_x1, scroll_y1, scroll_x2, scroll_y2))
-        else:
-            # Fallback pro případ prázdného obsahu
-            max_x = max(commit.x for commit in commits) + 100
-            max_y = max(commit.y for commit in commits) + 100
-            self.canvas.configure(scrollregion=(0, 0, max_x, max_y))
+        self._apply_scrollregion()
 
         # Update scrollbars visibility after setting content
         self.canvas.update_idletasks()
         self._update_scrollbars_visibility()
 
-
-        # Auto-scroll to top when loading new repository content
-        self.canvas.yview_moveto(0)  # Scroll to top
-        self.canvas.xview_moveto(0)  # Reset horizontal scroll as well
-
         # Update column headers to reflect new scroll position
         self._update_column_separators()
 
     def _get_content_bbox_without_header(self):
-        """Vrátí bbox všech objektů kromě column_header.
+        """Vrátí rozměry obsahu grafu bez plovoucího záhlaví.
 
-        Tag výraz "!column_header" (Tk 8.5+) spočítá bbox v jediném volání Tcl.
-        Dřív se volalo gettags + bbox pro každou položku zvlášť, tj. desítky
-        tisíc volání u větších repozitářů při každém překreslení a resize.
+        Graf se kreslí virtualizovaně, takže bbox položek canvasu pokrývá jen
+        vykreslený výřez; rozměry celého grafu zná GraphDrawer. Bez něj (graf
+        nenakreslen) bbox položek bez záhlaví jedním voláním Tcl.
         """
+        bounds = self.graph_drawer.get_content_bounds()
+        if bounds:
+            return bounds
         return self.canvas.bbox("!column_header") or None
 
     def update_scrollregion_and_scrollbars(self):
         """Aktualizuje scrollregion a viditelnost scrollbarů po změně obsahu."""
         self.canvas.update_idletasks()
-
-        # Aktualizovat scrollregion podle obsahu BEZ záhlaví
-        # (záhlaví je floating element a nemá ovlivňovat scrollregion)
-        bbox = self._get_content_bbox_without_header()
-        if bbox:
-            buffer = 20
-            scroll_x1 = max(0, bbox[0] - buffer)
-            scroll_y1 = max(0, bbox[1] - buffer)
-            scroll_x2 = bbox[2] + buffer
-            scroll_y2 = bbox[3] + buffer
-            self.canvas.configure(scrollregion=(scroll_x1, scroll_y1, scroll_x2, scroll_y2))
-
-        # Aktualizovat viditelnost scrollbarů
+        self._apply_scrollregion()
         self._update_scrollbars_visibility()
 
     def on_drop(self, event):

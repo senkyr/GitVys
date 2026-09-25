@@ -28,6 +28,8 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
 - Rychlejší načítání velkých repozitářů: jeden průchod historií místo průchodu pro každou větev, merge-base a first-parent linie v paměti, žádné O(n²) při kreslení tagů, tooltipy bez registrace Tcl příkazu pro každou položku.
 - Odstraněna nepoužívaná závislost Pillow.
+- Graf se kreslí virtualizovaně (jen řádky kolem viditelné oblasti); šířky sloupců se u velkých repozitářů odhadují ze šířek znaků.
+- Dočasné klony má každá instance ve vlastní složce se zámkem; úklid při startu nemaže klony jiné běžící instance.
 
 ## [1.5.0] - 2025-01-12
 
