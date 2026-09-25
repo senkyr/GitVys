@@ -147,3 +147,23 @@ def test_only_visible_rows_are_drawn(root, positioned_commits):
     assert drawer.render_visible(canvas)
     drawn_messages = {canvas.itemcget(item, "text") for item in canvas.find_withtag("commit_text")}
     assert "initial commit" in drawn_messages
+
+
+def test_graph_canvas_rerenders_on_scroll(root, positioned_commits):
+    """Cesta přes GraphCanvas: změna pohledu -> yscrollcommand -> dokreslení výřezu."""
+    from gui.graph_canvas import GraphCanvas
+
+    graph_canvas = GraphCanvas(root)
+    graph_canvas.update_graph(positioned_commits)
+    root.update()
+    canvas = graph_canvas.canvas
+    assert len(canvas.find_all()) < 4000
+
+    canvas.yview_moveto(0.5)
+    root.update()  # idle callback z yscrollcommand dokreslí výřez
+
+    view_top = canvas.canvasy(0)
+    drawn_ys = [canvas.coords(item)[1] for item in canvas.find_withtag("commit_text")]
+    assert drawn_ys and min(drawn_ys) <= view_top + 50 <= max(drawn_ys)
+    assert len(canvas.find_all()) < 4000
+    graph_canvas.destroy()
