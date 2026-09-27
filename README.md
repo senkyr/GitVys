@@ -6,7 +6,7 @@ Desktopová aplikace pro studenty: zobrazí historii Git repozitáře jako graf 
 
 - **Token GitHubu zůstává uložený v profilu Windows** (`~/.gitvys/github_token`, šifrovaný přes DPAPI vázané na účet). Na sdíleném školním účtu proto další žák pracuje s GitHubem předchozího. Tlačítko pro odhlášení chybí, po práci je potřeba soubor `~/.gitvys/github_token` smazat.
 - **Token má OAuth scope `repo`,** tedy plný zápis do všech soukromých repozitářů přihlášeného uživatele. Užší oprávnění by šlo jen přes GitHub App.
-- **`dist/GitVisualizer.exe` je build ze září 2025, tedy před revizí 24.–25. 9. 2026.** Vkládá token do URL klonu (token skončí v `.git/config` klonu a v textu chyb) a přetažením URL na graf jde obejít whitelist hostů. Nerozdávej ho a před použitím postav nový (`build\build-exe.bat`). Tokeny vydané přes starou verzi zvaž odvolat na GitHubu (Settings → Applications → Authorized OAuth Apps).
+- **Verze do 1.5.0 včetně nepoužívat.** Vkládaly token do URL klonu (token skončil v `.git/config` klonu a v textu chyb) a přetažením URL na graf šlo obejít whitelist hostů. Aktuální build je v [Releases](https://github.com/senkyr/GitVys/releases) (v1.6.0). Všechny tokeny vydané přes OAuth App GitVys byly 27. 9. 2026 odvolány — při dalším klonu soukromého repa se uživatel přihlásí znovu.
 - **Neověřeno:** GUI po revizi, klon soukromého repa proti GitHubu přes OAuth a plynulost scrollování ve skutečném okně. Revize to ověřila jen testy.
 
 ## Rychlý start

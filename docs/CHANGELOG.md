@@ -6,6 +6,8 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-27
+
 ### Security
 
 - GitHub token se už nevkládá do URL klonu (dřív skončil v `.git/config` klonu a v textu chybového dialogu); Gitu se předává hlavičkou přes proměnné prostředí a jen pro `https://github.com`.
