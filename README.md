@@ -2,6 +2,13 @@
 
 Desktopová aplikace pro studenty: zobrazí historii Git repozitáře jako graf větví a commitů.
 
+## Upozornění
+
+- **Token GitHubu zůstává uložený v profilu Windows** (`~/.gitvys/github_token`, šifrovaný přes DPAPI vázané na účet). Na sdíleném školním účtu proto další žák pracuje s GitHubem předchozího. Tlačítko pro odhlášení chybí, po práci je potřeba soubor `~/.gitvys/github_token` smazat.
+- **Token má OAuth scope `repo`,** tedy plný zápis do všech soukromých repozitářů přihlášeného uživatele. Užší oprávnění by šlo jen přes GitHub App.
+- **`dist/GitVisualizer.exe` je build ze září 2025, tedy před revizí 24.–25. 9. 2026.** Vkládá token do URL klonu (token skončí v `.git/config` klonu a v textu chyb) a přetažením URL na graf jde obejít whitelist hostů. Nerozdávej ho a před použitím postav nový (`build\build-exe.bat`). Tokeny vydané přes starou verzi zvaž odvolat na GitHubu (Settings → Applications → Authorized OAuth Apps).
+- **Neověřeno:** GUI po revizi, klon soukromého repa proti GitHubu přes OAuth a plynulost scrollování ve skutečném okně. Revize to ověřila jen testy.
+
 ## Rychlý start
 
 1. Nainstaluj [Git](https://git-scm.com/downloads) (aplikace bez něj nefunguje).
