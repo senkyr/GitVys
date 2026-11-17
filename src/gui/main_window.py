@@ -331,6 +331,16 @@ class MainWindow:
         )
         # Tlačítko se zobrazí až po načtení repozitáře
 
+        # Odhlášení z GitHubu (vpravo dole, viditelné stále: na sdíleném účtu
+        # Windows se jím žák odhlásí, než od počítače odejde)
+        self.logout_button = ttk.Button(
+            self.status_frame,
+            text=t('logout_github'),
+            command=self.logout_github,
+            width=15
+        )
+        self.logout_button.grid(row=0, column=3, sticky='e', padx=(10, 0))
+
         # Přidat F5 key binding
         self.root.bind('<F5>', lambda event: self.repo_manager.refresh_repository())
         self.root.focus_set()  # Zajistit focus pro key bindings
@@ -381,6 +391,7 @@ class MainWindow:
             self.fetch_button.config(text=t('fetch_remote'))
         self.close_button.config(text=t('close_repo'))
         self.refresh_button.config(text=t('refresh'))
+        self.logout_button.config(text=t('logout_github'))
 
         # Update status
         if not self.repo_manager.git_repo:
@@ -517,6 +528,16 @@ class MainWindow:
         self.fetch_button.config(text=button_text, state="normal")
 
         messagebox.showerror(t('error'), message)
+
+    def logout_github(self):
+        """Odhlásí z GitHubu a oznámí výsledek (úspěch jen když token opravdu zmizel)."""
+        if self.repo_manager.logout():
+            messagebox.showinfo(t('logout_title'), t('logout_done'))
+        else:
+            messagebox.showerror(
+                t('logout_title'),
+                t('logout_failed', self.repo_manager.token_storage.token_file)
+            )
 
     def update_status(self, message: str):
         self.status_label.config(text=message)

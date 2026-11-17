@@ -398,3 +398,51 @@ class TestRepositoryDisplay:
 
         # Cleanup
         window.root.destroy()
+
+
+class TestLogout:
+    """Tlacitko pro odhlaseni z GitHubu (RepositoryManager je mock, na uloziste tokenu se nesaha)."""
+
+    @staticmethod
+    def _make_window(mock_theme_mgr, mock_trans_mgr):
+        from gui.main_window import MainWindow
+
+        mock_trans_mgr.return_value = MagicMock()
+        mock_theme_mgr.return_value = MagicMock()
+        mock_theme_mgr.return_value.get_color = MagicMock(return_value='#FFFFFF')
+        return MainWindow()
+
+    @patch('gui.main_window.get_translation_manager')
+    @patch('gui.main_window.get_theme_manager')
+    @patch('gui.main_window.RepositoryManager')
+    @patch('gui.main_window.messagebox')
+    def test_logout_button_is_visible_and_logs_out(self, mock_msgbox, mock_repo, mock_theme_mgr, mock_trans_mgr, root):
+        """Tlacitko je videt uz na uvodni obrazovce a jeho stisk odhlasi."""
+        window = self._make_window(mock_theme_mgr, mock_trans_mgr)
+        window.repo_manager.logout.return_value = True
+
+        assert window.logout_button.winfo_manager() == 'grid'
+
+        window.logout_button.invoke()
+
+        window.repo_manager.logout.assert_called_once()
+        mock_msgbox.showinfo.assert_called_once()
+        mock_msgbox.showerror.assert_not_called()
+
+        window.root.destroy()
+
+    @patch('gui.main_window.get_translation_manager')
+    @patch('gui.main_window.get_theme_manager')
+    @patch('gui.main_window.RepositoryManager')
+    @patch('gui.main_window.messagebox')
+    def test_failed_logout_is_reported_as_error(self, mock_msgbox, mock_repo, mock_theme_mgr, mock_trans_mgr, root):
+        """Kdyz se token nepodari smazat, uzivatel nesmi dostat potvrzeni o odhlaseni."""
+        window = self._make_window(mock_theme_mgr, mock_trans_mgr)
+        window.repo_manager.logout.return_value = False
+
+        window.logout_button.invoke()
+
+        mock_msgbox.showerror.assert_called_once()
+        mock_msgbox.showinfo.assert_not_called()
+
+        window.root.destroy()

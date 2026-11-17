@@ -6,6 +6,10 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
 ## [Unreleased]
 
+### Security
+
+- Tlačítko „Odhlásit GitHub“ ve stavovém řádku smaže uložený token GitHubu. Dřív token zůstával v profilu Windows bez možnosti odhlášení, takže na sdíleném účtu pracoval další uživatel s GitHubem předchozího. Klonování, které token získalo před odhlášením, se zruší a token neuloží.
+
 ## [1.6.0] - 2026-09-27
 
 ### Security

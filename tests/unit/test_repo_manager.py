@@ -708,3 +708,119 @@ class TestCloseRepository:
         # Should have closed GitPython repo
         mock_repo_object.close.assert_called_once()
         assert manager.git_repo is None
+
+
+@pytest.fixture
+def fake_token_storage(tmp_path):
+    """TokenStorage nad docasnou slozkou - testy nesmi sahnout na uloziste v profilu."""
+    from auth.token_storage import TokenStorage
+
+    storage = TokenStorage()
+    storage.config_dir = tmp_path / '.gitvys'
+    storage.token_file = storage.config_dir / 'github_token'
+    return storage
+
+
+class TestLogout:
+    """Odhlaseni z GitHubu: token nesmi zustat ulozeny ani se vratit z rozpracovaneho klonu."""
+
+    AUTH_ERROR_STDERR = "fatal: Authentication failed"
+
+    @staticmethod
+    def _token_sent_to_git(clone_call):
+        import base64
+        encoded = clone_call[1]['env']['GIT_CONFIG_VALUE_0'].split("Basic ", 1)[1]
+        return base64.b64decode(encoded).decode().split(":", 1)[0]
+
+    @patch('git.Repo.clone_from')
+    @patch.object(RepositoryManager, '_show_auth_dialog_sync')
+    def test_logout_deletes_token_and_next_clone_asks_for_login(
+            self, mock_auth_dialog, mock_clone_from, mock_parent_window, fake_token_storage):
+        """Po odhlaseni neni token na disku a soukromy klon si vyzada nove prihlaseni."""
+        from git.exc import GitCommandError
+
+        manager = RepositoryManager(mock_parent_window)
+        manager.token_storage = fake_token_storage
+        fake_token_storage.save_token("fake_token_previous_user")
+        run_posted_immediately(manager)
+
+        assert manager.logout() is True
+
+        assert not fake_token_storage.token_file.exists()
+        assert fake_token_storage.load_token() is None
+
+        # Dalsi klon soukromeho repa: misto stareho tokenu prihlasovaci dialog
+        mock_auth_dialog.return_value = "fake_token_next_user"
+        mock_clone_from.side_effect = [
+            GitCommandError("git clone", 128, stderr=self.AUTH_ERROR_STDERR), MagicMock()]
+
+        manager._clone_worker("https://github.com/user/private.git", "/tmp/test_clone")
+
+        mock_auth_dialog.assert_called_once()
+        assert self._token_sent_to_git(mock_clone_from.call_args_list[1]) == "fake_token_next_user"
+
+    @patch('git.Repo.clone_from')
+    @patch.object(RepositoryManager, '_on_clone_complete')
+    @patch.object(RepositoryManager, '_show_auth_dialog_sync')
+    def test_logout_during_clone_does_not_save_new_token(
+            self, mock_auth_dialog, mock_complete, mock_clone_from, mock_parent_window, fake_token_storage):
+        """Odhlaseni behem klonu s cerstve ziskanym tokenem: token se neulozi, klon se zahodi."""
+        from git.exc import GitCommandError
+
+        manager = RepositoryManager(mock_parent_window)
+        manager.token_storage = fake_token_storage
+        mock_auth_dialog.return_value = "fake_token_fresh"
+        run_posted_immediately(manager)
+
+        logout_results = []
+
+        def clone(url, path, env=None):
+            if 'GIT_CONFIG_VALUE_0' not in env:
+                raise GitCommandError("git clone", 128, stderr=self.AUTH_ERROR_STDERR)
+            # uzivatel klikne na Odhlasit, zatimco git klonuje
+            logout_results.append(manager.logout())
+
+        mock_clone_from.side_effect = clone
+
+        manager._clone_worker("https://github.com/user/private.git", "/tmp/test_clone")
+
+        assert logout_results == [True]
+        assert not fake_token_storage.token_file.exists()
+        mock_complete.assert_not_called()
+        mock_parent_window.show_error.assert_called_once()
+
+    @patch('git.Repo.clone_from')
+    @patch.object(RepositoryManager, '_on_clone_complete')
+    def test_logout_during_clone_with_saved_token_discards_clone(
+            self, mock_complete, mock_clone_from, mock_parent_window, fake_token_storage):
+        """Odhlaseni behem klonu s ulozenym tokenem: klon se nezobrazi a token zustane smazany."""
+        from git.exc import GitCommandError
+
+        manager = RepositoryManager(mock_parent_window)
+        manager.token_storage = fake_token_storage
+        fake_token_storage.save_token("fake_token_saved")
+        run_posted_immediately(manager)
+
+        logout_results = []
+
+        def clone(url, path, env=None):
+            if 'GIT_CONFIG_VALUE_0' not in env:
+                raise GitCommandError("git clone", 128, stderr=self.AUTH_ERROR_STDERR)
+            logout_results.append(manager.logout())
+
+        mock_clone_from.side_effect = clone
+
+        manager._clone_worker("https://github.com/user/private.git", "/tmp/test_clone")
+
+        assert logout_results == [True]
+        assert not fake_token_storage.token_file.exists()
+        mock_complete.assert_not_called()
+        mock_parent_window.show_error.assert_called_once()
+
+    def test_logout_reports_failure_when_token_cannot_be_deleted(self, mock_parent_window, fake_token_storage):
+        """Kdyz token nejde smazat, odhlaseni se nesmi tvarit jako uspesne."""
+        manager = RepositoryManager(mock_parent_window)
+        manager.token_storage = fake_token_storage
+        fake_token_storage.delete_token = MagicMock(return_value=False)
+
+        assert manager.logout() is False

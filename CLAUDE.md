@@ -190,6 +190,7 @@ Repository loading, cloning and refresh run in daemon threads (`RepositoryManage
 - The token never goes into a URL: it is passed to git as `http.https://github.com/.extraHeader` via `GIT_CONFIG_COUNT/KEY/VALUE` env vars (`auth/git_credentials.py`, requires Git 2.31+).
 - The token is used only for `https://github.com` (`can_use_github_token`). URL validation (`is_trusted_git_url`) is enforced in `RepositoryManager`, not only in the drop dialog.
 - Stored token: DPAPI-encrypted on Windows, 0600 file elsewhere; legacy plaintext is migrated on load.
+- Sign-out: the "Odhlásit GitHub" button in the status bar (`MainWindow.logout_github` → `RepositoryManager.logout()`) deletes the stored token and bumps `_auth_epoch`. The clone worker remembers the epoch at the moment it obtained its token; if it changed, the finished clone is discarded and the token is not saved (check and save happen under `_auth_lock`). The token lives nowhere else in the process, and it is not revoked on GitHub (that needs the OAuth App's client secret).
 - Error messages shown to the user or logged go through `redact_secrets`.
 
 ### Error Handling & Logging

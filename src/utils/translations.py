@@ -36,6 +36,11 @@ TRANSLATIONS = {
         'auth_expired': 'Autentizace vypršela nebo byla zrušena',
         'auth_failed': 'Autentizace se nezdařila',
         'auth_https_only': 'Přihlášení přes GitHub je možné jen pro HTTPS adresy na github.com',
+        'logout_github': 'Odhlásit GitHub',
+        'logout_title': 'Odhlášení z GitHubu',
+        'logout_done': 'Odhlášeno. Přihlášení ke GitHubu už na tomto počítači není uložené,\nsoukromý repozitář si vyžádá nové.',
+        'logout_failed': 'Odhlášení se nezdařilo: uložené přihlášení se nepodařilo smazat.\nSmažte ručně soubor:\n{}',
+        'logout_cancelled_clone': 'Klonování bylo zrušeno, protože jste se odhlásili z GitHubu.',
 
         # Statistics plurals
         'author_1': 'autor',
@@ -121,6 +126,11 @@ TRANSLATIONS = {
         'auth_expired': 'Authentication expired or was cancelled',
         'auth_failed': 'Authentication failed',
         'auth_https_only': 'GitHub sign-in only works with HTTPS URLs on github.com',
+        'logout_github': 'Sign out GitHub',
+        'logout_title': 'GitHub sign-out',
+        'logout_done': 'Signed out. The GitHub sign-in is no longer stored on this computer;\na private repository will ask for a new one.',
+        'logout_failed': 'Sign-out failed: the stored sign-in could not be deleted.\nDelete this file manually:\n{}',
+        'logout_cancelled_clone': 'Cloning was cancelled because you signed out of GitHub.',
 
         # Statistics plurals (English doesn't need complex plurals)
         'author_1': 'author',

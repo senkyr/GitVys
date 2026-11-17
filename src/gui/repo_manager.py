@@ -58,6 +58,10 @@ class RepositoryManager:
         self.display_name = None  # Reálný název repozitáře (pro klonované repo)
         self.token_storage = TokenStorage()  # GitHub token storage
         self._generation = 0  # Číslo poslední spuštěné operace (viz docstring modulu)
+        # Odhlášení (viz logout): číslo se zvýší při každém odhlášení, zámek drží
+        # pohromadě kontrolu čísla a uložení tokenu v klonovacím vlákně.
+        self._auth_epoch = 0
+        self._auth_lock = threading.Lock()
 
         # Vlastní složka pro klony této instance (se zámkem, viz gui/temp_clones.py)
         self.temp_area = TempCloneArea(temp_base_dir)
@@ -251,10 +255,13 @@ class RepositoryManager:
 
             logger.info("Authentication required for cloning, attempting with token...")
 
+            # auth_epoch = stav odhlášení ve chvíli, kdy vlákno token získalo
+            auth_epoch = self._auth_epoch
             token = self.token_storage.load_token()
             token_from_storage = token is not None
             if not token:
                 logger.info("No saved token found, showing auth dialog...")
+                auth_epoch = self._auth_epoch
                 token = self._request_token_from_user()
                 if not token:
                     raise Exception(t('auth_expired'))
@@ -269,13 +276,18 @@ class RepositoryManager:
                 logger.info("Saved token was rejected, requesting a new one")
                 self.token_storage.delete_token()
                 token_from_storage = False
+                auth_epoch = self._auth_epoch
                 token = self._request_token_from_user()
                 if not token:
                     raise Exception(t('auth_expired'))
                 self._clone(url, path, token)
 
-            if not token_from_storage:
-                self.token_storage.save_token(token)
+            with self._auth_lock:
+                if self._auth_epoch != auth_epoch:
+                    # Uživatel se během klonování odhlásil: token se neuloží a klon se zahodí
+                    raise Exception(t('logout_cancelled_clone'))
+                if not token_from_storage:
+                    self.token_storage.save_token(token)
 
             self._post(generation, self._on_clone_complete, path)
 
@@ -309,6 +321,22 @@ class RepositoryManager:
         """Zobrazí auth dialog (volat jen v hlavním vlákně) a vrátí token nebo None."""
         dialog = GitHubAuthDialog(self.root)
         return dialog.show()
+
+    def logout(self) -> bool:
+        """
+        Odhlásí z GitHubu (hlavní vlákno): smaže uložený token.
+
+        Token jinde než v souboru nežije, jen v klonovacím vlákně po dobu
+        klonu. Zvýšení ``_auth_epoch`` takový klon zneplatní: vlákno ho po
+        dokončení zahodí a token neuloží. Další klon soukromého repozitáře
+        si vyžádá nové přihlášení.
+
+        Returns:
+            True, pokud na disku žádný token nezůstal; False, když ho nejde smazat
+        """
+        with self._auth_lock:
+            self._auth_epoch += 1
+            return self.token_storage.delete_token()
 
     def _on_clone_complete(self, path: str):
         """
