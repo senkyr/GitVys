@@ -329,7 +329,8 @@ class RepositoryManager:
         Token jinde než v souboru nežije, jen v klonovacím vlákně po dobu
         klonu. Zvýšení ``_auth_epoch`` takový klon zneplatní: vlákno ho po
         dokončení zahodí a token neuloží. Další klon soukromého repozitáře
-        si vyžádá nové přihlášení.
+        si vyžádá nové přihlášení, pokud ho při prvním pokusu (bez tokenu)
+        neobslouží credential helper samotného Gitu - na ten odhlášení nesahá.
 
         Returns:
             True, pokud na disku žádný token nezůstal; False, když ho nejde smazat
