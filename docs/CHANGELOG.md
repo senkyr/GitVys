@@ -9,6 +9,7 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 ### Security
 
 - Tlačítko „Odhlásit GitHub“ ve stavovém řádku smaže uložený token GitHubu. Dřív token zůstával v profilu Windows bez možnosti odhlášení, takže na sdíleném účtu pracoval další uživatel s GitHubem předchozího. Klonování, které token získalo před odhlášením, se zruší a token neuloží.
+- Při klonu z GitHubu přes HTTP(S) se nepoužije přihlášení, které si pamatuje sám Git (credential helper, na Windows Git Credential Manager, ani program askpass). Dřív první pokus o klon takové přihlášení použil, takže soukromý repozitář šel naklonovat i po odhlášení v aplikaci. Kdo má přihlášení ke GitHubu uložené v Gitu, přihlásí se v aplikaci zvlášť; ostatní hosty se klonují jako dřív. Vyžaduje Git 2.31+.
 
 ## [1.6.0] - 2026-09-27
 

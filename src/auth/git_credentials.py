@@ -22,6 +22,10 @@ TRUSTED_GIT_HOSTS = frozenset({
 # Token z GitHub OAuth se smí posílat jen sem - nikdy na jiný host.
 GITHUB_TOKEN_HOSTS = frozenset({'github.com'})
 
+# Adresy, pro které Git nesmí použít vlastní uložené přihlášení (credential helper).
+# I http://: taková adresa je povolená a GitHub ji přesměruje na https.
+GITHUB_CREDENTIAL_URLS = ('https://github.com', 'http://github.com')
+
 _SSH_URL = re.compile(r'^git@([\w.-]+):([\w.\-/]+?)(\.git)?/?$', re.IGNORECASE)
 
 
@@ -70,22 +74,59 @@ def can_use_github_token(url: str) -> bool:
     return scheme == 'https' and host in GITHUB_TOKEN_HOSTS
 
 
+def _no_own_login_env() -> Dict[str, str]:
+    """Git se na přihlášení nesmí ptát sám ani si ho brát odjinud než od aplikace.
+
+    Bez terminálu (GIT_TERMINAL_PROMPT), bez programu askpass (prázdné
+    GIT_ASKPASS má přednost i před core.askPass a SSH_ASKPASS) a bez okna
+    Git Credential Manageru (GCM_INTERACTIVE; uplatní se jen tam, kde starý
+    Git ignoruje vypnutí helperu přes GIT_CONFIG_*).
+    """
+    return {
+        'GIT_TERMINAL_PROMPT': '0',
+        'GIT_ASKPASS': '',
+        'GCM_INTERACTIVE': 'never',
+    }
+
+
+def build_git_clone_env(url: str) -> Dict[str, str]:
+    """Proměnné prostředí pro klon bez tokenu aplikace (první pokus).
+
+    Pro GitHub se nepoužije přihlášení, které si pamatuje sám Git (credential
+    helper, na Windows obvykle Git Credential Manager): o přístupu ke GitHubu
+    má rozhodovat jen přihlášení a odhlášení v aplikaci. Prázdná hodnota
+    ``credential.<url>.helper`` vyprázdní seznam helperů jen pro danou adresu
+    (Git 2.31+), ostatní hosty se klonují jako dřív.
+    """
+    env = {'GIT_TERMINAL_PROMPT': '0'}
+    for index, base in enumerate(GITHUB_CREDENTIAL_URLS):
+        env[f'GIT_CONFIG_KEY_{index}'] = f'credential.{base}.helper'
+        env[f'GIT_CONFIG_VALUE_{index}'] = ''
+    env['GIT_CONFIG_COUNT'] = str(len(GITHUB_CREDENTIAL_URLS))
+
+    scheme, host = parse_git_url_host(url)
+    if scheme in ('http', 'https') and host in GITHUB_TOKEN_HOSTS:
+        env.update(_no_own_login_env())
+    return env
+
+
 def build_git_auth_env(token: str) -> Dict[str, str]:
     """Proměnné prostředí, které Gitu předají token jako HTTP hlavičku.
 
     Zároveň vypínají interaktivní dotazy na heslo a credential helper, aby Git
-    při neplatném tokenu neotevřel vlastní přihlašovací okno a nečekal
-    nekonečně na vstup v procesu bez konzole.
+    při neplatném tokenu neotevřel vlastní přihlašovací okno, nepoužil jiné
+    uložené přihlášení a nečekal nekonečně na vstup v procesu bez konzole.
     """
     basic = base64.b64encode(f"{token}:x-oauth-basic".encode('utf-8')).decode('ascii')
-    return {
-        'GIT_TERMINAL_PROMPT': '0',
+    env = _no_own_login_env()
+    env.update({
         'GIT_CONFIG_COUNT': '2',
         'GIT_CONFIG_KEY_0': 'http.https://github.com/.extraHeader',
         'GIT_CONFIG_VALUE_0': f'Authorization: Basic {basic}',
         'GIT_CONFIG_KEY_1': 'credential.helper',
         'GIT_CONFIG_VALUE_1': '',
-    }
+    })
+    return env
 
 
 _SECRET_PATTERNS = [

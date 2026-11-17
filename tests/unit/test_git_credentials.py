@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from auth.git_credentials import (
-    build_git_auth_env, can_use_github_token, is_trusted_git_url,
+    build_git_auth_env, build_git_clone_env, can_use_github_token, is_trusted_git_url,
     looks_like_url, redact_secrets,
 )
 from auth.github_auth import GitHubAuth
@@ -68,6 +68,34 @@ class TestTokenScope:
         # Credential helper vypnutý, aby Git neotevíral vlastní přihlášení
         assert env['GIT_CONFIG_KEY_1'] == 'credential.helper'
         assert env['GIT_CONFIG_VALUE_1'] == ''
+        # ...a nesmí se zeptat ani přes askpass nebo okno Git Credential Manageru
+        assert env['GIT_ASKPASS'] == ''
+        assert env['GCM_INTERACTIVE'] == 'never'
+
+    def test_clone_env_disables_git_own_login_for_github(self):
+        """Bez tokenu se pro GitHub nepoužije přihlášení uložené samotným Gitem."""
+        for url in ("https://github.com/user/repo.git", "http://github.com/user/repo.git"):
+            env = build_git_clone_env(url)
+            config = {env[f'GIT_CONFIG_KEY_{i}']: env[f'GIT_CONFIG_VALUE_{i}']
+                      for i in range(int(env['GIT_CONFIG_COUNT']))}
+            assert config == {'credential.https://github.com.helper': '',
+                              'credential.http://github.com.helper': ''}
+            assert env['GIT_TERMINAL_PROMPT'] == '0'
+            assert env['GIT_ASKPASS'] == ''
+            assert env['GCM_INTERACTIVE'] == 'never'
+            assert not any('Authorization' in value for value in env.values())
+
+    def test_clone_env_leaves_other_hosts_and_ssh_alone(self):
+        """Mimo GitHub přes HTTP(S) se dotazy Gitu na přihlášení nemění."""
+        for url in ("https://gitlab.com/user/repo.git", "git@github.com:user/repo.git",
+                    "https://gist.github.com/abc.git"):
+            env = build_git_clone_env(url)
+            assert env['GIT_TERMINAL_PROMPT'] == '0'
+            assert 'GIT_ASKPASS' not in env
+            assert 'GCM_INTERACTIVE' not in env
+            # Vypnutí helperu je vázané na adresu GitHubu, jiných hostů se netýká
+            keys = [env[f'GIT_CONFIG_KEY_{i}'] for i in range(int(env['GIT_CONFIG_COUNT']))]
+            assert all('github.com' in key for key in keys)
 
 
 class TestRedaction:

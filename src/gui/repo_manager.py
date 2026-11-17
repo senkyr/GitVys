@@ -17,7 +17,7 @@ from gui.auth_dialog import GitHubAuthDialog
 from gui.temp_clones import TempCloneArea, rmtree_force
 from auth.token_storage import TokenStorage
 from auth.git_credentials import (
-    build_git_auth_env, can_use_github_token, is_trusted_git_url,
+    build_git_auth_env, build_git_clone_env, can_use_github_token, is_trusted_git_url,
     looks_like_url, parse_git_url_host, redact_secrets,
 )
 from utils.logging_config import get_logger
@@ -213,9 +213,13 @@ class RepositoryManager:
 
     @staticmethod
     def _clone(url: str, path: str, token: str = None):
-        """Spustí `git clone`; token jde do Gitu jen přes proměnné prostředí."""
+        """Spustí `git clone`; token jde do Gitu jen přes proměnné prostředí.
+
+        Bez tokenu se pro GitHub nepoužije ani přihlášení uložené samotným
+        Gitem (viz build_git_clone_env), jinak by ho odhlášení nepokrylo.
+        """
         from git import Repo
-        env = build_git_auth_env(token) if token else {'GIT_TERMINAL_PROMPT': '0'}
+        env = build_git_auth_env(token) if token else build_git_clone_env(url)
         Repo.clone_from(url, path, env=env)
 
     def _clone_worker(self, url: str, path: str, generation: int = None):
@@ -329,8 +333,8 @@ class RepositoryManager:
         Token jinde než v souboru nežije, jen v klonovacím vlákně po dobu
         klonu. Zvýšení ``_auth_epoch`` takový klon zneplatní: vlákno ho po
         dokončení zahodí a token neuloží. Další klon soukromého repozitáře
-        si vyžádá nové přihlášení, pokud ho při prvním pokusu (bez tokenu)
-        neobslouží credential helper samotného Gitu - na ten odhlášení nesahá.
+        z GitHubu si vyžádá nové přihlášení: credential helper samotného
+        Gitu se pro GitHub nepoužívá (viz build_git_clone_env).
 
         Returns:
             True, pokud na disku žádný token nezůstal; False, když ho nejde smazat

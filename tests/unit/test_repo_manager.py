@@ -266,7 +266,12 @@ class TestCloning:
         # Should have called clone_from without credentials
         mock_clone_from.assert_called_once()
         assert mock_clone_from.call_args[0] == (url, path)
-        assert mock_clone_from.call_args[1]['env'] == {'GIT_TERMINAL_PROMPT': '0'}
+        env = mock_clone_from.call_args[1]['env']
+        assert env['GIT_TERMINAL_PROMPT'] == '0'
+        # Zadny token ani hlavicka Authorization; helper Gitu je pro GitHub vypnuty
+        assert not any('extraHeader' in value for value in env.values())
+        assert env['GIT_CONFIG_KEY_0'] == 'credential.https://github.com.helper'
+        assert env['GIT_CONFIG_VALUE_0'] == ''
 
     @patch('git.Repo.clone_from')
     @patch.object(RepositoryManager, '_show_auth_dialog_sync')
@@ -727,6 +732,11 @@ class TestLogout:
     AUTH_ERROR_STDERR = "fatal: Authentication failed"
 
     @staticmethod
+    def _carries_token(env):
+        """True pro prostredi klonu s tokenem (prvni pokus bez tokenu hlavicku nenese)."""
+        return 'extraHeader' in env.get('GIT_CONFIG_KEY_0', '')
+
+    @staticmethod
     def _token_sent_to_git(clone_call):
         import base64
         encoded = clone_call[1]['env']['GIT_CONFIG_VALUE_0'].split("Basic ", 1)[1]
@@ -775,7 +785,7 @@ class TestLogout:
         logout_results = []
 
         def clone(url, path, env=None):
-            if 'GIT_CONFIG_VALUE_0' not in env:
+            if not self._carries_token(env):
                 raise GitCommandError("git clone", 128, stderr=self.AUTH_ERROR_STDERR)
             # uzivatel klikne na Odhlasit, zatimco git klonuje
             logout_results.append(manager.logout())
@@ -804,7 +814,7 @@ class TestLogout:
         logout_results = []
 
         def clone(url, path, env=None):
-            if 'GIT_CONFIG_VALUE_0' not in env:
+            if not self._carries_token(env):
                 raise GitCommandError("git clone", 128, stderr=self.AUTH_ERROR_STDERR)
             logout_results.append(manager.logout())
 
