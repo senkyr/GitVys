@@ -17,6 +17,7 @@ Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 - GitHub token se už nevkládá do URL klonu (dřív skončil v `.git/config` klonu a v textu chybového dialogu); Gitu se předává hlavičkou přes proměnné prostředí a jen pro `https://github.com`.
 - Token se neposílá na jiné hosty ani přes `http://`; whitelist URL platí i pro text přetažený přímo na graf.
 - Uložený token je na Windows šifrovaný přes DPAPI, jinde v souboru s právy 0600; starý plaintext se převede.
+- Všechny tokeny vydané přes OAuth App GitVys byly 27. 9. 2026 odvolány; při dalším klonu soukromého repozitáře se uživatel přihlásí znovu.
 
 ### Fixed
 

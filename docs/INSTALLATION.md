@@ -96,6 +96,7 @@ Aplikace podporuje přístup k soukromým GitHub repozitářům pomocí OAuth De
 - Klikni "Otevřít GitHub v prohlížeči" a zadej zobrazený kód
 - Token se automaticky uloží do `~/.gitvys/github_token`
 - Příští klonování private repozitářů proběhne automaticky
+- Tlačítko „Odhlásit GitHub“ ve stavovém řádku uložený token smaže; na sdíleném počítači se před odchodem odhlas
 
 **Umístění tokenu:**
 
