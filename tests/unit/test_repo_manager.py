@@ -817,6 +817,21 @@ class TestLogout:
         mock_complete.assert_not_called()
         mock_parent_window.show_error.assert_called_once()
 
+    @patch('git.Repo.clone_from')
+    @patch.object(RepositoryManager, '_on_clone_complete')
+    def test_logout_does_not_cancel_clone_without_token(
+            self, mock_complete, mock_clone_from, mock_parent_window, fake_token_storage):
+        """Klon verejneho repa token nepouziva, odhlaseni behem nej ho nezrusi."""
+        manager = RepositoryManager(mock_parent_window)
+        manager.token_storage = fake_token_storage
+        run_posted_immediately(manager)
+        mock_clone_from.side_effect = lambda url, path, env=None: manager.logout()
+
+        manager._clone_worker("https://github.com/user/public.git", "/tmp/test_clone")
+
+        mock_complete.assert_called_once_with("/tmp/test_clone")
+        mock_parent_window.show_error.assert_not_called()
+
     def test_logout_reports_failure_when_token_cannot_be_deleted(self, mock_parent_window, fake_token_storage):
         """Kdyz token nejde smazat, odhlaseni se nesmi tvarit jako uspesne."""
         manager = RepositoryManager(mock_parent_window)
