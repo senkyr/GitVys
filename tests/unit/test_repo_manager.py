@@ -329,8 +329,10 @@ class TestCloning:
         assert env['GIT_CONFIG_KEY_0'] == 'http.https://github.com/.extraHeader'
 
     @patch('git.Repo.clone_from')
+    @patch.object(RepositoryManager, '_on_clone_complete')
     @patch.object(RepositoryManager, '_show_auth_dialog_sync')
-    def test_clone_worker_invalid_saved_token_is_replaced(self, mock_auth_dialog, mock_clone_from, mock_parent_window):
+    def test_clone_worker_invalid_saved_token_is_replaced(
+            self, mock_auth_dialog, mock_complete, mock_clone_from, mock_parent_window):
         """Odvolany ulozeny token se smaze a uzivatel dostane OAuth dialog."""
         manager = RepositoryManager(mock_parent_window)
         manager.token_storage.load_token = MagicMock(return_value="revoked_token")
@@ -348,6 +350,9 @@ class TestCloning:
         manager.token_storage.delete_token.assert_called_once()
         mock_auth_dialog.assert_called_once()
         manager.token_storage.save_token.assert_called_once_with("fresh_token")
+        # _on_clone_complete je mock: skutecny by pustil nacitaci vlakno nad neexistujici
+        # slozkou a to by show_error zavolalo samo (nekdy driv, nez sem test dojde)
+        mock_complete.assert_called_once_with("/tmp/test_clone")
         mock_parent_window.show_error.assert_not_called()
 
     @patch('git.Repo.clone_from')
