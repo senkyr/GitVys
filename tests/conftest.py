@@ -3,8 +3,10 @@
 # MUST BE FIRST - initialize TCL/TK before any other imports
 import tests.setup_tcl  # noqa: F401
 
+import gc
 import os
 import sys
+import threading
 from pathlib import Path
 import pytest
 
@@ -22,6 +24,43 @@ sys.path.insert(0, str(src_path))
 
 # Import data structures (no tkinter dependency)
 from utils.data_structures import Commit, Tag
+
+
+# === Kořeny Tk musí zaniknout v hlavním vlákně ===
+#
+# Objekt kořene Tk (tk.Tk, i už zničený přes destroy()) smí zaniknout jen ve
+# vlákně, které ho vytvořilo. Zanikne-li jinde, Tcl shodí celý proces
+# (Windows fatal exception 0x80000003) a pytest skončí bez výsledků.
+# Testy po sobě nechávají kořeny v cyklech odkazů (mocky si pamatují argumenty
+# volání), takže zanikají až při úklidu paměti - a ten spustí to vlákno, které
+# zrovna alokuje, tedy i vlákno, které si test sám pustil (RepositoryManager)
+# nebo čtecí vlákno GitPythonu. Proto dvě pojistky pro každý test:
+
+@pytest.fixture(autouse=True)
+def join_threads_started_by_test():
+    """Počká na vlákna, která test spustil, dřív než se uvolní jeho kořen Tk."""
+    before = set(threading.enumerate())
+    yield
+    for thread in set(threading.enumerate()) - before:
+        thread.join(timeout=10)
+        assert not thread.is_alive(), f"Test po sobě nechal běžící vlákno {thread.name}"
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Po každém testu uklidí paměť v hlavním vlákně (až když pytest pustil fixtures)."""
+    yield
+    gc.collect()
+
+
+def pytest_collection_finish(session):
+    """Zlevní úklid po každém testu: co existuje po sběru testů, už se neprochází.
+
+    Moduly a sebrané testy žijí do konce běhu; bez zmrazení by je každý
+    gc.collect() procházel znovu (desítky ms na test).
+    """
+    gc.collect()
+    gc.freeze()
 
 
 @pytest.fixture

@@ -237,6 +237,8 @@ The application uses centralized logging for error tracking and debugging:
 
 **Tests**: `tests/integration/test_real_repository.py` builds real repositories with the git CLI; prefer it over GitPython mocks when testing parsing, merge detection or layout.
 
+A Tk root object (even a destroyed one) must be finalized in the main thread; if the garbage collector frees it in another thread, Tcl kills the whole process (`Windows fatal exception: code 0x80000003`). `tests/conftest.py` therefore joins every thread a test started and runs `gc.collect()` in the main thread after each test - keep both. The application itself has a single root that stays referenced until interpreter shutdown.
+
 **Dependencies**:
 
 - Pinned versions in `requirements.txt` for reproducibility:
