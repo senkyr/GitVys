@@ -63,6 +63,47 @@ def pytest_collection_finish(session):
     gc.freeze()
 
 
+# === Start Tk občas selže na čtení vlastní knihovny ===
+#
+# Pozorováno 25. 11. 2026 (Windows 11, Python 3.13.15, Tk 8.6): zhruba v jednom
+# běhu sady ze dvou skončí jeden test chybou už při tk.Tk() - "couldn't read
+# file .../tk8.6/button.tcl: no such file or directory" nebo "invalid command
+# name tcl_findLibrary" - ačkoli soubory existují a hned další tk.Tk() projde.
+# Příčina není známá: 2500 založení Tk v samostatném procesu proběhlo bez
+# chyby, takže nejde o Tk samotné, ale o něco v běhu testů. Stopa: chyba
+# přichází u prvního tk.Tk() po testech, které pouštějí mnoho procesů `git`
+# (test_github_credential_isolation, test_real_repository). Opakování proto
+# chybu neřeší, jen ji nenechá shodit nesouvisející test; každý takový případ
+# se hlásí varováním, aby nezmizel.
+
+TK_START_ATTEMPTS = 3
+
+
+@pytest.fixture(scope="session", autouse=True)
+def retry_tk_startup():
+    """Zopakuje start Tk, když selže na čtení knihovny Tcl/Tk (viz komentář výše)."""
+    import time
+    import tkinter as tk
+    import warnings
+
+    original_init = tk.Tk.__init__
+
+    def init_with_retry(self, *args, **kwargs):
+        for attempt in range(1, TK_START_ATTEMPTS + 1):
+            try:
+                return original_init(self, *args, **kwargs)
+            except tk.TclError as error:
+                if attempt == TK_START_ATTEMPTS:
+                    raise
+                first_line = str(error).strip().splitlines()[0]
+                warnings.warn(f"Start Tk selhal (pokus {attempt}), opakuji: {first_line}")
+                time.sleep(0.2)
+
+    tk.Tk.__init__ = init_with_retry
+    yield
+    tk.Tk.__init__ = original_init
+
+
 @pytest.fixture
 def root():
     """Create a tkinter root window for tests."""
