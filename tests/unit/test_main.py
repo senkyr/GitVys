@@ -239,18 +239,33 @@ class TestMain:
     @patch('main.check_git_installed', return_value=True)
     @patch('main.setup_logging')
     @patch('main.MainWindow')
+    @patch('main.show_fatal_error_dialog')
     @patch('builtins.print')
-    def test_main_unexpected_exception(self, mock_print, mock_window, mock_setup_logging, mock_check_git):
+    def test_main_unexpected_exception(self, mock_print, mock_dialog, mock_window, mock_setup_logging, mock_check_git):
         """Test handling of unexpected exceptions."""
         # Arrange
+        error = RuntimeError("Unexpected error")
         mock_app = MagicMock()
-        mock_app.run.side_effect = RuntimeError("Unexpected error")
+        mock_app.run.side_effect = error
         mock_window.return_value = mock_app
 
         # Act
         main.main()
 
-        # Assert
-        mock_print.assert_called_once()
+        # Assert (print volá i logging při výpisu tracebacku, proto se bere poslední volání)
         assert "Neočekávaná chyba" in str(mock_print.call_args)
         assert "Unexpected error" in str(mock_print.call_args)
+        # Okenní .exe nemá konzoli: chybu musí uživatel vidět v dialogu
+        mock_dialog.assert_called_once_with(error)
+
+    @patch('tkinter.messagebox.showerror')
+    @patch('tkinter.Tk')
+    def test_show_fatal_error_dialog_redacts_secrets(self, mock_tk, mock_showerror):
+        """Text chyby v dialogu nesmí obsahovat token."""
+        main.show_fatal_error_dialog(RuntimeError("clone https://user:ghp_" + "a" * 36 + "@github.com/x/y failed"))
+
+        mock_showerror.assert_called_once()
+        message = mock_showerror.call_args[0][1]
+        assert "RuntimeError" in message
+        assert "ghp_" not in message
+        mock_tk.return_value.destroy.assert_called_once()

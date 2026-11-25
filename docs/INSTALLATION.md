@@ -81,7 +81,7 @@ Můžeš otevřít repozitář přímo z URL:
 ### Remote větve
 
 - Klikni "Načíst remote/větve" (lokální repo) nebo "Načíst větve" (klonované repo)
-- Zobrazí všechny remote větve s origin/ prefixem
+- Aplikace stáhne aktuální stav ze serveru (`git fetch`) a zobrazí i větve, které jsou jen na serveru (vlaječka se symbolem ☁)
 
 ### Klávesové zkratky
 

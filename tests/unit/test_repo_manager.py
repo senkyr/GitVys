@@ -854,3 +854,104 @@ class TestLogout:
         fake_token_storage.delete_token = MagicMock(return_value=False)
 
         assert manager.logout() is False
+
+
+class TestFetchRemote:
+    """Tlacitko "Nacist remote": git fetch stejnou cestou prihlaseni jako klon."""
+
+    @staticmethod
+    def _manager_with_remote(mock_parent_window, url):
+        manager = RepositoryManager(mock_parent_window)
+        run_posted_immediately(manager)
+        git_repo = MagicMock()
+        git_repo.repo.remote.return_value.url = url
+        git_repo.parse_commits_with_remote.return_value = [MagicMock()]
+        git_repo.flag_columns = 1
+        manager.git_repo = git_repo
+        return manager, git_repo
+
+    def test_button_fetches_but_refresh_does_not(self, mock_parent_window):
+        manager, git_repo = self._manager_with_remote(mock_parent_window, "https://github.com/user/repo.git")
+        manager.is_remote_loaded = True
+
+        with patch('gui.repo_manager.threading.Thread') as mock_thread:
+            manager.fetch_remote_data()
+            manager.refresh_repository()
+
+        fetch_flags = [call_args.kwargs['args'][2] for call_args in mock_thread.call_args_list]
+        assert fetch_flags == [True, False]
+
+    @patch('gui.repo_manager.GraphLayout')
+    def test_fetch_runs_without_token_first(self, mock_layout, mock_parent_window):
+        manager, git_repo = self._manager_with_remote(mock_parent_window, "https://github.com/user/repo.git")
+
+        manager.load_remote_repository(git_repo, fetch=True)
+
+        git_repo.repo.git.fetch.assert_called_once()
+        args, kwargs = git_repo.repo.git.fetch.call_args
+        assert args == ('--prune', 'origin')
+        # Bez tokenu a bez prihlaseni ulozeneho v Gitu (credential helper vypnuty)
+        assert 'Authorization' not in str(kwargs['env'])
+        assert kwargs['env']['GIT_CONFIG_KEY_0'] == 'credential.https://github.com.helper'
+        mock_parent_window.update_graph_with_remote.assert_called_once()
+        mock_parent_window.show_warning.assert_not_called()
+
+    @patch('gui.repo_manager.GraphLayout')
+    def test_fetch_of_private_repo_uses_saved_token(self, mock_layout, mock_parent_window):
+        from git.exc import GitCommandError
+        manager, git_repo = self._manager_with_remote(mock_parent_window, "https://github.com/user/private.git")
+        manager.token_storage.load_token = MagicMock(return_value="saved_token_456")
+        manager.token_storage.save_token = MagicMock()
+        git_repo.repo.git.fetch.side_effect = [
+            GitCommandError("git fetch", 128, stderr="fatal: Authentication failed"), None,
+        ]
+
+        manager.load_remote_repository(git_repo, fetch=True)
+
+        assert git_repo.repo.git.fetch.call_count == 2
+        env = git_repo.repo.git.fetch.call_args_list[1].kwargs['env']
+        assert env['GIT_CONFIG_KEY_0'] == 'http.https://github.com/.extraHeader'
+        manager.token_storage.save_token.assert_not_called()  # token uz ulozeny je
+        mock_parent_window.show_warning.assert_not_called()
+
+    @patch('gui.repo_manager.GraphLayout')
+    def test_failed_fetch_shows_last_known_state_with_warning(self, mock_layout, mock_parent_window):
+        from git.exc import GitCommandError
+        manager, git_repo = self._manager_with_remote(mock_parent_window, "https://github.com/user/repo.git")
+        git_repo.repo.git.fetch.side_effect = GitCommandError(
+            "git fetch", 128, stderr="fatal: unable to access 'https://x:ghp_" + "a" * 36 + "@github.com/': no network")
+
+        manager.load_remote_repository(git_repo, fetch=True)
+
+        # Graf se ukaze i tak, ale uzivatel se dozvi, ze neni aktualni
+        mock_parent_window.update_graph_with_remote.assert_called_once()
+        mock_parent_window.show_warning.assert_called_once()
+        assert "ghp_" not in mock_parent_window.show_warning.call_args[0][0]
+        mock_parent_window.show_error.assert_not_called()
+
+    @pytest.mark.parametrize("url", [
+        "https://git.example.org/user/repo.git",   # host mimo seznam povolenych
+        "https://user:secret@github.com/u/r.git",  # udaje v URL
+        "ext::sh -c 'echo pwned'",                 # transport, ktery spousti prikazy
+        "/srv/git/repo.git",                       # cesta na disku
+    ])
+    @patch('gui.repo_manager.GraphLayout')
+    def test_fetch_is_refused_for_untrusted_remote_url(self, mock_layout, mock_parent_window, url):
+        manager, git_repo = self._manager_with_remote(mock_parent_window, url)
+
+        manager.load_remote_repository(git_repo, fetch=True)
+
+        git_repo.repo.git.fetch.assert_not_called()
+        mock_parent_window.update_graph_with_remote.assert_called_once()
+        mock_parent_window.show_warning.assert_called_once()
+
+    @patch('gui.repo_manager.GraphLayout')
+    def test_repository_without_remote_loads_without_fetch(self, mock_layout, mock_parent_window):
+        manager, git_repo = self._manager_with_remote(mock_parent_window, "unused")
+        git_repo.repo.remote.side_effect = ValueError("Remote named 'origin' didn't exist")
+
+        manager.load_remote_repository(git_repo, fetch=True)
+
+        git_repo.repo.git.fetch.assert_not_called()
+        mock_parent_window.update_graph_with_remote.assert_called_once()
+        mock_parent_window.show_warning.assert_not_called()

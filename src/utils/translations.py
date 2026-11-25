@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 TRANSLATIONS = {
     'cs': {
         # Main window
-        'app_title': 'Git Visualizer v1.6.0',
+        'app_title': 'Git Visualizer v1.6.1',
         'fetch_remote': 'Načíst remote',
         'fetch_branches': 'Načíst větve',
         'close_repo': 'Zavřít repo',
@@ -24,6 +24,12 @@ TRANSLATIONS = {
         'cloning_with_auth': 'Klonuji s autentizací...',
         'loading_cloned': 'Načítám naklonovaný repozitář...',
         'loading_remote_branches': 'Načítám remote větve...',
+        'fetching_remote': 'Stahuji aktuální stav ze serveru...',
+        'fetching_with_auth': 'Stahuji s autentizací...',
+        'fetch_failed': 'Aktuální stav se ze serveru nepodařilo stáhnout. Graf ukazuje naposledy stažený stav.\n\n{}',
+        'fetch_untrusted_url': 'Adresa remote není mezi povolenými hosty, aplikace z ní nestahuje.',
+        'warning': 'Upozornění',
+        'current_branch_tooltip': '{} (aktuální větev)',
         'loading': 'Načítám...',
         'loaded_commits': 'Načteno {} commitů',
         'loaded_commits_remote': 'Načteno {} commitů (včetně remote)',
@@ -31,6 +37,7 @@ TRANSLATIONS = {
         'failed_load_repo': 'Nepodařilo se načíst Git repozitář',
         'no_commits': 'Repozitář neobsahuje žádné commity',
         'error_loading_repo': 'Chyba při načítání repozitáře: {}',
+        'unexpected_error': 'V aplikaci nastala neočekávaná chyba:\n\n{}',
         'error_loading_remote': 'Chyba při načítání remote větví: {}',
         'error_cloning': 'Chyba klonování:\n{}',
         'auth_expired': 'Autentizace vypršela nebo byla zrušena',
@@ -41,6 +48,7 @@ TRANSLATIONS = {
         'logout_done': 'Odhlášeno. Aplikace už nemá uložený žádný token GitHubu.',
         'logout_failed': 'Odhlášení se nezdařilo: uložené přihlášení se nepodařilo smazat.\nSmažte ručně soubor:\n{}',
         'logout_cancelled_clone': 'Klonování bylo zrušeno, protože jste se odhlásili z GitHubu.',
+        'logout_cancelled_fetch': 'Stahování bylo zrušeno, protože jste se odhlásili z GitHubu.',
 
         # Statistics plurals
         'author_1': 'autor',
@@ -55,6 +63,9 @@ TRANSLATIONS = {
         'tag_1': 'tag',
         'tag_2_4': 'tagy',
         'tag_5': 'tagů',
+        'file_1': 'soubor',
+        'file_2_4': 'soubory',
+        'file_5': 'souborů',
         'tags_format': '{}+{} tagů',  # local+remote format
 
         # Drag & drop
@@ -103,7 +114,7 @@ TRANSLATIONS = {
     },
     'en': {
         # Main window
-        'app_title': 'Git Visualizer v1.6.0',
+        'app_title': 'Git Visualizer v1.6.1',
         'fetch_remote': 'Fetch remote',
         'fetch_branches': 'Fetch branches',
         'close_repo': 'Close repo',
@@ -114,6 +125,12 @@ TRANSLATIONS = {
         'cloning_with_auth': 'Cloning with authentication...',
         'loading_cloned': 'Loading cloned repository...',
         'loading_remote_branches': 'Loading remote branches...',
+        'fetching_remote': 'Fetching the current state from the server...',
+        'fetching_with_auth': 'Fetching with authentication...',
+        'fetch_failed': 'The current state could not be fetched from the server. The graph shows the last fetched state.\n\n{}',
+        'fetch_untrusted_url': 'The remote address is not among the allowed hosts, the application does not fetch from it.',
+        'warning': 'Warning',
+        'current_branch_tooltip': '{} (current branch)',
         'loading': 'Loading...',
         'loaded_commits': 'Loaded {} commits',
         'loaded_commits_remote': 'Loaded {} commits (including remote)',
@@ -121,6 +138,7 @@ TRANSLATIONS = {
         'failed_load_repo': 'Failed to load Git repository',
         'no_commits': 'Repository contains no commits',
         'error_loading_repo': 'Error loading repository: {}',
+        'unexpected_error': 'The application ran into an unexpected error:\n\n{}',
         'error_loading_remote': 'Error loading remote branches: {}',
         'error_cloning': 'Cloning error:\n{}',
         'auth_expired': 'Authentication expired or was cancelled',
@@ -131,6 +149,7 @@ TRANSLATIONS = {
         'logout_done': 'Signed out. The application no longer has any GitHub token stored.',
         'logout_failed': 'Sign-out failed: the stored sign-in could not be deleted.\nDelete this file manually:\n{}',
         'logout_cancelled_clone': 'Cloning was cancelled because you signed out of GitHub.',
+        'logout_cancelled_fetch': 'Fetching was cancelled because you signed out of GitHub.',
 
         # Statistics plurals (English doesn't need complex plurals)
         'author_1': 'author',
@@ -145,6 +164,9 @@ TRANSLATIONS = {
         'tag_1': 'tag',
         'tag_2_4': 'tags',
         'tag_5': 'tags',
+        'file_1': 'file',
+        'file_2_4': 'files',
+        'file_5': 'files',
         'tags_format': '{}+{} tags',
 
         # Drag & drop

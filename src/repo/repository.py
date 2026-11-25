@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from git import Repo, InvalidGitRepositoryError
-from utils.data_structures import Commit, Branch, Tag, MergeBranch
+from utils.data_structures import Commit, Branch, BranchFlag, Tag, MergeBranch
 from utils.logging_config import get_logger
+from utils.translations import get_translation_manager
+from repo.head import HeadState, read_head_state
 from repo.parsers import CommitParser, BranchAnalyzer, TagParser
 from repo.analyzers import MergeDetector
+from visualization.colors import get_branch_color
 
 logger = get_logger(__name__)
 
@@ -19,6 +22,8 @@ class GitRepository:
         self.branches: Dict[str, Branch] = {}
         self.merge_branches: List[MergeBranch] = []  # Posledně detekované merge větve
         self.branch_names: set = set()  # Skutečné větve (bez virtuálních merge-*) pro statistiky
+        self.head: HeadState = HeadState()  # Stav HEAD při posledním načtení commitů
+        self.flag_columns: int = 1  # Nejvíc vlaječek větví na jednom řádku grafu (pro šířku sloupce)
 
         # Component instances (initialized in load_repository)
         self.commit_parser: Optional[CommitParser] = None
@@ -44,6 +49,8 @@ class GitRepository:
         if not self.repo:
             return []
 
+        self.head = read_head_state(self.repo)
+
         # Delegate to components
         commit_to_branch = self.branch_analyzer.build_commit_branch_map()
         commit_to_tags = self.tag_parser.build_commit_tag_map()
@@ -61,7 +68,9 @@ class GitRepository:
 
         # Add uncommitted changes
         uncommitted_info = self.get_uncommitted_changes()
-        uncommitted_commits = self._create_uncommitted_commits(uncommitted_info, commits)
+        uncommitted_commits = self._create_uncommitted_commits(
+            uncommitted_info, commits, branch_colors, used_colors
+        )
         all_commits = uncommitted_commits + commits
 
         # Delegate merge detection to MergeDetector
@@ -69,6 +78,7 @@ class GitRepository:
         merge_branches = self.merge_detector.detect_merge_branches()
         self.merge_branches = merge_branches
         self.merge_detector.apply_merge_branch_styling(all_commits, merge_branches)
+        self._attach_ref_flags(all_commits, branch_colors, used_colors, include_remote=False)
 
         all_commits.sort(key=lambda c: c.date.timestamp(), reverse=True)
 
@@ -79,6 +89,8 @@ class GitRepository:
         """Parse commits including remote branches with divergence support."""
         if not self.repo:
             return []
+
+        self.head = read_head_state(self.repo)
 
         # Delegate to components
         local_commit_map, remote_commit_map = self.branch_analyzer.build_commit_branch_map_with_remote()
@@ -91,6 +103,14 @@ class GitRepository:
         branch_divergences = {}
         for branch_name in all_branch_names:
             branch_divergences[branch_name] = self.branch_analyzer.detect_branch_divergence(branch_name)
+        if self.head.is_detached:
+            # Odpojený HEAD se v grafu vede jako místní "větev" bez protějšku na remote
+            branch_divergences[self.head.branch_label] = {
+                'diverged': False,
+                'local_head': self.repo.head.commit,
+                'remote_head': None,
+                'merge_base': None,
+            }
 
         # Prepare color tracking
         used_colors = set()
@@ -104,7 +124,9 @@ class GitRepository:
 
         # Add uncommitted changes
         uncommitted_info = self.get_uncommitted_changes()
-        uncommitted_commits = self._create_uncommitted_commits(uncommitted_info, commits)
+        uncommitted_commits = self._create_uncommitted_commits(
+            uncommitted_info, commits, branch_colors, used_colors
+        )
         all_commits = uncommitted_commits + commits
 
         # Delegate merge detection to MergeDetector
@@ -112,12 +134,94 @@ class GitRepository:
         merge_branches = self.merge_detector.detect_merge_branches()
         self.merge_branches = merge_branches
         self.merge_detector.apply_merge_branch_styling(all_commits, merge_branches)
+        self._attach_ref_flags(all_commits, branch_colors, used_colors, include_remote=True)
 
         all_commits.sort(key=lambda c: c.date.timestamp(), reverse=True)
 
         self.commits = all_commits
         return all_commits
 
+    @staticmethod
+    def _clean_branch_name(branch_name: str) -> str:
+        return branch_name[7:] if branch_name.startswith('origin/') else branch_name
+
+    def _ref_tips(self, include_remote: bool):
+        """Vrátí (místní, vzdálené) větve jako mapy jméno -> hash commitu, na který ukazují."""
+        local_tips: Dict[str, str] = {}
+        remote_tips: Dict[str, str] = {}
+
+        for head in self.repo.heads:
+            try:
+                local_tips[head.name] = head.commit.hexsha
+            except Exception as e:
+                logger.warning(f"Failed to resolve branch {getattr(head, 'name', '?')}: {e}")
+        if self.head.is_detached:
+            local_tips[self.head.branch_label] = self.head.commit
+
+        if include_remote:
+            try:
+                remote_refs = list(self.repo.remote().refs)
+            except Exception as e:
+                logger.debug(f"Failed to access remote refs: {e}")
+                remote_refs = []
+            for ref in remote_refs:
+                if ref.name.endswith('/HEAD'):
+                    continue
+                try:
+                    remote_tips[self._clean_branch_name(ref.name)] = ref.commit.hexsha
+                except Exception as e:
+                    logger.warning(f"Failed to resolve remote branch {ref.name}: {e}")
+
+        return local_tips, remote_tips
+
+    def _attach_ref_flags(self, commits: List[Commit], branch_colors: Dict[str, str],
+                          used_colors: set, include_remote: bool) -> None:
+        """Doplní vlaječky větví, které by v grafu jinak nebyly vidět, a označí commit pod HEAD.
+
+        Commit patří v grafu jedné větvi a vlaječku větve nese její poslední
+        commit. Větev, jejíž poslední commit patří jiné větvi (čerstvě založená,
+        sloučená fast-forwardem, pozadu za main), tak žádnou vlaječku neměla
+        a v grafu nebyla vidět. Takové větve dostanou vlaječku navíc
+        (``Commit.extra_flags``) u commitu, na který ukazují.
+
+        Volat až po detekci mergů: ta commitům sloučených větví mění ``branch``
+        na virtuální ``merge-*``, a ty vlastní vlaječku nekreslí.
+        """
+        self.flag_columns = 1
+        try:
+            by_hash = {commit.hash: commit for commit in commits if not commit.is_uncommitted}
+
+            if self.head.commit in by_hash:
+                by_hash[self.head.commit].head_branch = self.head.branch_label
+
+            local_tips, remote_tips = self._ref_tips(include_remote)
+
+            # (hash, jméno větve) -> kde na commit ukazuje ("local", "remote")
+            uncovered: Dict[tuple, set] = {}
+            commits_with_own_flag = set()
+            for kind, tips in (("local", local_tips), ("remote", remote_tips)):
+                for name, tip in tips.items():
+                    commit = by_hash.get(tip)
+                    if commit is None:
+                        continue
+                    if self._clean_branch_name(commit.branch) == name:
+                        commits_with_own_flag.add(tip)  # Vlaječku nese commit sám
+                    else:
+                        uncovered.setdefault((tip, name), set()).add(kind)
+
+            # Místní větve napřed (podle abecedy), pak jen vzdálené
+            for (tip, name), kinds in sorted(uncovered.items(), key=lambda item: ("local" not in item[1], item[0][1])):
+                color = branch_colors.get(name) or branch_colors.get(f"origin/{name}")
+                if color is None:
+                    color = branch_colors[name] = get_branch_color(name, used_colors)
+                availability = "both" if len(kinds) == 2 else ("local_only" if "local" in kinds else "remote_only")
+                by_hash[tip].extra_flags.append(BranchFlag(name=name, color=color, availability=availability))
+
+            self.flag_columns = max(
+                [1] + [(commit.hash in commits_with_own_flag) + len(commit.extra_flags) for commit in by_hash.values()]
+            )
+        except Exception as e:
+            logger.warning(f"Failed to attach branch flags: {e}")
 
     def get_uncommitted_changes(self) -> Dict[str, any]:
         """Detekuje uncommitted změny (staged a working directory)."""
@@ -182,78 +286,82 @@ class GitRepository:
             return {"has_changes": False, "error": str(e)}
 
 
-    def _create_uncommitted_commits(self, uncommitted_info: Dict[str, any], existing_commits: List[Commit] = None) -> List[Commit]:
-        """Vytvoří pseudo-commity pro uncommitted změny pro každou větev."""
+    def _create_uncommitted_commits(self, uncommitted_info: Dict[str, any], existing_commits: List[Commit] = None,
+                                    branch_colors: Dict[str, str] = None, used_colors: set = None) -> List[Commit]:
+        """Vytvoří pseudo-commit (WIP) pro rozpracované změny nad commitem, na kterém stojí HEAD.
+
+        Rodičem je commit pod HEAD, ne "nejnovější commit se jménem aktuální
+        větve": čerstvě založená větev žádný vlastní commit nemá (její poslední
+        commit patří v grafu větvi, ze které vznikla) a WIP by zůstal viset bez
+        spojnice. Při odpojeném HEAD se WIP vede pod jménem ``DETACHED_HEAD``.
+
+        Args:
+            uncommitted_info: Výsledek get_uncommitted_changes()
+            existing_commits: Načtené commity (výchozí self.commits)
+            branch_colors: Barvy větví přidělené při načítání (doplní se o novou větev)
+            used_colors: Už použité barvy (doplní se)
+        """
         if not uncommitted_info.get("has_changes", False):
             return []
 
-        uncommitted_commits = []
         try:
-            # Získat aktuální větev
-            current_branch = self.repo.active_branch.name if self.repo.active_branch else "HEAD"
+            head = read_head_state(self.repo)
+            current_branch = head.branch_label
 
-            # Zjistit který typ změn máme
+            commits_to_search = existing_commits if existing_commits is not None else self.commits
+            head_commit = None
+            branch_color = None
+            for commit in commits_to_search:
+                if commit.is_uncommitted:
+                    continue
+                if commit.hash == head.commit:
+                    head_commit = commit
+                if branch_color is None and commit.branch == current_branch:
+                    branch_color = commit.branch_color
+
+            if branch_color is None:
+                # Větev bez vlastního commitu: dostane svou barvu, jako ji dostane po prvním commitu
+                branch_colors = {} if branch_colors is None else branch_colors
+                if current_branch not in branch_colors:
+                    if used_colors is None:
+                        used_colors = {commit.branch_color for commit in commits_to_search}
+                    branch_colors[current_branch] = get_branch_color(current_branch, used_colors)
+                branch_color = branch_colors[current_branch]
+
             uncommitted_type = uncommitted_info["uncommitted_type"]
             staged_files = uncommitted_info.get("staged_files", [])
             working_files = uncommitted_info.get("working_files", [])
 
-            # Spočítat celkový počet dotčených souborů (bez duplikátů)
-            all_files = set(staged_files + working_files)
-            file_count = len(all_files)
+            # Počet dotčených souborů (bez duplikátů) v jazyce rozhraní
+            file_count = len(set(staged_files + working_files))
+            description = f"{file_count} {get_translation_manager().get_plural(file_count, 'file')}"
 
-            # Vytvořit description podle počtu souborů
-            if file_count == 1:
-                description = "1 soubor"
-            elif file_count < 5:
-                description = f"{file_count} soubory"
-            else:
-                description = f"{file_count} souborů"
-
-            # Vytvořit pseudo-commit pro aktuální větev
             now = datetime.now(timezone.utc)
 
-            # Hash pro uncommitted změny - použijeme speciální prefix
-            full_hash = f"uncommit_{current_branch}_{int(now.timestamp())}"
-            uncommitted_hash = full_hash[:8]
-
-            # Najít HEAD commit aktuální větve pro parent a barvu
-            head_commit = None
-            branch_color = '#CCCCCC'  # Defaultní šedá fallback
-
-            # Najít nejnovější commit v aktuální větvi (ne uncommitted)
-            commits_to_search = existing_commits if existing_commits else self.commits
-            for commit in sorted(commits_to_search, key=lambda c: c.date, reverse=True):
-                if commit.branch == current_branch and not getattr(commit, 'is_uncommitted', False):
-                    head_commit = commit
-                    branch_color = commit.branch_color
-                    break
-
-            uncommitted_commit = Commit(
-                hash=uncommitted_hash,
+            return [Commit(
+                # Zvláštní hash: nesmí se splést s hashem skutečného commitu
+                hash=f"uncommit_{current_branch}_{int(now.timestamp())}"[:8],
                 message="WIP (Work In Progress)",
                 short_message="WIP (Work In Progress)",
-                author="",  # Prázdné pole
-                author_short="",  # Prázdné pole
-                author_email="",  # Prázdné pole
+                author="",
+                author_short="",
+                author_email="",
                 date=now,
-                date_relative="",  # Prázdné pole
-                date_short="",  # Prázdné pole
-                parents=[head_commit.hash] if head_commit else [],  # Parent je HEAD commit větve
+                date_relative="",
+                date_short="",
+                parents=[head_commit.hash] if head_commit else [],
                 branch=current_branch,
                 branch_color=branch_color,
                 is_uncommitted=True,
                 uncommitted_type=uncommitted_type,
                 description=description,
                 description_short=description
-            )
-
-            uncommitted_commits.append(uncommitted_commit)
+            )]
 
         except Exception as e:
-            # V případě chyby vrátit prázdný seznam
-            pass
-
-        return uncommitted_commits
+            # Graf bez WIP je lepší než žádný graf, ale chyba nesmí zmizet beze stopy
+            logger.warning(f"Failed to create WIP commit: {e}")
+            return []
 
     def get_merge_branches(self) -> List[MergeBranch]:
         """Vrátí posledně detekované merge větve."""

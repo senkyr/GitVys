@@ -12,6 +12,7 @@ from gui.ui_components.language_switcher import LanguageSwitcher
 from gui.ui_components.theme_switcher import ThemeSwitcher
 from gui.ui_components.stats_display import StatsDisplay
 from gui.repo_manager import RepositoryManager
+from auth.git_credentials import redact_secrets
 from utils.logging_config import get_logger
 from utils.translations import get_translation_manager, t
 from utils.theme_manager import get_theme_manager
@@ -110,6 +111,10 @@ class MainWindow:
             self.root = TkinterDnD.Tk()
         else:
             self.root = tk.Tk()
+
+        # Chyby v obsluze událostí (viz _report_callback_exception)
+        self._reported_errors = set()
+        self.root.report_callback_exception = self._report_callback_exception
 
         # Translation manager
         self.tm = get_translation_manager()
@@ -529,6 +534,10 @@ class MainWindow:
 
         messagebox.showerror(t('error'), message)
 
+    def show_warning(self, message: str):
+        """Upozornění, po kterém aplikace pokračuje (graf zůstává zobrazený)."""
+        messagebox.showwarning(t('warning'), message)
+
     def logout_github(self):
         """Odhlásí z GitHubu a oznámí výsledek (úspěch jen když token opravdu zmizel)."""
         if self.repo_manager.logout():
@@ -538,6 +547,24 @@ class MainWindow:
                 t('logout_title'),
                 t('logout_failed', self.repo_manager.token_storage.token_file)
             )
+
+    def _report_callback_exception(self, exc_type, exc, tb):
+        """Neošetřená chyba v obsluze události: zapsat do logu a ukázat uživateli.
+
+        Tk takovou chybu jen vypíše na stderr. Okenní .exe žádné stderr nemá,
+        takže by tlačítko prostě "nic neudělalo" a po chybě by nezbyla stopa.
+        """
+        logger.error("Unhandled error in UI callback", exc_info=(exc_type, exc, tb))
+
+        # Stejná chyba z opakované události (pohyb myši, animace) se ukáže jen jednou
+        key = (exc_type, str(exc))
+        if key in self._reported_errors:
+            return
+        self._reported_errors.add(key)
+        messagebox.showerror(
+            t('error'),
+            t('unexpected_error', redact_secrets(f"{exc_type.__name__}: {exc}"))
+        )
 
     def update_status(self, message: str):
         self.status_label.config(text=message)

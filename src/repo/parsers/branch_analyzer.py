@@ -3,6 +3,7 @@
 import tempfile
 from typing import Dict, Set, Tuple
 from git import Repo
+from repo.head import DETACHED_HEAD, read_head_state
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -64,7 +65,11 @@ class BranchAnalyzer:
             refs.append((head.path, head.name))
         # Jen přesná jména main/master mají přednost (ne feature/main)
         main = [r for r in refs if r[1] in self.MAIN_BRANCHES]
-        return main + [r for r in refs if r[1] not in self.MAIN_BRANCHES]
+        ordered = main + [r for r in refs if r[1] not in self.MAIN_BRANCHES]
+        # Odpojený HEAD až na konec: dostane jen commity, které nepatří žádné větvi
+        if read_head_state(self.repo).is_detached:
+            ordered.append(('HEAD', DETACHED_HEAD))
+        return ordered
 
     def _remote_refs(self):
         refs = []

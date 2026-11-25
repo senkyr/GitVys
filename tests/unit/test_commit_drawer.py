@@ -744,3 +744,55 @@ class TestTextOnlyRedraw:
 
         # Enter + Leave na sdílený tag, ne nová dvojice lambd pro každou položku a překreslení
         assert mock_canvas.tag_bind.call_count == 2
+
+
+def _commit(hash_, branch, parents=(), is_wip=False, is_branch_head=False):
+    commit = Commit(
+        hash=hash_, message=hash_, short_message=hash_,
+        author='' if is_wip else 'Test', author_short='' if is_wip else 'Test', author_email='',
+        date=datetime(2025, 1, 1, 12, 0), date_relative='', date_short='',
+        parents=list(parents), branch=branch, branch_color='#3366cc',
+        is_uncommitted=is_wip, is_branch_head=is_branch_head,
+        branch_head_type='local' if is_branch_head else 'none',
+    )
+    commit.x, commit.y = 100, 100
+    return commit
+
+
+class TestWipBranchFlag:
+    """WIP nese vlaječku větve, která v grafu nemá žádný vlastní commit."""
+
+    def test_wip_on_branch_without_commits_gets_flag(self, commit_drawer):
+        c1 = _commit('c1', 'main')
+        wip = _commit('wip', 'feature', parents=['c1'], is_wip=True)
+
+        analysis = commit_drawer._analyze([wip, c1])
+
+        assert analysis['wip_flag_ids'] == {id(wip)}
+        assert id(wip) in analysis['flag_commit_ids']
+        assert id(wip) in analysis['connection_commit_ids']
+
+    def test_wip_on_branch_with_commits_gets_no_flag(self, commit_drawer):
+        c1 = _commit('c1', 'main')
+        wip = _commit('wip', 'main', parents=['c1'], is_wip=True)
+
+        analysis = commit_drawer._analyze([wip, c1])
+
+        assert analysis['wip_flag_ids'] == set()
+        assert analysis['flag_commit_ids'] == {id(c1)}
+
+    def test_wip_flag_is_drawn_in_branch_head_mode(self, commit_drawer, mock_callbacks,
+                                                   mock_branch_flag_drawer, sample_column_widths):
+        """Pohled s remote větvemi kreslí vlaječky podle is_branch_head; WIP ji nemá."""
+        c1 = _commit('c1', 'main', is_branch_head=True)
+        wip = _commit('wip', 'feature', parents=['c1'], is_wip=True)
+
+        commit_drawer.draw_commits(
+            [wip, c1], sample_column_widths,
+            mock_callbacks['show_tooltip'], mock_callbacks['hide_tooltip'],
+            mock_callbacks['truncate_text'], 200, mock_callbacks['make_color_pale'],
+            mock_branch_flag_drawer, mock_callbacks['draw_flag_connection'],
+        )
+
+        flagged = [call_args.args[2] for call_args in mock_branch_flag_drawer.draw_branch_flag.call_args_list]
+        assert sorted(flagged) == ['feature', 'main']

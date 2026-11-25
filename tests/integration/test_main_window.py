@@ -446,3 +446,27 @@ class TestLogout:
         mock_msgbox.showinfo.assert_not_called()
 
         window.root.destroy()
+
+
+class TestUnexpectedErrors:
+    """Neosetrena chyba v obsluze udalosti se nesmi ztratit (okenni .exe nema stderr)."""
+
+    @patch('gui.main_window.get_translation_manager')
+    @patch('gui.main_window.get_theme_manager')
+    @patch('gui.main_window.RepositoryManager')
+    @patch('gui.main_window.messagebox')
+    def test_error_in_callback_is_shown_once_without_secrets(self, mock_msgbox, mock_repo, mock_theme_mgr,
+                                                             mock_trans_mgr, root):
+        window = TestLogout._make_window(mock_theme_mgr, mock_trans_mgr)
+        window.repo_manager.refresh_repository.side_effect = RuntimeError("boom ghp_" + "a" * 36)
+
+        window.refresh_button.invoke()
+        window.refresh_button.invoke()
+
+        # Stejna chyba dvakrat = jeden dialog
+        mock_msgbox.showerror.assert_called_once()
+        message = mock_msgbox.showerror.call_args[0][1]
+        assert "RuntimeError" in message
+        assert "ghp_" not in message
+
+        window.root.destroy()

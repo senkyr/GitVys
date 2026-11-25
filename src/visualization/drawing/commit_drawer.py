@@ -102,9 +102,6 @@ class CommitDrawer:
 
         # Rozhodnutí, která závisí na celé historii (ne jen na vykreslovaném výřezu)
         analysis = self._analyze(commits)
-        has_branch_heads = analysis['has_branch_heads']
-        flag_commit_ids = analysis['flag_commit_ids']
-        connection_commit_ids = analysis['connection_commit_ids']
         dominant_author = analysis['dominant_author']
 
         tm = get_theme_manager()
@@ -157,45 +154,8 @@ class CommitDrawer:
                     )
                 node_items.append((commit, node_item))
 
-                # Display flag according to used mode
-                if has_branch_heads:
-                    # New logic - display flag for branch head commits (but not for virtual merge branches)
-                    if (commit.is_branch_head and commit.branch != 'unknown' and
-                        not commit.branch.startswith('merge-')):
-                        clean_branch_name = commit.branch
-                        if commit.branch.startswith('origin/'):
-                            clean_branch_name = commit.branch[7:]  # Remove "origin/"
-
-                        flag_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
-
-                        # Determine which symbols to display according to branch_head_type
-                        if commit.branch_head_type == "both":
-                            # Display both symbols (as before)
-                            branch_avail = "both"
-                        elif commit.branch_head_type == "local":
-                            # Only computer symbol
-                            branch_avail = "local_only"
-                        elif commit.branch_head_type == "remote":
-                            # Only cloud symbol
-                            branch_avail = "remote_only"
-                        else:
-                            branch_avail = commit.branch_availability
-
-                        branch_flag_drawer.draw_branch_flag(x, y, clean_branch_name, flag_color, commit.is_remote, branch_avail)
-
-                        # Draw connection line to flag
-                        connection_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
-                        draw_flag_connection_callback(x, y, connection_color)
-                else:
-                    # Fallback logic - flag at first commit of each branch (not for WIP and merge commits)
-                    if id(commit) in flag_commit_ids:
-                        flag_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
-                        branch_flag_drawer.draw_branch_flag(x, y, commit.branch, flag_color, commit.is_remote, commit.branch_availability)
-
-                    # If this is last commit of branch, draw horizontal connection to flag (except 'unknown', WIP and merge)
-                    if id(commit) in connection_commit_ids:
-                        connection_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
-                        draw_flag_connection_callback(x, y, connection_color)
+                self._draw_flags(commit, analysis, make_color_pale_callback,
+                                 branch_flag_drawer, draw_flag_connection_callback)
 
             # Fixed position for "table" start - behind all branches
             text_x = table_start_position
@@ -352,6 +312,65 @@ class CommitDrawer:
                 if commit.author and commit.author != dominant_author:
                     self._add_tooltip(node_item, commit.author, is_node=True)
 
+    def _draw_flags(self, commit: Commit, analysis: Dict, make_color_pale_callback: Callable,
+                    branch_flag_drawer, draw_flag_connection_callback: Callable) -> None:
+        """Nakreslí vlaječky větví u commitu a spojnici od poslední vlaječky k uzlu.
+
+        Vlastní vlaječka commitu (větev, které commit v grafu patří) je první,
+        za ní stojí vlaječky dalších větví, které na commit ukazují
+        (``Commit.extra_flags``). Aktuální větev (HEAD) má tučný rámeček.
+        """
+        x, y = commit.x, commit.y
+        own_color = make_color_pale_callback(commit.branch_color) if commit.is_remote else commit.branch_color
+        flags = []  # (jméno, barva, is_remote, dostupnost)
+        own_connection = False
+
+        if analysis['has_branch_heads']:
+            # Flag for branch head commits (but not for virtual merge branches)
+            if (commit.is_branch_head and commit.branch != 'unknown' and
+                    not commit.branch.startswith('merge-')):
+                clean_branch_name = commit.branch
+                if commit.branch.startswith('origin/'):
+                    clean_branch_name = commit.branch[7:]  # Remove "origin/"
+
+                # Which symbols to display according to branch_head_type
+                branch_avail = {
+                    "both": "both", "local": "local_only", "remote": "remote_only",
+                }.get(commit.branch_head_type, commit.branch_availability)
+
+                flags.append((clean_branch_name, own_color, commit.is_remote, branch_avail))
+                own_connection = True
+            elif id(commit) in analysis['wip_flag_ids']:
+                # WIP on a branch without any flag elsewhere carries the branch flag
+                flags.append((commit.branch, commit.branch_color, False, commit.branch_availability))
+                own_connection = True
+        else:
+            # Fallback logic - flag at first commit of each branch (not for merge commits)
+            if id(commit) in analysis['flag_commit_ids']:
+                flags.append((commit.branch, own_color, commit.is_remote, commit.branch_availability))
+            # Connection at the last commit of branch (except 'unknown' and merge)
+            own_connection = id(commit) in analysis['connection_commit_ids']
+
+        for flag in commit.extra_flags:
+            flag_color = make_color_pale_callback(flag.color) if flag.availability == "remote_only" else flag.color
+            flags.append((flag.name, flag_color, False, flag.availability))
+
+        is_wip = getattr(commit, 'is_uncommitted', False)
+        for slot, (name, color, is_remote, availability) in enumerate(flags):
+            # Výchozí hodnoty se nepředávají: volání pro běžnou vlaječku zůstává stejné jako dřív
+            options = {}
+            if slot:
+                options['slot'] = slot
+            if availability != "remote_only" and (is_wip or commit.head_branch == name):
+                options['is_current'] = True
+            branch_flag_drawer.draw_branch_flag(x, y, name, color, is_remote, availability, **options)
+
+        if own_connection or flags:
+            last_slot = len(flags) - 1
+            connection_color = own_color if own_connection else flags[-1][1]
+            options = {'slot': last_slot} if last_slot > 0 else {}
+            draw_flag_connection_callback(x, y, connection_color, **options)
+
     def _analyze(self, commits: List[Commit]) -> Dict:
         """Globální rozbor commitů pro kreslení; výsledek se cachuje pro stejný seznam.
 
@@ -385,6 +404,24 @@ class CommitDrawer:
                     last_commits_by_branch[commit.branch] = commit
             connection_commit_ids = {id(commit) for commit in last_commits_by_branch.values()}
 
+        # Rozpracované změny na větvi, která v grafu nemá vlaječku jinde (typicky
+        # repozitář bez commitu): vlaječku nese WIP uzel, jinak by aktuální
+        # větev nebyla vidět vůbec. Větev, která ukazuje na commit jiné větve,
+        # má vlaječku u něj (Commit.extra_flags).
+        flagged_elsewhere = set()
+        for commit in commits:
+            if not getattr(commit, 'is_uncommitted', False):
+                flagged_elsewhere.add(commit.branch)
+            flagged_elsewhere.update(flag.name for flag in commit.extra_flags)
+        wip_flag_ids = {
+            id(commit) for commit in commits
+            if getattr(commit, 'is_uncommitted', False) and commit.branch != 'unknown'
+            and commit.branch not in flagged_elsewhere
+        }
+        if not has_branch_heads:
+            flag_commit_ids |= wip_flag_ids
+            connection_commit_ids |= wip_flag_ids
+
         # Detect dominant author (>80% commits)
         dominant_author = None
         author_counts = Counter(commit.author for commit in commits)
@@ -397,6 +434,7 @@ class CommitDrawer:
             'has_branch_heads': has_branch_heads,
             'flag_commit_ids': flag_commit_ids,
             'connection_commit_ids': connection_commit_ids,
+            'wip_flag_ids': wip_flag_ids,
             'dominant_author': dominant_author,
         }
         self._analysis_cache = (cache_key, commits, analysis)

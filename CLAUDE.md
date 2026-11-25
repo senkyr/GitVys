@@ -76,6 +76,7 @@ GitVys/
 │   │       └── stats_display.py      # Repository statistics display
 │   ├── repo/              # Git operations (refactored v1.5.0)
 │   │   ├── repository.py  # GitRepository facade (281 lines)
+│   │   ├── head.py        # HEAD state: current branch / detached / unborn
 │   │   ├── parsers/       # Parsing components
 │   │   │   ├── commit_parser.py    # Parses commits from Git repo
 │   │   │   ├── branch_analyzer.py  # Analyzes branches and divergence
@@ -152,7 +153,7 @@ GitVys/
 - **Theme Support**: Light/dark mode with automatic persistence to settings
 - **Multi-language**: Czech/English UI with language switcher
 - **Tags**: Display Git tags with emoji icons (🏷️ normal, 📌 release, 🚀 version) and tooltips for annotated tags
-- **Remote Branches**: Load remote branches via "Načíst remote/větve" button
+- **Remote Branches**: the "Načíst remote/větve" button fetches from `origin` and shows remote branches
 - **Git Detection**: Startup check for Git availability with user-friendly error dialog
 - **Interactive Columns**: Resize column widths by dragging separators
 - **Smooth Scrolling**: Momentum-based scrolling with acceleration
@@ -170,6 +171,14 @@ The main data structures:
 - Layout data (x/y positions for rendering)
 - Tag information (attached tags with emoji)
 - Uncommitted changes support (WIP commits)
+
+**HEAD** (`repo/head.py`): `read_head_state(repo)` returns `HeadState(branch, commit)` - on a branch, detached (`branch` is None) or unborn (`commit` is None). `GitRepository.head` holds the state from the last parse. Everything that depends on "where the user stands" goes through it, not through `repo.active_branch` (raises on detached HEAD):
+
+- the WIP pseudo-commit hangs on the commit under HEAD (`HeadState.commit`), not on the newest commit carrying the current branch name - a freshly created branch has no commit of its own in the graph;
+- with detached HEAD, commits reachable only from HEAD are loaded too (`rev-list ... HEAD`) and shown as branch `DETACHED_HEAD` (`'HEAD'`), which is not counted as a branch in the stats;
+- the commit under HEAD carries `Commit.head_branch` (current branch name, `'HEAD'` when detached); the flag with that name is drawn with a bold border.
+
+**Branch flags**: a commit belongs to one branch in the graph (`Commit.branch`), and its branch's flag sits on the branch's tip. A branch whose tip belongs to another branch (freshly created, fast-forward merged, behind main; in the remote view also `origin/*` branches and a detached HEAD) gets an extra flag on the commit it points at: `GitRepository._attach_ref_flags` fills `Commit.extra_flags` (`BranchFlag`) after merge detection. Flags of one row stand side by side; `GitRepository.flag_columns` is the widest row and `RepositoryManager._build_layout` shifts the graph right by `FLAG_SLOT_WIDTH` per extra column. Drawing: `CommitDrawer._draw_flags`. A WIP carries a flag only when its branch has none elsewhere (repository without commits; `wip_flag_ids`).
 
 **MergeBranch class:**
 
@@ -189,7 +198,8 @@ Repository loading, cloning and refresh run in daemon threads (`RepositoryManage
 
 - The token never goes into a URL: it is passed to git as `http.https://github.com/.extraHeader` via `GIT_CONFIG_COUNT/KEY/VALUE` env vars (`auth/git_credentials.py`, requires Git 2.31+).
 - The token is used only for `https://github.com` (`can_use_github_token`). URL validation (`is_trusted_git_url`) is enforced in `RepositoryManager`, not only in the drop dialog.
-- GitHub access is controlled only by the app's sign-in: the first, token-less clone attempt uses `build_git_clone_env(url)`, which empties Git's credential helper list for `https://github.com` and `http://github.com` (`credential.<url>.helper` via `GIT_CONFIG_*`) and, for GitHub HTTP(S) URLs, sets an empty `GIT_ASKPASS` and `GCM_INTERACTIVE=never`; the token attempt disables helpers and askpass too. Other hosts keep Git's own credentials. Not covered: SSH URLs (user's SSH key), `_netrc`, credentials written in the user's git config (`http.extraHeader`, `url.*.insteadOf`), Git older than 2.31. Cloning is the only network operation the app runs.
+- GitHub access is controlled only by the app's sign-in: the first, token-less clone attempt uses `build_git_clone_env(url)`, which empties Git's credential helper list for `https://github.com` and `http://github.com` (`credential.<url>.helper` via `GIT_CONFIG_*`) and, for GitHub HTTP(S) URLs, sets an empty `GIT_ASKPASS` and `GCM_INTERACTIVE=never`; the token attempt disables helpers and askpass too. Other hosts keep Git's own credentials. Not covered: SSH URLs (user's SSH key), `_netrc`, credentials written in the user's git config (`http.extraHeader`, `url.*.insteadOf`), Git older than 2.31.
+- The app runs two network operations, clone and fetch (`git fetch --prune origin` behind the "Načíst remote" button; refresh/F5 does not fetch). Both go through `RepositoryManager._run_with_github_auth(url, operation, ...)`, which holds the whole sign-in sequence (token-less attempt → stored token → OAuth dialog → save after success, logout epoch check). Any new network operation (push, pull) must go through it too, with the env from `RepositoryManager._git_env`. Fetch is refused for a remote URL that fails `is_trusted_git_url` - the URL comes from the opened repository's config; a failed fetch shows the last fetched state with a warning (`MainWindow.show_warning`).
 - Stored token: DPAPI-encrypted on Windows, 0600 file elsewhere; legacy plaintext is migrated on load.
 - Sign-out: the "Odhlásit GitHub" button in the status bar (`MainWindow.logout_github` → `RepositoryManager.logout()`) deletes the stored token and bumps `_auth_epoch`. The clone worker remembers the epoch at the moment it obtained its token; if it changed, the finished clone is discarded and the token is not saved (check and save happen under `_auth_lock`). The token lives nowhere else in the process, and it is not revoked on GitHub (that needs the OAuth App's client secret).
 - Error messages shown to the user or logged go through `redact_secrets`.
@@ -211,6 +221,7 @@ The application uses centralized logging for error tracking and debugging:
 - Logged with context: `logger.warning(f"Failed to X: {e}")`
 - Never silently swallowed - always logged for debugging
 - User-friendly error messages shown in GUI when appropriate
+- Unhandled errors are shown in a dialog, because the windowed .exe has no stderr and (without `GITVIS_DEBUG=1`) no log: errors in Tk callbacks via `MainWindow._report_callback_exception` (same error shown once), startup errors via `main.show_fatal_error_dialog`. Texts go through `redact_secrets`.
 
 **Constants** (`utils/constants.py`):
 

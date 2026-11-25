@@ -6,6 +6,7 @@ import re
 from itertools import count
 from typing import List, Dict, Set, Optional
 from git import Repo
+from repo.head import read_head_state
 from utils.data_structures import Commit, MergeBranch
 from utils.logging_config import get_logger
 from visualization.colors import get_branch_color
@@ -238,12 +239,18 @@ class MergeDetector:
             logger.warning(f"Failed to get branches with HEAD: {e}")
             return result
 
+        tips = []
         for branch_head in heads:
             try:
-                current = branch_head.commit.hexsha
+                tips.append(branch_head.commit.hexsha)
             except Exception as e:
                 logger.warning(f"Failed to resolve branch {getattr(branch_head, 'name', '?')}: {e}")
-                continue
+        # Odpojený HEAD má vlastní linii commitů stejně jako větev
+        head = read_head_state(self.repo)
+        if head.is_detached:
+            tips.append(head.commit)
+
+        for current in tips:
             # Větve sdílí historii: jakmile narazíme na už viděný commit, zbytek je taky viděný
             while current and current not in result:
                 result.add(current)

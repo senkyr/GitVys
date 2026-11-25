@@ -20,10 +20,14 @@ from auth.git_credentials import (
     build_git_auth_env, build_git_clone_env, can_use_github_token, is_trusted_git_url,
     looks_like_url, parse_git_url_host, redact_secrets,
 )
+from utils.constants import COMMIT_START_X, FLAG_SLOT_WIDTH
 from utils.logging_config import get_logger
 from utils.translations import t
 
 logger = get_logger(__name__)
+
+# Jméno remote, se kterým aplikace pracuje (klon ho tak pojmenuje vždy)
+REMOTE_NAME = 'origin'
 
 # Jak dlouho klonovací vlákno čeká na dokončení OAuth dialogu (device code platí 15 min)
 AUTH_DIALOG_TIMEOUT = 20 * 60
@@ -219,17 +223,94 @@ class RepositoryManager:
         Gitem (viz build_git_clone_env), jinak by ho odhlášení nepokrylo.
         """
         from git import Repo
-        env = build_git_auth_env(token) if token else build_git_clone_env(url)
-        Repo.clone_from(url, path, env=env)
+        Repo.clone_from(url, path, env=RepositoryManager._git_env(url, token))
+
+    @staticmethod
+    def _git_env(url: str, token: str = None):
+        """Prostředí pro síťový příkaz Gitu: s tokenem aplikace, nebo bez přihlášení."""
+        return build_git_auth_env(token) if token else build_git_clone_env(url)
+
+    @staticmethod
+    def _fetch(repo, url: str, token: str = None):
+        """Spustí `git fetch` z remote ``REMOTE_NAME`` se stejným zacházením s přihlášením jako klon.
+
+        ``--prune``: větve smazané na serveru zmizí i z grafu. Mění se jen
+        remote-tracking refy, místních větví ani pracovní složky se fetch netýká.
+        """
+        repo.git.fetch('--prune', REMOTE_NAME, env=RepositoryManager._git_env(url, token))
+
+    def _run_with_github_auth(self, url: str, operation, generation: int,
+                              auth_status: str, logout_message: str):
+        """Spustí síťovou operaci Gitu (pracovní vlákno) a postará se o přihlášení ke GitHubu.
+
+        Postup: pokus bez přihlášení → při chybě autentizace uložený token →
+        je-li uložený token neplatný (odvolaný), smaže se a otevře se OAuth
+        dialog. Token se ukládá až po úspěšné operaci a posílá se jen na
+        https://github.com. Všechny síťové operace musí jít tudy, jinak by
+        se o přístupu ke GitHubu rozhodovalo i jinde než přihlášením v aplikaci.
+
+        Args:
+            url: Adresa vzdáleného repozitáře
+            operation: Funkce ``operation(token)``; ``token`` None = pokus bez přihlášení
+            generation: Číslo operace (pro stavový řádek)
+            auth_status: Text stavového řádku pro pokus s přihlášením
+            logout_message: Chyba pro případ, že se uživatel během operace odhlásil
+        """
+        from git.exc import GitCommandError
+
+        try:
+            operation(None)
+            return
+        except GitCommandError as error:
+            if not self._is_auth_error(error):
+                raise
+
+            if not can_use_github_token(url):
+                _, host = parse_git_url_host(url)
+                if host == 'github.com':
+                    # SSH nebo http:// na GitHub - token tam poslat nejde / nesmí
+                    raise Exception(t('auth_https_only'))
+                raise
+
+        logger.info("Authentication required, attempting with token...")
+
+        # auth_epoch = stav odhlášení ve chvíli, kdy vlákno token získalo
+        auth_epoch = self._auth_epoch
+        token = self.token_storage.load_token()
+        token_from_storage = token is not None
+        if not token:
+            logger.info("No saved token found, showing auth dialog...")
+            auth_epoch = self._auth_epoch
+            token = self._request_token_from_user()
+            if not token:
+                raise Exception(t('auth_expired'))
+
+        self._post(generation, self.parent.update_status, auth_status)
+        try:
+            operation(token)
+        except GitCommandError as auth_error:
+            if not (token_from_storage and self._is_auth_error(auth_error)):
+                raise
+            # Uložený token neplatí (odvolaný, vypršel) → smazat a požádat o nový
+            logger.info("Saved token was rejected, requesting a new one")
+            self.token_storage.delete_token()
+            token_from_storage = False
+            auth_epoch = self._auth_epoch
+            token = self._request_token_from_user()
+            if not token:
+                raise Exception(t('auth_expired'))
+            operation(token)
+
+        with self._auth_lock:
+            if self._auth_epoch != auth_epoch:
+                # Uživatel se během operace odhlásil: token se neuloží a výsledek se zahodí
+                raise Exception(logout_message)
+            if not token_from_storage:
+                self.token_storage.save_token(token)
 
     def _clone_worker(self, url: str, path: str, generation: int = None):
         """
-        Worker thread pro klonování repozitáře.
-
-        Postup: klon bez přihlášení → při chybě autentizace uložený token →
-        je-li uložený token neplatný (odvolaný), smaže se a otevře se OAuth
-        dialog. Token se ukládá až po úspěšném klonu a posílá se jen na
-        https://github.com.
+        Worker thread pro klonování repozitáře (přihlášení viz _run_with_github_auth).
 
         Args:
             url: Git repository URL
@@ -240,59 +321,10 @@ class RepositoryManager:
             generation = self._generation
 
         try:
-            from git.exc import GitCommandError
-
-            try:
-                self._clone(url, path)
-                self._post(generation, self._on_clone_complete, path)
-                return
-            except GitCommandError as clone_error:
-                if not self._is_auth_error(clone_error):
-                    raise
-
-                if not can_use_github_token(url):
-                    _, host = parse_git_url_host(url)
-                    if host == 'github.com':
-                        # SSH nebo http:// na GitHub - token tam poslat nejde / nesmí
-                        raise Exception(t('auth_https_only'))
-                    raise
-
-            logger.info("Authentication required for cloning, attempting with token...")
-
-            # auth_epoch = stav odhlášení ve chvíli, kdy vlákno token získalo
-            auth_epoch = self._auth_epoch
-            token = self.token_storage.load_token()
-            token_from_storage = token is not None
-            if not token:
-                logger.info("No saved token found, showing auth dialog...")
-                auth_epoch = self._auth_epoch
-                token = self._request_token_from_user()
-                if not token:
-                    raise Exception(t('auth_expired'))
-
-            self._post(generation, self.parent.update_status, t('cloning_with_auth'))
-            try:
-                self._clone(url, path, token)
-            except GitCommandError as auth_clone_error:
-                if not (token_from_storage and self._is_auth_error(auth_clone_error)):
-                    raise
-                # Uložený token neplatí (odvolaný, vypršel) → smazat a požádat o nový
-                logger.info("Saved token was rejected, requesting a new one")
-                self.token_storage.delete_token()
-                token_from_storage = False
-                auth_epoch = self._auth_epoch
-                token = self._request_token_from_user()
-                if not token:
-                    raise Exception(t('auth_expired'))
-                self._clone(url, path, token)
-
-            with self._auth_lock:
-                if self._auth_epoch != auth_epoch:
-                    # Uživatel se během klonování odhlásil: token se neuloží a klon se zahodí
-                    raise Exception(t('logout_cancelled_clone'))
-                if not token_from_storage:
-                    self.token_storage.save_token(token)
-
+            self._run_with_github_auth(
+                url, lambda token: self._clone(url, path, token), generation,
+                auth_status=t('cloning_with_auth'), logout_message=t('logout_cancelled_clone'),
+            )
             self._post(generation, self._on_clone_complete, path)
 
         except Exception as e:
@@ -430,7 +462,16 @@ class RepositoryManager:
 
     @staticmethod
     def _build_layout(git_repo, commits):
-        layout = GraphLayout(commits, merge_branches=git_repo.get_merge_branches())
+        # Ukazuje-li na jeden commit víc větví, stojí jejich vlaječky vedle sebe
+        # a graf se o ně posune doprava
+        flag_columns = getattr(git_repo, 'flag_columns', 1)
+        if not isinstance(flag_columns, int) or flag_columns < 1:
+            flag_columns = 1
+        layout = GraphLayout(
+            commits,
+            commit_start_x=COMMIT_START_X + (flag_columns - 1) * FLAG_SLOT_WIDTH,
+            merge_branches=git_repo.get_merge_branches(),
+        )
         return layout.calculate_positions()
 
     def load_repository(self, repo_path: str, generation: int = None):
@@ -481,8 +522,9 @@ class RepositoryManager:
             return
 
         if self.is_remote_loaded:
-            # Obnovit s remote daty
-            self.fetch_remote_data()
+            # Obnovit s remote daty, ale bez sítě: obnovení čte jen stav na disku,
+            # ze serveru stahuje tlačítko "Načíst remote"
+            self.fetch_remote_data(fetch=False)
         else:
             # Obnovit jen lokálně
             self.parent.update_status(t('loading_repo'))
@@ -515,29 +557,66 @@ class RepositoryManager:
             self._post(generation, self.parent.show_error,
                        t('error_loading_repo', redact_secrets(str(e))))
 
-    def fetch_remote_data(self):
-        """Načte remote větve pro aktuální repozitář (z lokálních remote-tracking refů, bez síťového fetch)."""
+    def fetch_remote_data(self, fetch: bool = True):
+        """Načte remote větve pro aktuální repozitář.
+
+        Args:
+            fetch: True = napřed stáhnout aktuální stav ze serveru (`git fetch`);
+                False = jen znovu přečíst remote-tracking refy, které už na disku jsou
+        """
         if not self.git_repo:
             return
 
         self.parent.fetch_button.config(text=t('loading'), state="disabled")
-        self.parent.update_status(t('loading_remote_branches'))
+        self.parent.update_status(t('fetching_remote') if fetch else t('loading_remote_branches'))
         self._start_progress()
 
         generation = self._next_generation()
         thread = threading.Thread(
             target=self.load_remote_repository,
-            args=(self.git_repo, generation),
+            args=(self.git_repo, generation, fetch),
             daemon=True
         )
         thread.start()
 
-    def load_remote_repository(self, git_repo=None, generation: int = None):
-        """Načte data včetně remote větví (pracovní vlákno)."""
+    def _fetch_remote(self, git_repo, generation: int):
+        """Stáhne aktuální stav z remote (pracovní vlákno); bez remote neudělá nic."""
+        repo = git_repo.repo
+        try:
+            url = repo.remote(REMOTE_NAME).url
+        except ValueError:
+            logger.info(f"Repository has no remote '{REMOTE_NAME}', nothing to fetch")
+            return
+
+        # Stejné pravidlo jako pro klon: adresu remote určuje nastavení otevřeného
+        # repozitáře, a to může pocházet odkudkoli (jiný host, URL s údaji, ext::)
+        if not is_trusted_git_url(url):
+            raise Exception(t('fetch_untrusted_url'))
+
+        self._run_with_github_auth(
+            url, lambda token: self._fetch(repo, url, token), generation,
+            auth_status=t('fetching_with_auth'), logout_message=t('logout_cancelled_fetch'),
+        )
+
+    def load_remote_repository(self, git_repo=None, generation: int = None, fetch: bool = False):
+        """Načte data včetně remote větví (pracovní vlákno).
+
+        Když se fetch nepovede (bez sítě, odmítnuté přihlášení), graf se
+        přesto ukáže s naposledy staženým stavem a uživatel dostane varování:
+        graf bez upozornění by se tvářil jako aktuální stav serveru.
+        """
         git_repo = git_repo or self.git_repo
         if generation is None:
             generation = self._generation
         try:
+            fetch_error = None
+            if fetch:
+                try:
+                    self._fetch_remote(git_repo, generation)
+                except Exception as e:
+                    fetch_error = redact_secrets(str(e))
+                    logger.warning(f"Fetch failed: {fetch_error}")
+
             commits = git_repo.parse_commits_with_remote()
 
             if not commits:
@@ -546,6 +625,8 @@ class RepositoryManager:
 
             positioned_commits = self._build_layout(git_repo, commits)
             self._post(generation, self.parent.update_graph_with_remote, positioned_commits)
+            if fetch_error:
+                self._post(generation, self.parent.show_warning, t('fetch_failed', fetch_error))
 
         except Exception as e:
             self._post(generation, self.parent.show_error,

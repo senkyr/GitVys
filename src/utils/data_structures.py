@@ -11,6 +11,14 @@ class Tag:
 
 
 @dataclass
+class BranchFlag:
+    """Vlaječka větve, která na commit ukazuje, ale commit v grafu patří jiné větvi."""
+    name: str  # Jméno větve bez prefixu origin/
+    color: str
+    availability: str = "local_only"  # Kde větev na tento commit ukazuje: local_only/remote_only/both
+
+
+@dataclass
 class Commit:
     hash: str
     message: str
@@ -45,7 +53,13 @@ class Commit:
     # Pro handling merge branches
     is_merge_branch: bool = False  # Je toto commit z virtuální merge větve
 
+    # Commit patří v grafu jedné větvi (branch), ale ukazovat na něj může víc větví
+    extra_flags: List[BranchFlag] = None  # Vlaječky dalších větví, které na commit ukazují
+    head_branch: str = ""  # Jen u commitu pod HEAD: jméno aktuální větve (u odpojeného HEAD "HEAD")
+
     def __post_init__(self):
+        if self.extra_flags is None:
+            self.extra_flags = []
         if self.tags is None:
             self.tags = []
         if self.additional_branches is None:

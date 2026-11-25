@@ -26,6 +26,14 @@ SEPARATOR_HEIGHT = 25  # Výška separátorů mezi sloupci (px)
 HEADER_HEIGHT = 25  # Výška záhlaví/separátoru (px)
 BASE_MARGIN = 25  # Základní margin (stejný jako výška záhlaví) (px)
 
+# Branch flags - visualization/drawing/branch_flag_drawer.py
+MIN_FLAG_WIDTH = 90  # Nejmenší šířka vlaječky větve (px)
+MAX_FLAG_WIDTH = 120  # Největší šířka vlaječky větve (px)
+FLAG_GAP = 6  # Mezera mezi vlaječkami na jednom řádku (px)
+# O kolik se graf posune doprava za každou další vlaječku na řádku. První
+# vlaječka se vejde do COMMIT_START_X, viz RepositoryManager._build_layout.
+FLAG_SLOT_WIDTH = MAX_FLAG_WIDTH + FLAG_GAP
+
 # Column width constants
 MIN_COLUMN_WIDTH_TEXT = 50  # Minimální šířka textového sloupce (px)
 MIN_COLUMN_WIDTH_GRAPH = 100  # Minimální šířka grafového sloupce (px)

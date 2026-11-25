@@ -4,12 +4,25 @@ Všechny významné změny v tomto projektu.
 
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.0.0/).
 
-## [Unreleased]
+## [1.6.1] - 2026-11-25
 
 ### Security
 
 - Tlačítko „Odhlásit GitHub“ ve stavovém řádku smaže uložený token GitHubu. Dřív token zůstával v profilu Windows bez možnosti odhlášení, takže na sdíleném účtu pracoval další uživatel s GitHubem předchozího. Klonování, které token získalo před odhlášením, se zruší a token neuloží.
 - Při klonu z GitHubu přes HTTP(S) se nepoužije přihlášení, které si pamatuje sám Git (credential helper, na Windows Git Credential Manager, ani program askpass). Dřív první pokus o klon takové přihlášení použil, takže soukromý repozitář šel naklonovat i po odhlášení v aplikaci. Kdo má přihlášení ke GitHubu uložené v Gitu, přihlásí se v aplikaci zvlášť; ostatní hosty se klonují jako dřív. Vyžaduje Git 2.31+.
+
+### Changed
+
+- Tlačítko „Načíst remote“ („Načíst větve“) stáhne aktuální stav ze serveru (`git fetch --prune origin`), než remote větve zobrazí. Dřív jen četlo, co už na disku bylo, takže graf ukazoval stav z posledního `git fetch` a tvářil se jako aktuální. Přihlášení ke GitHubu se řeší stejně jako u klonu (jen přihlášení v aplikaci, token jen pro `https://github.com`) a stahuje se jen z povolených hostů. Když se stáhnout nepodaří, graf ukáže naposledy stažený stav a aplikace na to upozorní. Refresh (F5) ze sítě nestahuje.
+
+### Fixed
+
+- Každá větev má vlaječku u commitu, na který ukazuje; ukazuje-li na jeden commit víc větví, stojí vlaječky vedle sebe. Dřív nesl commit jedinou vlaječku, takže větev bez vlastního commitu (čerstvě založená, sloučená fast-forwardem, pozadu za `main`) v grafu chyběla. V pohledu s remote větvemi totéž platí pro větve na serveru.
+- Aktuální větev je v grafu označená tučným rámečkem vlaječky (tooltip „aktuální větev“). Dřív nebylo poznat, na které větvi uživatel stojí.
+- Rozpracované změny (WIP) navazují na commit, na kterém uživatel opravdu stojí (HEAD). Dřív se hledal nejnovější commit se jménem aktuální větve, takže na čerstvě založené větvi visel WIP uzel bez spojnice.
+- Odpojený HEAD (po `git checkout <hash>`) je v grafu vidět jako vlaječka `HEAD` a commity vytvořené v tomto stavu se zobrazí pod ní. Dřív v grafu chyběly a rozpracované změny se nezobrazily vůbec.
+- Popis WIP uzlu (počet souborů) je v jazyce rozhraní; dřív byl vždy česky.
+- Neošetřená chyba se ukáže v dialogu. Dřív ji okenní `.exe` nemělo kam vypsat: tlačítko po chybě „nic neudělalo“ a chyba při startu aplikaci beze slova zavřela.
 
 ## [1.6.0] - 2026-09-27
 

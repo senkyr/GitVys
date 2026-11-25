@@ -3,9 +3,10 @@
 import tkinter as tk
 from typing import List, Set
 from utils.data_structures import Commit
-from utils.constants import BASE_MARGIN, LINE_WIDTH, NODE_RADIUS
+from utils.constants import BASE_MARGIN, FLAG_GAP, LINE_WIDTH, MAX_FLAG_WIDTH, MIN_FLAG_WIDTH, NODE_RADIUS
 from utils.theme_manager import get_theme_manager
 from utils.logging_config import get_logger
+from utils.translations import t
 
 logger = get_logger(__name__)
 
@@ -52,6 +53,10 @@ class BranchFlagDrawer:
             truncated_name = self._truncate_branch_name(display_name)
             unique_branches.add(truncated_name)
 
+            # Flags of other branches pointing at this commit
+            for flag in commit.extra_flags:
+                unique_branches.add(self._truncate_branch_name(flag.name))
+
         # Find longest branch name
         for display_name in unique_branches:
             # Measure width of clean branch name text
@@ -72,12 +77,18 @@ class BranchFlagDrawer:
 
         self.flag_width = symbol_space + padding + max_text_width
 
-        # Minimum width 90px (to fit symbols with bigger padding), maximum reasonable width 120px (reduced)
-        self.flag_width = max(90, min(self.flag_width, 120))
+        # Minimum width (to fit symbols with bigger padding), maximum reasonable width
+        self.flag_width = max(MIN_FLAG_WIDTH, min(self.flag_width, MAX_FLAG_WIDTH))
         return self.flag_width
 
+    def _flag_center_x(self, slot: int = 0) -> int:
+        """X středu vlaječky; `slot` je pořadí vlaječky na řádku (0 = u levého okraje)."""
+        flag_width = self.flag_width if self.flag_width else 80  # Fallback to 80 if not calculated
+        return self.BASE_MARGIN + slot * (flag_width + FLAG_GAP) + flag_width // 2
+
     def draw_branch_flag(self, x: int, y: int, branch_name: str, branch_color: str,
-                        is_remote: bool = False, branch_availability: str = "local_only"):
+                        is_remote: bool = False, branch_availability: str = "local_only",
+                        slot: int = 0, is_current: bool = False):
         """Draws flag with branch name and availability symbols in fixed left column.
 
         Args:
@@ -87,17 +98,24 @@ class BranchFlagDrawer:
             branch_color: Branch color
             is_remote: Whether this is a remote branch
             branch_availability: Branch availability ("local_only", "remote_only", "both")
+            slot: Order of the flag in its row (several branches may point at one commit)
+            is_current: Whether this is the checked-out branch (HEAD) - drawn with a bold border
         """
         # Use calculated flag width
         flag_width = self.flag_width if self.flag_width else 80  # Fallback to 80 if not calculated
         flag_height = 20
 
         # Flag position - margin from left same as margin from top (BASE_MARGIN + half flag width)
-        flag_x = self.BASE_MARGIN + flag_width // 2
+        flag_x = self._flag_center_x(slot)
         flag_y = y
 
-        # Uniform black border (remote status is visible from emoji)
+        # Uniform black border (remote status is visible from emoji);
+        # the checked-out branch gets a bold border in the theme's text color
         outline_color = 'black'
+        outline_width = 1
+        if is_current:
+            outline_color = get_theme_manager().get_color('commit_text')
+            outline_width = 3
 
         # Create flag rectangle
         self.canvas.create_rectangle(
@@ -105,7 +123,7 @@ class BranchFlagDrawer:
             flag_x + flag_width // 2, flag_y + flag_height // 2,
             fill=branch_color,
             outline=outline_color,
-            width=1
+            width=outline_width
         )
 
         # Add branch name text - adjust for remote branches
@@ -162,8 +180,11 @@ class BranchFlagDrawer:
             fill=text_color
         )
 
-        # Add tooltip if text was truncated
-        if full_name != display_name:
+        # Add tooltip if text was truncated; the checked-out branch always explains its bold border
+        if is_current:
+            self._add_tooltip_to_flag(text_item, flag_x, flag_y, flag_width, flag_height,
+                                      t('current_branch_tooltip', full_name))
+        elif full_name != display_name:
             self._add_tooltip_to_flag(text_item, flag_x, flag_y, flag_width, flag_height, full_name)
 
         # Draw remote symbol on left if branch exists remotely
@@ -248,19 +269,20 @@ class BranchFlagDrawer:
                     fill=text_color
                 )
 
-    def draw_flag_connection(self, commit_x: int, commit_y: int, branch_color: str):
+    def draw_flag_connection(self, commit_x: int, commit_y: int, branch_color: str, slot: int = 0):
         """Draws horizontal connection from commit to flag.
 
         Args:
             commit_x: X position of commit
             commit_y: Y position of commit
             branch_color: Branch color for connection
+            slot: Order of the flag the line starts at (the last flag in the row)
         """
         # Use calculated flag width
         flag_width = self.flag_width if self.flag_width else 80
 
         # Flag position (consistent with _draw_branch_flag)
-        flag_x = self.BASE_MARGIN + flag_width // 2
+        flag_x = self._flag_center_x(slot)
 
         # Horizontal line from commit to flag
         self.canvas.create_line(

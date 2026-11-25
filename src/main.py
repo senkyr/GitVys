@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import logging
 import sys
 import os
 import subprocess
@@ -59,6 +60,30 @@ def show_git_missing_dialog():
         print("Po instalaci restartujte aplikaci.")
 
 
+def show_fatal_error_dialog(error: Exception):
+    """Ukáže chybu, kvůli které aplikace končí.
+
+    Okenní .exe nemá konzoli, takže samotný print() by uživatel neviděl
+    a aplikace by se bez vysvětlení zavřela (nebo vůbec neotevřela).
+    """
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        from auth.git_credentials import redact_secrets
+        from utils.translations import t
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            t('error'),
+            t('unexpected_error', redact_secrets(f"{type(error).__name__}: {error}"))
+        )
+        root.destroy()
+    except Exception:
+        # Bez tkinteru (nebo když selhal právě on) zbývá jen výpis výše
+        pass
+
+
 def main():
     # Zkontrolovat, zda je Git nainstalovaný
     if not check_git_installed():
@@ -83,7 +108,9 @@ def main():
     except KeyboardInterrupt:
         print("\nAplikace ukončena uživatelem.")
     except Exception as e:
+        logging.getLogger(__name__).exception("Unexpected error")
         print(f"Neočekávaná chyba: {e}")
+        show_fatal_error_dialog(e)
 
 
 if __name__ == "__main__":

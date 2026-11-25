@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from git import Repo
+from repo.head import read_head_state
 from utils.data_structures import Commit, Tag
 from utils.logging_config import get_logger
 from utils.constants import MESSAGE_MAX_LENGTH, AUTHOR_NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH
@@ -32,7 +33,12 @@ class CommitParser:
         Dřív se historie procházela zvlášť pro každou větev (N větví = N-krát
         celá historie přes GitPython objekty). Jeden rev-list přes všechny
         větve vrátí každý commit právě jednou.
+
+        Při odpojeném HEAD se přidá i HEAD: commity vytvořené v tomto stavu
+        nejsou dosažitelné z žádné větve a v grafu by chyběly.
         """
+        if read_head_state(self.repo).is_detached:
+            revs = list(revs) + ['HEAD']
         seen = set()
         try:
             for commit in self.repo.iter_commits(revs):
